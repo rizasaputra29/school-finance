@@ -1,7 +1,9 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { Sidebar } from '@/components/Sidebar';
+import { SidebarProvider } from "@/components/ui/sidebar"
+import { AppSidebar } from "@/components/app-sidebar"
+import { BottomNav } from "@/components/BottomNav"
 import { useAuth } from '@/context/AuthContext';
 
 interface LayoutProps {
@@ -13,23 +15,29 @@ export function Layout({ children }: LayoutProps) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-          <p className="text-sm text-slate-500">Memuat...</p>
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-muted border-t-[#c6ef4e]" />
+          <p className="text-sm text-muted-foreground">Memuat...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Sidebar />
-      <main className="lg:pl-64">
-        <div className="min-h-screen p-4 pt-20 lg:p-8 lg:pt-8">
+    <SidebarProvider defaultOpen={true}>
+      {/* Desktop Sidebar - Hidden on mobile */}
+      <AppSidebar />
+      
+      {/* Main Content */}
+      <main className="flex-1 min-h-screen bg-background transition-all duration-300">
+        <div className="p-4 pb-20 md:p-6 lg:p-8 md:pb-8 w-full max-w-7xl mx-auto">
           {children}
         </div>
       </main>
-    </div>
+
+      {/* Mobile Bottom Nav */}
+      <BottomNav />
+    </SidebarProvider>
   );
 }

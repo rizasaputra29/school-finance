@@ -20,6 +20,15 @@ interface CashflowRecord {
   kredit: number;
 }
 
+// Helper to format currency
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(amount);
+};
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -30,6 +39,11 @@ export default async function handler(
 
   try {
     const { type } = req.query;
+    const currentDate = new Date().toLocaleDateString('id-ID', { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    });
 
     // Get all data
     const accounts = await prisma.account.findMany({
@@ -52,19 +66,39 @@ export default async function handler(
 
       const labaRugiData = [
         ['LAPORAN LABA RUGI'],
+        ['SEKOLAH'],
+        [`Per ${currentDate}`],
+        [''],
+        ['No', 'Kode Akun', 'Nama Akun', 'Jumlah (Rp)'],
         [''],
         ['PENDAPATAN'],
-        ...revenues.map((a) => [a.kodeAkun, a.namaAkun, a.saldo]),
-        ['', 'Total Pendapatan', totalRevenue],
+        ...revenues.map((a, i) => [i + 1, a.kodeAkun, a.namaAkun, formatCurrency(a.saldo)]),
+        ['', '', 'Total Pendapatan', formatCurrency(totalRevenue)],
         [''],
         ['BEBAN'],
-        ...expenses.map((a) => [a.kodeAkun, a.namaAkun, a.saldo]),
-        ['', 'Total Beban', totalExpense],
+        ...expenses.map((a, i) => [i + 1, a.kodeAkun, a.namaAkun, formatCurrency(a.saldo)]),
+        ['', '', 'Total Beban', formatCurrency(totalExpense)],
         [''],
-        ['', 'LABA/RUGI BERSIH', labaRugi],
+        ['', '', 'LABA/RUGI BERSIH', formatCurrency(labaRugi)],
+        [''],
+        [''],
+        ['Dibuat oleh:', '', 'Diperiksa oleh:', ''],
+        [''],
+        [''],
+        ['_______________', '', '_______________', ''],
+        ['Bendahara', '', 'Kepala Sekolah', ''],
       ];
 
       const labaRugiSheet = XLSX.utils.aoa_to_sheet(labaRugiData);
+      
+      // Set column widths
+      labaRugiSheet['!cols'] = [
+        { wch: 5 },   // No
+        { wch: 12 },  // Kode Akun
+        { wch: 35 },  // Nama Akun
+        { wch: 20 },  // Jumlah
+      ];
+      
       XLSX.utils.book_append_sheet(workbook, labaRugiSheet, 'Laba Rugi');
     }
 
@@ -80,40 +114,91 @@ export default async function handler(
 
       const neracaData = [
         ['NERACA'],
+        ['SEKOLAH'],
+        [`Per ${currentDate}`],
+        [''],
+        ['No', 'Kode Akun', 'Nama Akun', 'Jumlah (Rp)'],
         [''],
         ['ASET'],
-        ...assets.map((a) => [a.kodeAkun, a.namaAkun, a.saldo]),
-        ['', 'Total Aset', totalAssets],
+        ...assets.map((a, i) => [i + 1, a.kodeAkun, a.namaAkun, formatCurrency(a.saldo)]),
+        ['', '', 'Total Aset', formatCurrency(totalAssets)],
         [''],
         ['KEWAJIBAN'],
-        ...liabilities.map((a) => [a.kodeAkun, a.namaAkun, a.saldo]),
-        ['', 'Total Kewajiban', totalLiabilities],
+        ...liabilities.map((a, i) => [i + 1, a.kodeAkun, a.namaAkun, formatCurrency(a.saldo)]),
+        ['', '', 'Total Kewajiban', formatCurrency(totalLiabilities)],
         [''],
         ['EKUITAS'],
-        ...equity.map((a) => [a.kodeAkun, a.namaAkun, a.saldo]),
-        ['', 'Total Ekuitas', totalEquity],
+        ...equity.map((a, i) => [i + 1, a.kodeAkun, a.namaAkun, formatCurrency(a.saldo)]),
+        ['', '', 'Total Ekuitas', formatCurrency(totalEquity)],
         [''],
-        ['', 'Total Kewajiban + Ekuitas', totalLiabilities + totalEquity],
+        ['', '', 'Total Kewajiban + Ekuitas', formatCurrency(totalLiabilities + totalEquity)],
+        [''],
+        [''],
+        ['Dibuat oleh:', '', 'Diperiksa oleh:', ''],
+        [''],
+        [''],
+        ['_______________', '', '_______________', ''],
+        ['Bendahara', '', 'Kepala Sekolah', ''],
       ];
 
       const neracaSheet = XLSX.utils.aoa_to_sheet(neracaData);
+      
+      // Set column widths
+      neracaSheet['!cols'] = [
+        { wch: 5 },   // No
+        { wch: 12 },  // Kode Akun
+        { wch: 35 },  // Nama Akun
+        { wch: 20 },  // Jumlah
+      ];
+      
       XLSX.utils.book_append_sheet(workbook, neracaSheet, 'Neraca');
     }
 
     if (type === 'cashflow' || type === 'all') {
+      // Calculate totals
+      const totalDebit = cashflows.reduce((sum, cf) => sum + cf.debit, 0);
+      const totalKredit = cashflows.reduce((sum, cf) => sum + cf.kredit, 0);
+      const saldo = totalDebit - totalKredit;
+
       // Cashflow Detail
       const cashflowData = [
-        ['Tanggal', 'Keterangan', 'Kode Akun', 'Debit', 'Kredit'],
-        ...cashflows.map((cf) => [
+        ['LAPORAN ARUS KAS (CASHFLOW)'],
+        ['SEKOLAH'],
+        [`Per ${currentDate}`],
+        [''],
+        ['No', 'Tanggal', 'Keterangan', 'Kode Akun', 'Debit (Rp)', 'Kredit (Rp)'],
+        ...cashflows.map((cf, i) => [
+          i + 1,
           new Date(cf.tanggal).toLocaleDateString('id-ID'),
           cf.keterangan,
           cf.kodeAkun,
-          cf.debit,
-          cf.kredit,
+          cf.debit > 0 ? formatCurrency(cf.debit) : '-',
+          cf.kredit > 0 ? formatCurrency(cf.kredit) : '-',
         ]),
+        [''],
+        ['', '', 'TOTAL', '', formatCurrency(totalDebit), formatCurrency(totalKredit)],
+        ['', '', 'SALDO AKHIR', '', '', formatCurrency(saldo)],
+        [''],
+        [''],
+        ['Dibuat oleh:', '', '', 'Diperiksa oleh:', '', ''],
+        [''],
+        [''],
+        ['_______________', '', '', '_______________', '', ''],
+        ['Bendahara', '', '', 'Kepala Sekolah', '', ''],
       ];
 
       const cashflowSheet = XLSX.utils.aoa_to_sheet(cashflowData);
+      
+      // Set column widths
+      cashflowSheet['!cols'] = [
+        { wch: 5 },   // No
+        { wch: 12 },  // Tanggal
+        { wch: 35 },  // Keterangan
+        { wch: 12 },  // Kode Akun
+        { wch: 18 },  // Debit
+        { wch: 18 },  // Kredit
+      ];
+      
       XLSX.utils.book_append_sheet(workbook, cashflowSheet, 'Cashflow');
     }
 

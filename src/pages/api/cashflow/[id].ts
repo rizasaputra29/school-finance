@@ -8,46 +8,143 @@ export default async function handler(
   const { id } = req.query;
 
   if (!id || typeof id !== 'string') {
-    return res.status(400).json({ error: 'ID tidak valid' });
+    return res.status(400).json({ error: 'Invalid ID' });
   }
 
   try {
     switch (req.method) {
-      case 'GET': {
-        const cashflow = await prisma.cashflow.findUnique({
-          where: { id },
-        });
+      case 'PATCH': {
+        const { tanggal, keterangan, kodeAkun, kategori, debit, kredit } = req.body;
+        const newDebit = parseFloat(debit) || 0;
+        const newKredit = parseFloat(kredit) || 0;
 
-        if (!cashflow) {
-          return res.status(404).json({ error: 'Cashflow tidak ditemukan' });
+        try {
+          const result = await prisma.$transaction(async (tx) => {
+            // 1. Get existing cashflow
+            const oldCashflow = await tx.cashflow.findUnique({
+              where: { id },
+            });
+
+            if (!oldCashflow) {
+              throw new Error('Transaksi tidak ditemukan');
+            }
+
+            // 2. Reverse effect on OLD Account
+            const oldAccount = await tx.account.findUnique({
+              where: { kodeAkun: oldCashflow.kodeAkun },
+            });
+
+            if (oldAccount) {
+              let reverseChange = 0;
+              const isDebitNormal = ['Asset', 'Expense'].includes(oldAccount.tipeAkun);
+
+              // To reverse: subtract what was added
+              // If Asset (Debit Normal): Balance = Balance + Debit - Kredit
+              // Reverse: Balance = Balance - Debit + Kredit
+              if (isDebitNormal) {
+                reverseChange = oldCashflow.kredit - oldCashflow.debit;
+              } else {
+                // If Liability (Credit Normal): Balance = Balance + Kredit - Debit
+                // Reverse: Balance = Balance - Kredit + Debit
+                reverseChange = oldCashflow.debit - oldCashflow.kredit;
+              }
+
+              await tx.account.update({
+                where: { kodeAkun: oldCashflow.kodeAkun },
+                data: { saldo: { increment: reverseChange } },
+              });
+            }
+
+            // 3. Apply effect on NEW Account
+            const newAccount = await tx.account.findUnique({
+              where: { kodeAkun },
+            });
+
+            if (!newAccount) {
+              throw new Error(`Akun baru dengan kode ${kodeAkun} tidak ditemukan`);
+            }
+
+            let newChange = 0;
+            const isNewDebitNormal = ['Asset', 'Expense'].includes(newAccount.tipeAkun);
+
+            if (isNewDebitNormal) {
+              newChange = newDebit - newKredit;
+            } else {
+              newChange = newKredit - newDebit;
+            }
+
+            await tx.account.update({
+              where: { kodeAkun },
+              data: { saldo: { increment: newChange } },
+            });
+
+            // 4. Update Cashflow
+            const updatedCashflow = await tx.cashflow.update({
+              where: { id },
+              data: {
+                tanggal: new Date(tanggal),
+                keterangan,
+                kodeAkun,
+                kategori: kategori || null,
+                debit: newDebit,
+                kredit: newKredit,
+              },
+            });
+
+            return updatedCashflow;
+          });
+
+          return res.status(200).json(result);
+        } catch (error: any) {
+          return res.status(400).json({ error: error.message });
         }
-
-        return res.status(200).json(cashflow);
-      }
-
-      case 'PUT': {
-        const { tanggal, keterangan, kodeAkun, debit, kredit } = req.body;
-
-        const cashflow = await prisma.cashflow.update({
-          where: { id },
-          data: {
-            tanggal: tanggal ? new Date(tanggal) : undefined,
-            keterangan,
-            kodeAkun,
-            debit: debit !== undefined ? parseFloat(debit) : undefined,
-            kredit: kredit !== undefined ? parseFloat(kredit) : undefined,
-          },
-        });
-
-        return res.status(200).json(cashflow);
       }
 
       case 'DELETE': {
-        await prisma.cashflow.delete({
-          where: { id },
-        });
+        try {
+          const result = await prisma.$transaction(async (tx) => {
+            // 1. Get existing cashflow
+            const cashflow = await tx.cashflow.findUnique({
+              where: { id },
+            });
 
-        return res.status(204).end();
+            if (!cashflow) {
+              throw new Error('Transaksi tidak ditemukan');
+            }
+
+            // 2. Reverse effect on Account
+            const account = await tx.account.findUnique({
+              where: { kodeAkun: cashflow.kodeAkun },
+            });
+
+            if (account) {
+              let reverseChange = 0;
+              const isDebitNormal = ['Asset', 'Expense'].includes(account.tipeAkun);
+
+              if (isDebitNormal) {
+                reverseChange = cashflow.kredit - cashflow.debit;
+              } else {
+                reverseChange = cashflow.debit - cashflow.kredit;
+              }
+
+              await tx.account.update({
+                where: { kodeAkun: cashflow.kodeAkun },
+                data: { saldo: { increment: reverseChange } },
+              });
+            }
+
+            // 3. Delete Cashflow
+            await tx.cashflow.delete({
+              where: { id },
+            });
+
+            return { message: 'Transaksi berhasil dihapus' };
+          });
+
+          return res.status(200).json(result);
+        } catch (error: any) {
+          return res.status(400).json({ error: error.message });
+        }
       }
 
       default:

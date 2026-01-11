@@ -10,35 +10,64 @@ datasource db {
 }
 
 model Account {
-  id        String   @id @default(cuid())
-  kodeAkun  String   @unique
+  id        String     @id @default(cuid())
+  kodeAkun  String     @unique
   namaAkun  String
-  tipeAkun  String   // Asset, Liability, Equity, Revenue, Expense
-  saldo     Float    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  tipeAkun  String     // Asset, Liability, Equity, Revenue, Expense
+  saldo     Float      @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  cashflows Cashflow[]
 }
 
 model Student {
-  id           String   @id @default(cuid())
-  nis          String   @unique
+  id           String    @id @default(cuid())
+  nis          String    @unique
   nama         String
+  jenisKelamin String?   // L/P
   kelas        String
   tahunMasuk   Int
-  statusBayar  String   // Lunas, Belum Lunas
-  totalTagihan Float    @default(0)
-  totalBayar   Float    @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  tahunAjaran  String?
+  namaOrtu     String?
+  noTelp       String?
+  statusBayar  String    // Lunas, Belum Lunas
+  status       String    @default("Active") // Active, Inactive
+  totalTagihan Float     @default(0)
+  totalBayar   Float     @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  billings     Billing[]
+}
+
+model Billing {
+  id           String    @id @default(cuid())
+  studentId    String
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  jenisBiaya   String    // SPP, Uang Pangkal, Seragam, Buku
+  periodeBulan String    // Format: YYYY-MM
+  jumlah       Float
+  statusBayar  String    @default("Belum Lunas") // Lunas, Belum Lunas
+  tanggalBayar DateTime?
+  catatan      String?
+  cashflowId   String?   @unique
+  cashflow     Cashflow? @relation(fields: [cashflowId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([studentId, jenisBiaya, periodeBulan])
 }
 
 model Cashflow {
-  id         String   @id @default(cuid())
-  tanggal    DateTime
-  keterangan String
-  kodeAkun   String
-  debit      Float    @default(0)
-  kredit     Float    @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(cuid())
+  tanggal     DateTime
+  keterangan  String
+  kodeAkun    String
+  account     Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
+  kategori    String?
+  debit       Float    @default(0)
+  kredit      Float    @default(0)
+  referenceId String?  // Link to billing_id (optional backwards link, but relation is on Billing)
+  billing     Billing?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

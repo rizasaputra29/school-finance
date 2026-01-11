@@ -41,12 +41,12 @@ export default async function handler(
   res: NextApiResponse
 ) {
   try {
-    // Get date range (default last 12 months)
+    // Get date range for last 12 months (all data needed for client-side filtering)
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 12);
+    startDate.setFullYear(startDate.getFullYear() - 1);
 
-    // Get cashflow summary
+    // Get cashflow data
     const cashflows = await prisma.cashflow.findMany({
       where: {
         tanggal: {
@@ -68,31 +68,6 @@ export default async function handler(
     const lunasCount = students.filter((s) => s.statusBayar === 'Lunas').length;
     const belumLunasCount = totalStudents - lunasCount;
 
-    // Get monthly data for charts
-    const monthlyData: { month: string; debit: number; kredit: number }[] = [];
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
-      'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
-    ];
-
-    for (let i = 0; i < 12; i++) {
-      const date = new Date();
-      date.setMonth(date.getMonth() - (11 - i));
-      const monthCashflows = cashflows.filter((cf) => {
-        const cfDate = new Date(cf.tanggal);
-        return (
-          cfDate.getMonth() === date.getMonth() &&
-          cfDate.getFullYear() === date.getFullYear()
-        );
-      });
-
-      monthlyData.push({
-        month: months[date.getMonth()],
-        debit: monthCashflows.reduce((sum: number, cf) => sum + cf.debit, 0),
-        kredit: monthCashflows.reduce((sum: number, cf) => sum + cf.kredit, 0),
-      });
-    }
-
     // Get account distribution for pie chart
     const accounts = await prisma.account.findMany() as AccountRecord[];
     const accountDistribution = accounts
@@ -110,6 +85,7 @@ export default async function handler(
       take: 5,
     });
 
+    // Return raw cashflow data for client-side filtering
     return res.status(200).json({
       summary: {
         totalDebit,
@@ -119,7 +95,12 @@ export default async function handler(
         lunasCount,
         belumLunasCount,
       },
-      monthlyData,
+      cashflows: cashflows.map(cf => ({
+        id: cf.id,
+        tanggal: cf.tanggal,
+        debit: cf.debit,
+        kredit: cf.kredit,
+      })),
       accountDistribution,
       recentTransactions,
     });

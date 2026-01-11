@@ -94,8 +94,8 @@ export default function ReportsPage() {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-          <p className="text-sm text-slate-500">Memuat laporan...</p>
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#c6ef4e]" />
+          <p className="text-sm text-gray-500">Memuat laporan...</p>
         </div>
       </div>
     );
@@ -110,13 +110,13 @@ export default function ReportsPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Laporan Keuangan</h1>
-          <p className="text-slate-500">Laporan Laba Rugi dan Neraca</p>
+          <h1 className="text-2xl font-bold text-gray-900">Laporan Keuangan</h1>
+          <p className="text-gray-500">Laporan Laba Rugi dan Neraca</p>
         </div>
 
         {/* Laba Rugi */}
         <Card className="animate-fade-in">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-lg">Laporan Laba Rugi</CardTitle>
               <p className="text-sm text-slate-500">Periode berjalan</p>
@@ -146,13 +146,14 @@ export default function ReportsPage() {
             {/* Pendapatan */}
             <div>
               <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
-                  <TrendingUp className="h-4 w-4 text-emerald-600" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#c6ef4e]/30">
+                  <TrendingUp className="h-4 w-4 text-gray-700" />
                 </div>
-                <h3 className="font-semibold text-slate-700">PENDAPATAN</h3>
+                <h3 className="font-semibold text-gray-700">PENDAPATAN</h3>
               </div>
               {revenues.length > 0 ? (
-                <Table>
+                <div className="overflow-x-auto -mx-1">
+                <Table className="min-w-[400px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Kode</TableHead>
@@ -172,16 +173,17 @@ export default function ReportsPage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    <TableRow className="bg-emerald-50">
-                      <TableCell colSpan={2} className="font-semibold">
+                    <TableRow className="bg-[#c6ef4e]/20">
+                      <TableCell colSpan={2} className="font-semibold text-gray-900">
                         Total Pendapatan
                       </TableCell>
-                      <TableCell className="text-right font-bold text-emerald-600">
+                      <TableCell className="text-right font-bold text-gray-900">
                         {formatCurrency(totalRevenue)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
+                </div>
               ) : (
                 <p className="text-slate-400">Tidak ada data pendapatan</p>
               )}
@@ -190,13 +192,14 @@ export default function ReportsPage() {
             {/* Beban */}
             <div>
               <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100">
-                  <TrendingDown className="h-4 w-4 text-red-600" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gray-100">
+                  <TrendingDown className="h-4 w-4 text-gray-600" />
                 </div>
-                <h3 className="font-semibold text-slate-700">BEBAN</h3>
+                <h3 className="font-semibold text-gray-700">BEBAN</h3>
               </div>
               {expenses.length > 0 ? (
-                <Table>
+                <div className="overflow-x-auto -mx-1">
+                <Table className="min-w-[400px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Kode</TableHead>
@@ -226,6 +229,7 @@ export default function ReportsPage() {
                     </TableRow>
                   </TableBody>
                 </Table>
+                </div>
               ) : (
                 <p className="text-slate-400">Tidak ada data beban</p>
               )}
@@ -251,7 +255,7 @@ export default function ReportsPage() {
 
         {/* Neraca */}
         <Card className="animate-fade-in" style={{ animationDelay: '200ms' }}>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle className="text-lg">Neraca</CardTitle>
               <p className="text-sm text-slate-500">Posisi keuangan saat ini</p>
@@ -385,7 +389,7 @@ export default function ReportsPage() {
 
         {/* Export All */}
         <Card>
-          <CardContent className="flex items-center justify-between p-6">
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6">
             <div>
               <h3 className="font-semibold text-slate-900">Export Semua Laporan</h3>
               <p className="text-sm text-slate-500">

@@ -2,15 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { formatCurrency } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { formatCurrency, formatNumberInput, parseFormattedNumber } from '@/lib/utils';
+import * as Dialog from '@radix-ui/react-dialog';
 import {
   Wallet,
   CreditCard,
   PiggyBank,
   TrendingUp,
   TrendingDown,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 interface Account {
@@ -52,26 +60,140 @@ const accountTypeConfig: Record<
   },
 };
 
+const INITIAL_FORM = {
+  kodeAkun: '',
+  namaAkun: '',
+  tipeAkun: 'Asset',
+  saldo: '',
+};
+
 export default function AccountsPage() {
+  const { isAdmin } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch('/api/accounts');
-        if (res.ok) {
-          const data = await res.json();
-          setAccounts(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch accounts:', error);
-      } finally {
-        setIsLoading(false);
+  // Dialog States
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const [formData, setFormData] = useState(INITIAL_FORM);
+  const [error, setError] = useState('');
+
+  const fetchData = async () => {
+    try {
+      const res = await fetch('/api/accounts');
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data);
       }
-    };
+    } catch (error) {
+      console.error('Failed to fetch accounts:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    try {
+      const submitData = {
+        ...formData,
+        saldo: parseFormattedNumber(String(formData.saldo)),
+      };
+
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submitData),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setIsCreateOpen(false);
+        setFormData(INITIAL_FORM);
+        fetchData();
+      } else {
+        setError(data.error || 'Gagal membuat akun');
+      }
+    } catch (error) {
+      console.error('Failed to create account:', error);
+      setError('Terjadi kesalahan');
+    }
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAccount) return;
+    setError('');
+
+    try {
+      const submitData = {
+        ...formData,
+        saldo: parseFormattedNumber(String(formData.saldo)),
+      };
+
+      const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submitData),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setIsEditOpen(false);
+        setSelectedAccount(null);
+        setFormData(INITIAL_FORM);
+        fetchData();
+      } else {
+        setError(data.error || 'Gagal mengupdate akun');
+      }
+    } catch (error) {
+      console.error('Failed to update account:', error);
+      setError('Terjadi kesalahan');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedAccount) return;
+
+    try {
+      const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setIsDeleteOpen(false);
+        setSelectedAccount(null);
+        fetchData();
+      } else {
+        alert(data.error || 'Gagal menghapus akun');
+      }
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+    }
+  };
+
+  const openEditDialog = (acc: Account) => {
+    setSelectedAccount(acc);
+    setFormData({
+      kodeAkun: acc.kodeAkun,
+      namaAkun: acc.namaAkun,
+      tipeAkun: acc.tipeAkun,
+      saldo: formatNumberInput(acc.saldo),
+    });
+    setIsEditOpen(true);
+  };
 
   // Group accounts by type
   const groupedAccounts = accounts.reduce(
@@ -87,12 +209,88 @@ export default function AccountsPage() {
 
   const accountTypes = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'];
 
+  const renderForm = (onSubmit: (e: React.FormEvent) => Promise<void>, submitLabel: string, isEdit = false) => (
+    <form onSubmit={onSubmit} className="mt-6 space-y-4">
+      {error && (
+        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="kodeAkun">Kode Akun</Label>
+        <Input
+          id="kodeAkun"
+          value={formData.kodeAkun}
+          onChange={(e) => setFormData({ ...formData, kodeAkun: e.target.value })}
+          placeholder="Contoh: 1101"
+          required
+          disabled={isEdit} // Kode akun shouldn't ideally be changed easily as it breaks relations
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="namaAkun">Nama Akun</Label>
+        <Input
+          id="namaAkun"
+          value={formData.namaAkun}
+          onChange={(e) => setFormData({ ...formData, namaAkun: e.target.value })}
+          placeholder="Contoh: Kas Utama"
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="tipeAkun">Tipe Akun</Label>
+        <select
+          id="tipeAkun"
+          value={formData.tipeAkun}
+          onChange={(e) => setFormData({ ...formData, tipeAkun: e.target.value })}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          required
+        >
+          {accountTypes.map((type) => (
+            <option key={type} value={type}>
+              {accountTypeConfig[type]?.label || type}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="saldo">Saldo Awal / Saat Ini</Label>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">Rp</span>
+          <Input
+            id="saldo"
+            value={formData.saldo}
+            onChange={(e) => setFormData({ ...formData, saldo: formatNumberInput(e.target.value) })}
+            placeholder="0"
+            className="pl-10"
+          />
+        </div>
+        <p className="text-xs text-slate-500">
+          {isEdit ? 'Mengubah saldo secara langsung akan mempengaruhi balance sheet.' : 'Saldo awal akun.'}
+        </p>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4">
+        <Dialog.Close asChild>
+          <Button type="button" variant="outline">
+            Batal
+          </Button>
+        </Dialog.Close>
+        <Button type="submit">{submitLabel}</Button>
+      </div>
+    </form>
+  );
+
   if (isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-          <p className="text-sm text-slate-500">Memuat daftar akun...</p>
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#c6ef4e]" />
+          <p className="text-sm text-gray-500">Memuat daftar akun...</p>
         </div>
       </div>
     );
@@ -106,9 +304,34 @@ export default function AccountsPage() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Daftar Akun</h1>
-          <p className="text-slate-500">Chart of Accounts keuangan sekolah</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Daftar Akun</h1>
+            <p className="text-gray-500">Bagan akun untuk laporan keuangan</p>
+          </div>
+
+          {isAdmin && (
+            <Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <Dialog.Trigger asChild>
+                <Button onClick={() => {
+                  setFormData(INITIAL_FORM);
+                  setError('');
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Akun
+                </Button>
+              </Dialog.Trigger>
+              <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+                <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl border border-slate-200">
+                  <Dialog.Title className="text-lg font-semibold text-slate-900">
+                    Tambah Akun Baru
+                  </Dialog.Title>
+                  {renderForm(handleSubmit, 'Simpan')}
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
+          )}
         </div>
 
         {/* Account Groups */}
@@ -119,27 +342,27 @@ export default function AccountsPage() {
           const totalSaldo = typeAccounts.reduce((sum, a) => sum + a.saldo, 0);
 
           return (
-            <Card key={type} className="animate-fade-in overflow-hidden">
-              <CardHeader className="border-b bg-slate-50/50">
+            <Card key={type} className="shadow-sm overflow-hidden bg-white">
+              <CardHeader className="border-b border-gray-100 bg-gray-50 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br ${config?.gradient || 'from-slate-500 to-slate-600'} shadow-md`}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#c6ef4e]/20 text-gray-700"
                     >
-                      <Icon className="h-5 w-5 text-white" />
+                      <Icon className="h-5 w-5" />
                     </div>
                     <div>
-                      <CardTitle className="text-lg">
+                      <CardTitle className="text-base font-semibold text-slate-800">
                         {config?.label || type}
                       </CardTitle>
-                      <p className="text-sm text-slate-500">
+                      <p className="text-xs text-slate-500">
                         {typeAccounts.length} akun
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-slate-500">Total Saldo</p>
-                    <p className="text-xl font-bold text-slate-900">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total Saldo</p>
+                    <p className="text-lg font-bold text-slate-900 font-mono">
                       {formatCurrency(totalSaldo)}
                     </p>
                   </div>
@@ -147,23 +370,47 @@ export default function AccountsPage() {
               </CardHeader>
               <CardContent className="p-0">
                 {typeAccounts.length > 0 ? (
-                  <div className="divide-y">
+                  <div className="divide-y divide-slate-100">
                     {typeAccounts.map((account) => (
                       <div
                         key={account.id}
                         className="flex items-center justify-between p-4 transition-colors hover:bg-slate-50"
                       >
-                        <div className="flex items-center gap-3">
-                          <Badge variant="secondary" className="font-mono">
+                        <div className="flex items-center gap-4">
+                          <span className="font-mono text-sm font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
                             {account.kodeAkun}
-                          </Badge>
+                          </span>
                           <span className="font-medium text-slate-700">
                             {account.namaAkun}
                           </span>
                         </div>
-                        <span className="font-semibold text-slate-900">
-                          {formatCurrency(account.saldo)}
-                        </span>
+                        <div className="flex items-center gap-4">
+                          <span className="font-semibold text-slate-900">
+                            {formatCurrency(account.saldo)}
+                          </span>
+                          {isAdmin && (
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openEditDialog(account)}
+                              >
+                                <Pencil className="h-4 w-4 text-slate-500" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 hover:text-red-700"
+                                onClick={() => {
+                                  setSelectedAccount(account);
+                                  setIsDeleteOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -180,11 +427,48 @@ export default function AccountsPage() {
         {accounts.length === 0 && (
           <Card>
             <CardContent className="flex h-48 items-center justify-center text-slate-400">
-              Belum ada data akun. Import dari Excel untuk menambahkan akun.
+              Belum ada data akun. Import dari Excel atau Tambah Akun.
             </CardContent>
           </Card>
         )}
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
+            <Dialog.Title className="text-lg font-semibold text-slate-900">
+              Edit Akun
+            </Dialog.Title>
+            {renderForm(handleEdit, 'Update', true)}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Delete Dialog */}
+      <Dialog.Root open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
+            <Dialog.Title className="text-lg font-semibold text-slate-900">
+              Hapus Akun
+            </Dialog.Title>
+            <p className="mt-2 text-sm text-slate-600">
+              Apakah Anda yakin ingin menghapus akun ini?
+              Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <Dialog.Close asChild>
+                <Button variant="outline">Batal</Button>
+              </Dialog.Close>
+              <Button variant="destructive" onClick={handleDelete}>
+                Hapus
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </>
   );
 }
