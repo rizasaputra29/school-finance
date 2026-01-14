@@ -194,7 +194,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Pendapatan */}
-          <Card className="col-span-1 bg-white">
+          <Card className="col-span-2 bg-white">
             <CardContent className="p-4 md:p-5">
               <div className="flex items-start justify-between">
                 <div className="min-w-0 flex-1">
@@ -209,7 +209,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Pengeluaran */}
-          <Card className="col-span-1 bg-white">
+          <Card className="col-span-2 bg-white">
             <CardContent className="p-4 md:p-5">
               <div className="flex items-start justify-between">
                 <div className="min-w-0 flex-1">
@@ -218,36 +218,6 @@ export default function Dashboard() {
                 </div>
                 <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
                   <ArrowDownRight className="h-5 w-5 text-red-500" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Total Siswa */}
-          <Card className="col-span-1 bg-white">
-            <CardContent className="p-4 md:p-5">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs md:text-sm font-medium text-gray-500">Total Siswa</p>
-                  <p className="text-base md:text-xl font-bold text-gray-900 mt-1">{summary.totalStudents}</p>
-                </div>
-                <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                  <Users className="h-5 w-5 text-gray-700" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tingkat Lunas */}
-          <Card className="col-span-1 bg-white">
-            <CardContent className="p-4 md:p-5">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs md:text-sm font-medium text-gray-500">Lunas</p>
-                  <p className="text-base md:text-xl font-bold text-[#059DEA] mt-1">{lunasPercentage}%</p>
-                </div>
-                <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-[#059DEA]/10 flex items-center justify-center shrink-0">
-                  <CheckCircle className="h-5 w-5 text-[#059DEA]" />
                 </div>
               </div>
             </CardContent>
