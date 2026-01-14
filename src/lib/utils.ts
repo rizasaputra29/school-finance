@@ -22,12 +22,15 @@ export function formatDate(date: Date | string): string {
   }).format(new Date(date));
 }
 
-export function formatShortDate(date: Date | string): string {
+export function formatShortDate(date: Date | string | null | undefined): string {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '-';
   return new Intl.DateTimeFormat('id-ID', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  }).format(new Date(date));
+  }).format(d);
 }
 
 // Format number with thousand separator (e.g., 1.000.000)

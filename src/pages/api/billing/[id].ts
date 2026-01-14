@@ -59,12 +59,24 @@ export default async function handler(
           if (statusBayar === 'Lunas') {
             updateData.tanggalBayar = new Date();
 
-            // Create cashflow entry for income
+            // Map fee types to account codes (matching Excel Chart of Accounts)
+            const feeTypeToAccountCode: Record<string, string> = {
+              Pendaftaran: '400', // Penerimaan Dana Pendaftaran
+              Gedung: '401',      // Penerimaan Uang Gedung
+              Kegiatan: '402',    // Penerimaan Uang Kegiatan
+              Seragam: '403',     // Penerimaan Uang Seragam
+              ATK: '404',         // Penerimaan Uang ATK
+              SPP: '405',         // Penerimaan Uang SPP
+            };
+            
+            const accountCode = feeTypeToAccountCode[currentBilling.jenisBiaya] || '405';
+
+            // Create cashflow entry for income (cash received)
             const cashflow = await prisma.cashflow.create({
               data: {
                 tanggal: new Date(),
                 keterangan: `Pembayaran ${currentBilling.jenisBiaya} - ${currentBilling.student.nama} (${currentBilling.student.nis}) - ${currentBilling.periodeBulan}`,
-                kodeAkun: '4100', // Income account
+                kodeAkun: accountCode,
                 kategori: currentBilling.jenisBiaya,
                 debit: currentBilling.jumlah,
                 kredit: 0,
@@ -73,6 +85,18 @@ export default async function handler(
             });
 
             updateData.cashflowId = cashflow.id;
+
+            // Decrease Piutang Siswa (103) - receivable collected
+            await prisma.account.update({
+              where: { kodeAkun: '103' },
+              data: { saldo: { decrement: currentBilling.jumlah } }
+            });
+            
+            // Increase Kas (101) - cash received
+            await prisma.account.update({
+              where: { kodeAkun: '101' },
+              data: { saldo: { increment: currentBilling.jumlah } }
+            });
 
             // Update student payment totals
             await prisma.student.update({
@@ -107,6 +131,18 @@ export default async function handler(
 
             updateData.tanggalBayar = null;
             updateData.cashflowId = null;
+
+            // Increase Piutang Siswa (103) - receivable restored
+            await prisma.account.update({
+              where: { kodeAkun: '103' },
+              data: { saldo: { increment: currentBilling.jumlah } }
+            });
+            
+            // Decrease Kas (101) - cash returned
+            await prisma.account.update({
+              where: { kodeAkun: '101' },
+              data: { saldo: { decrement: currentBilling.jumlah } }
+            });
 
             // Revert student payment totals
             await prisma.student.update({

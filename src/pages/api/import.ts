@@ -174,10 +174,96 @@ export default async function handler(
                  }
                });
             }
+            
+            // Update the account balance
+            const account = await prisma.account.findUnique({
+              where: { kodeAkun: cf.kodeAkun }
+            });
+            
+            if (account) {
+              // Calculate balance change based on account type
+              // In cashflow context:
+              // - debit = cash received (money in)
+              // - kredit = cash paid (money out)
+              // - kodeAkun = the contra account (revenue/expense source)
+              let balanceChange = 0;
+              
+              if (account.tipeAkun === 'Asset') {
+                // Asset: debit increases, kredit decreases
+                balanceChange = (cf.debit || 0) - (cf.kredit || 0);
+              } else if (account.tipeAkun === 'Liability' || account.tipeAkun === 'Equity') {
+                // Liability/Equity: kredit increases, debit decreases
+                balanceChange = (cf.kredit || 0) - (cf.debit || 0);
+              } else if (account.tipeAkun === 'Revenue') {
+                // Revenue: when cash is debited (received), revenue increases
+                balanceChange = cf.debit || 0;
+              } else if (account.tipeAkun === 'Expense') {
+                // Expense: when cash is credited (paid), expense increases
+                balanceChange = cf.kredit || 0;
+              }
+              
+              await prisma.account.update({
+                where: { kodeAkun: cf.kodeAkun },
+                data: {
+                  saldo: { increment: balanceChange }
+                }
+              });
+            }
+            
             results.cashflow.inserted++;
           } catch(e) {
              console.error('JSON Cashflow error:', e);
              results.cashflow.errors++;
+          }
+        }
+      }
+
+      // Process Billings (Biaya Siswa)
+      if (data.billings && Array.isArray(data.billings)) {
+        for (const billing of data.billings) {
+          try {
+            // Find student by NIS
+            const student = await prisma.student.findUnique({
+              where: { nis: billing.nis }
+            });
+            
+            if (!student) {
+              console.error(`Student not found for NIS: ${billing.nis}`);
+              results.billings.errors++;
+              continue;
+            }
+
+            await prisma.billing.create({
+              data: {
+                studentId: student.id,
+                jenisBiaya: billing.jenisBiaya,
+                jumlah: billing.jumlah,
+                periodeBulan: billing.periodeBulan,
+                statusBayar: billing.statusBayar || 'Belum Lunas',
+                tanggalBayar: billing.tanggalBayar ? new Date(billing.tanggalBayar) : null,
+              }
+            });
+            
+            // If billing is Belum Lunas, increase Piutang Siswa (103)
+            if (billing.statusBayar === 'Belum Lunas') {
+              const piutangAccount = await prisma.account.findUnique({
+                where: { kodeAkun: '103' }
+              });
+              
+              if (piutangAccount) {
+                await prisma.account.update({
+                  where: { kodeAkun: '103' },
+                  data: {
+                    saldo: { increment: billing.jumlah }
+                  }
+                });
+              }
+            }
+            
+            results.billings.inserted++;
+          } catch(e) {
+            console.error('JSON Billing error:', e);
+            results.billings.errors++;
           }
         }
       }

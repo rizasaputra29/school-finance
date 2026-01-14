@@ -314,13 +314,13 @@ export default function AdminPage() {
 
             {/* Upload Button */}
             <Button
-              className="w-full bg-slate-900 hover:bg-slate-800"
+              className="w-full border"
               disabled={!file || (file && !file.name.endsWith('.json') && selectedSheets.length === 0) || isUploading}
               onClick={handleUpload}
             >
               {isUploading ? (
                 <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white text-white" />
                   Mengimport...
                 </div>
               ) : (
@@ -391,9 +391,9 @@ export default function AdminPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between rounded-lg border border-red-200 bg-white p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-red-200 bg-white p-4">
               <div>
-                <h4 className="font-medium text-slate-900">Reset Database</h4>
+                <h4 className="font-medium text-slate-900">Reset Data</h4>
                 <p className="text-sm text-slate-500">
                   Hapus semua data (Cashflow, Akun, Siswa, Tagihan) secara permanen.
                 </p>
@@ -425,13 +425,13 @@ export default function AdminPage() {
                     
                     <div className="mt-4 space-y-3">
                       <Label htmlFor="confirm-reset" className="text-sm text-slate-700">
-                        Ketik <strong>RESET_DATABASE</strong> untuk konfirmasi:
+                        Ketik <strong>RESET_DATA</strong> untuk konfirmasi:
                       </Label>
                       <Input
                         id="confirm-reset"
                         value={resetConfirmation}
                         onChange={(e) => setResetConfirmation(e.target.value)}
-                        placeholder="RESET_DATABASE"
+                        placeholder="RESET_DATA"
                         className="border-red-300 focus:border-red-500 focus:ring-red-500/20"
                       />
                     </div>
@@ -443,7 +443,7 @@ export default function AdminPage() {
                       <Button 
                         variant="destructive" 
                         onClick={handleReset}
-                        disabled={resetConfirmation !== 'RESET_DATABASE' || isResetting}
+                        disabled={resetConfirmation !== 'RESET_DATA' || isResetting}
                       >
                         {isResetting ? 'Menghapus...' : 'Ya, Hapus Semua Data'}
                       </Button>

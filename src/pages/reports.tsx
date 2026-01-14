@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -17,8 +18,7 @@ import {
   FileSpreadsheet,
   FileText,
   Download,
-  TrendingUp,
-  TrendingDown,
+  Printer,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
@@ -34,6 +34,7 @@ export default function ReportsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -75,6 +76,10 @@ export default function ReportsPage() {
     }
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   // Calculate Laba Rugi
   const revenues = accounts.filter((a) => a.tipeAkun === 'Revenue');
   const expenses = accounts.filter((a) => a.tipeAkun === 'Expense');
@@ -90,11 +95,20 @@ export default function ReportsPage() {
   const totalLiabilities = liabilities.reduce((sum, a) => sum + a.saldo, 0);
   const totalEquity = equity.reduce((sum, a) => sum + a.saldo, 0);
 
+  const formatReportDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#c6ef4e]" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-gray-800" />
           <p className="text-sm text-gray-500">Memuat laporan...</p>
         </div>
       </div>
@@ -104,295 +118,339 @@ export default function ReportsPage() {
   return (
     <>
       <Head>
-        <title>Laporan - Keuangan Sekolah</title>
+        <title>Laporan Keuangan - Keuangan Sekolah</title>
       </Head>
 
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .print-area, .print-area * {
+            visibility: visible;
+          }
+          .print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Laporan Keuangan</h1>
-          <p className="text-gray-500">Laporan Laba Rugi dan Neraca</p>
+        {/* Header with Controls */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between no-print">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Laporan Keuangan</h1>
+            <p className="text-xs md:text-sm text-gray-500">Laporan Laba Rugi dan Neraca</p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-end gap-3">
+            <div className="w-full sm:w-auto">
+              <Label htmlFor="reportDate" className="text-xs">Tanggal Laporan</Label>
+              <Input
+                id="reportDate"
+                type="date"
+                value={reportDate}
+                onChange={(e) => setReportDate(e.target.value)}
+                className="w-full sm:w-40 text-xs"
+              />
+            </div>
+            <Button variant="outline" onClick={handlePrint} size="sm" className="w-full sm:w-auto text-xs md:text-sm">
+              <Printer className="mr-2 h-4 w-4" />
+              Cetak
+            </Button>
+          </div>
         </div>
 
-        {/* Laba Rugi */}
-        <Card className="animate-fade-in">
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <CardTitle className="text-lg">Laporan Laba Rugi</CardTitle>
-              <p className="text-sm text-slate-500">Periode berjalan</p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleExport('laba-rugi', 'excel')}
-                disabled={isExporting === 'laba-rugi-excel'}
-              >
-                <FileSpreadsheet className="mr-1 h-4 w-4" />
-                Excel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleExport('laba-rugi', 'pdf')}
-                disabled={isExporting === 'laba-rugi-pdf'}
-              >
-                <FileText className="mr-1 h-4 w-4" />
-                PDF
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Pendapatan */}
-            <div>
-              <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#c6ef4e]/30">
-                  <TrendingUp className="h-4 w-4 text-gray-700" />
-                </div>
-                <h3 className="font-semibold text-gray-700">PENDAPATAN</h3>
+        {/* Print Area */}
+        <div className="print-area space-y-8">
+          
+          {/* LAPORAN LABA RUGI */}
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <Card className="border-2 border-gray-800 shadow-none print:border print:shadow-none min-w-[700px] md:min-w-0">
+            <CardContent className="p-0">
+              {/* Report Header */}
+              <div className="border-b-2 border-gray-800 bg-white rounded-2xl p-3 md:p-6 text-center">
+                <h1 className="text-xl font-bold uppercase tracking-wide text-gray-900">
+                  YAYASAN AL MADEENA
+                </h1>
+                <h2 className="mt-1 text-lg font-bold uppercase text-gray-800">
+                  LAPORAN LABA RUGI
+                </h2>
+                <p className="mt-2 text-sm text-gray-600">
+                  Per {formatReportDate(reportDate)}
+                </p>
               </div>
-              {revenues.length > 0 ? (
-                <div className="overflow-x-auto -mx-1">
-                <Table className="min-w-[400px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Kode</TableHead>
-                      <TableHead>Nama Akun</TableHead>
-                      <TableHead className="text-right">Jumlah</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {revenues.map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell>
-                          <Badge variant="secondary">{a.kodeAkun}</Badge>
+
+              {/* Report Body */}
+              <div className="p-6 space-y-6">
+                {/* PENDAPATAN */}
+                <div>
+                  <h3 className="font-bold text-gray-900 border-b border-gray-400 pb-1 mb-2">
+                    I. PENDAPATAN
+                  </h3>
+                  <Table className="border-collapse">
+                    <TableBody>
+                      {revenues.map((a, idx) => (
+                        <TableRow key={a.id} className="border-0">
+                          <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
+                            {a.kodeAkun}
+                          </TableCell>
+                          <TableCell className="py-1 text-gray-800">
+                            {a.namaAkun}
+                          </TableCell>
+                          <TableCell className="py-1 text-right font-mono w-40">
+                            {formatCurrency(a.saldo)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2 border-gray-800 font-bold">
+                        <TableCell className="py-2" colSpan={2}>
+                          Total Pendapatan
                         </TableCell>
-                        <TableCell>{a.namaAkun}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(a.saldo)}
+                        <TableCell className="py-2 text-right font-mono">
+                          {formatCurrency(totalRevenue)}
                         </TableCell>
                       </TableRow>
-                    ))}
-                    <TableRow className="bg-[#c6ef4e]/20">
-                      <TableCell colSpan={2} className="font-semibold text-gray-900">
-                        Total Pendapatan
-                      </TableCell>
-                      <TableCell className="text-right font-bold text-gray-900">
-                        {formatCurrency(totalRevenue)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
                 </div>
-              ) : (
-                <p className="text-slate-400">Tidak ada data pendapatan</p>
-              )}
-            </div>
 
-            {/* Beban */}
-            <div>
-              <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gray-100">
-                  <TrendingDown className="h-4 w-4 text-gray-600" />
-                </div>
-                <h3 className="font-semibold text-gray-700">BEBAN</h3>
-              </div>
-              {expenses.length > 0 ? (
-                <div className="overflow-x-auto -mx-1">
-                <Table className="min-w-[400px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Kode</TableHead>
-                      <TableHead>Nama Akun</TableHead>
-                      <TableHead className="text-right">Jumlah</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {expenses.map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell>
-                          <Badge variant="secondary">{a.kodeAkun}</Badge>
+                {/* BEBAN */}
+                <div>
+                  <h3 className="font-bold text-gray-900 border-b border-gray-400 pb-1 mb-2">
+                    II. BEBAN
+                  </h3>
+                  <Table className="border-collapse">
+                    <TableBody>
+                      {expenses.map((a) => (
+                        <TableRow key={a.id} className="border-0">
+                          <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
+                            {a.kodeAkun}
+                          </TableCell>
+                          <TableCell className="py-1 text-gray-800">
+                            {a.namaAkun}
+                          </TableCell>
+                          <TableCell className="py-1 text-right font-mono w-40">
+                            {formatCurrency(a.saldo)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2 border-gray-800 font-bold">
+                        <TableCell className="py-2" colSpan={2}>
+                          Total Beban
                         </TableCell>
-                        <TableCell>{a.namaAkun}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(a.saldo)}
+                        <TableCell className="py-2 text-right font-mono">
+                          {formatCurrency(totalExpense)}
                         </TableCell>
                       </TableRow>
-                    ))}
-                    <TableRow className="bg-red-50">
-                      <TableCell colSpan={2} className="font-semibold">
-                        Total Beban
-                      </TableCell>
-                      <TableCell className="text-right font-bold text-red-600">
-                        {formatCurrency(totalExpense)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
                 </div>
-              ) : (
-                <p className="text-slate-400">Tidak ada data beban</p>
-              )}
-            </div>
 
-            {/* Laba/Rugi */}
-            <div
-              className={`rounded-xl p-4 ${labaRugi >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-lg font-semibold text-slate-700">
-                  LABA/RUGI BERSIH
-                </span>
-                <span
-                  className={`text-2xl font-bold ${labaRugi >= 0 ? 'text-emerald-600' : 'text-red-600'}`}
+                {/* LABA/RUGI BERSIH */}
+                <div className="border-t-4 border-double border-gray-800 pt-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-bold text-gray-900">
+                      {labaRugi >= 0 ? 'LABA BERSIH' : 'RUGI BERSIH'}
+                    </span>
+                    <span className="text-lg font-bold font-mono text-gray-900">
+                      {labaRugi >= 0 ? '' : '('}{formatCurrency(Math.abs(labaRugi))}{labaRugi >= 0 ? '' : ')'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Export Buttons */}
+              <div className="border-t border-gray-200 p-4 flex justify-end gap-2 no-print">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExport('laba-rugi', 'excel')}
+                  disabled={isExporting === 'laba-rugi-excel'}
                 >
-                  {formatCurrency(labaRugi)}
-                </span>
+                  <FileSpreadsheet className="mr-1 h-4 w-4" />
+                  Excel
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExport('laba-rugi', 'pdf')}
+                  disabled={isExporting === 'laba-rugi-pdf'}
+                >
+                  <FileText className="mr-1 h-4 w-4" />
+                  PDF
+                </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          </div>
 
-        {/* Neraca */}
-        <Card className="animate-fade-in" style={{ animationDelay: '200ms' }}>
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <CardTitle className="text-lg">Neraca</CardTitle>
-              <p className="text-sm text-slate-500">Posisi keuangan saat ini</p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleExport('neraca', 'excel')}
-                disabled={isExporting === 'neraca-excel'}
-              >
-                <FileSpreadsheet className="mr-1 h-4 w-4" />
-                Excel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleExport('neraca', 'pdf')}
-                disabled={isExporting === 'neraca-pdf'}
-              >
-                <FileText className="mr-1 h-4 w-4" />
-                PDF
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Aset */}
-              <div>
-                <h3 className="mb-3 font-semibold text-slate-700">ASET</h3>
-                {assets.length > 0 ? (
-                  <div className="space-y-2">
-                    {assets.map((a) => (
-                      <div
-                        key={a.id}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">{a.kodeAkun}</Badge>
-                          <span className="text-sm">{a.namaAkun}</span>
-                        </div>
-                        <span className="font-medium">
-                          {formatCurrency(a.saldo)}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between rounded-lg bg-blue-100 px-3 py-2">
-                      <span className="font-semibold">Total Aset</span>
-                      <span className="font-bold text-blue-600">
-                        {formatCurrency(totalAssets)}
-                      </span>
+          {/* NERACA */}
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <Card className="border-2 border-gray-800 shadow-none print:border print:shadow-none min-w-[700px] md:min-w-0">
+            <CardContent className="p-0">
+              {/* Report Header */}
+              <div className="border-b-2 border-gray-800 bg-white rounded-2xl p-3 md:p-6 text-center">
+                <h1 className="text-xl font-bold uppercase tracking-wide text-gray-900">
+                  YAYASAN AL MADEENA
+                </h1>
+                <h2 className="mt-1 text-lg font-bold uppercase text-gray-800">
+                  NERACA
+                </h2>
+                <p className="mt-2 text-sm text-gray-600">
+                  Per {formatReportDate(reportDate)}
+                </p>
+              </div>
+
+              {/* Report Body */}
+              <div className="p-6 space-y-6">
+                <div>
+                  
+                  {/* Left Column - AKTIVA */}
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-gray-900 border-b border-gray-400 pb-1 mb-2">
+                      AKTIVA
+                    </h3>
+                    
+                    <Table className="border-collapse">
+                      <TableBody>
+                        {assets.map((a) => (
+                          <TableRow key={a.id} className="border-0">
+                            <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
+                              {a.kodeAkun}
+                            </TableCell>
+                            <TableCell className="py-1 text-gray-800">
+                              {a.namaAkun}
+                            </TableCell>
+                            <TableCell className="py-1 text-right font-mono w-40">
+                              {formatCurrency(a.saldo)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    
+
+                    
+                    <div className="border-t-2 border-gray-800 font-bold pt-2 flex justify-between items-center">
+                      <span>TOTAL AKTIVA</span>
+                      <span className="font-mono">{formatCurrency(totalAssets)}</span>
                     </div>
                   </div>
-                ) : (
-                  <p className="text-slate-400">Tidak ada data aset</p>
-                )}
-              </div>
 
-              {/* Kewajiban & Ekuitas */}
-              <div className="space-y-6">
-                <div>
-                  <h3 className="mb-3 font-semibold text-slate-700">KEWAJIBAN</h3>
-                  {liabilities.length > 0 ? (
-                    <div className="space-y-2">
-                      {liabilities.map((a) => (
-                        <div
-                          key={a.id}
-                          className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{a.kodeAkun}</Badge>
-                            <span className="text-sm">{a.namaAkun}</span>
-                          </div>
-                          <span className="font-medium">
-                            {formatCurrency(a.saldo)}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between rounded-lg bg-red-100 px-3 py-2">
-                        <span className="font-semibold">Total Kewajiban</span>
-                        <span className="font-bold text-red-600">
-                          {formatCurrency(totalLiabilities)}
-                        </span>
+                  </div>
+
+                  {/* Right Column - PASIVA */}
+                  <div className="space-y-6">
+                    <h3 className="font-bold text-gray-900 border-b border-gray-400 pb-1 mb-2">
+                      PASIVA
+                    </h3>
+                    
+                    {/* Kewajiban */}
+                    <div>
+                      <h4 className="font-semibold text-gray-700 text-sm mb-2 pl-2">Kewajiban</h4>
+                      <Table className="border-collapse">
+                        <TableBody>
+                          {liabilities.map((a) => (
+                            <TableRow key={a.id} className="border-0">
+                              <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
+                                {a.kodeAkun}
+                              </TableCell>
+                              <TableCell className="py-1 text-gray-800">
+                                {a.namaAkun}
+                              </TableCell>
+                              <TableCell className="py-1 text-right font-mono w-40">
+                                {formatCurrency(a.saldo)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {liabilities.length === 0 && (
+                            <TableRow className="border-0">
+                              <TableCell colSpan={3} className="py-1 text-gray-400 italic text-sm pl-4">
+                                Tidak ada kewajiban
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                      <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between items-center px-2">
+                        <span className="font-semibold text-sm">Total Kewajiban</span>
+                        <span className="font-semibold font-mono text-sm">{formatCurrency(totalLiabilities)}</span>
                       </div>
                     </div>
-                  ) : (
-                    <p className="text-slate-400">Tidak ada data kewajiban</p>
-                  )}
-                </div>
 
-                <div>
-                  <h3 className="mb-3 font-semibold text-slate-700">EKUITAS</h3>
-                  {equity.length > 0 ? (
-                    <div className="space-y-2">
-                      {equity.map((a) => (
-                        <div
-                          key={a.id}
-                          className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{a.kodeAkun}</Badge>
-                            <span className="text-sm">{a.namaAkun}</span>
-                          </div>
-                          <span className="font-medium">
-                            {formatCurrency(a.saldo)}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between rounded-lg bg-purple-100 px-3 py-2">
-                        <span className="font-semibold">Total Ekuitas</span>
-                        <span className="font-bold text-purple-600">
-                          {formatCurrency(totalEquity)}
-                        </span>
+                    {/* Ekuitas */}
+                    <div>
+                      <h4 className="font-semibold text-gray-700 text-sm mb-2 pl-2">Ekuitas</h4>
+                      <Table className="border-collapse">
+                        <TableBody>
+                          {equity.map((a) => (
+                            <TableRow key={a.id} className="border-0">
+                              <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
+                                {a.kodeAkun}
+                              </TableCell>
+                              <TableCell className="py-1 text-gray-800">
+                                {a.namaAkun}
+                              </TableCell>
+                              <TableCell className="py-1 text-right font-mono w-40">
+                                {formatCurrency(a.saldo)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between items-center px-2">
+                        <span className="font-semibold text-sm">Total Ekuitas</span>
+                        <span className="font-semibold font-mono text-sm">{formatCurrency(totalEquity)}</span>
                       </div>
                     </div>
-                  ) : (
-                    <p className="text-slate-400">Tidak ada data ekuitas</p>
-                  )}
-                </div>
+                    
+                    <div className="border-t-4 border-double border-gray-800 pt-4 flex justify-between items-center">
+                      <span className="text-lg font-bold text-gray-900">TOTAL PASIVA</span>
+                      <span className="text-lg font-bold font-mono text-gray-900">{formatCurrency(totalLiabilities + totalEquity)}</span>
+                    </div>
+                  </div>
 
-                <div className="flex items-center justify-between rounded-lg bg-slate-200 px-3 py-2">
-                  <span className="font-semibold">Total Kewajiban + Ekuitas</span>
-                  <span className="font-bold">
-                    {formatCurrency(totalLiabilities + totalEquity)}
-                  </span>
-                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+
+              {/* Export Buttons */}
+              <div className="border-t border-gray-200 p-4 flex justify-end gap-2 no-print">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExport('neraca', 'excel')}
+                  disabled={isExporting === 'neraca-excel'}
+                >
+                  <FileSpreadsheet className="mr-1 h-4 w-4" />
+                  Excel
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExport('neraca', 'pdf')}
+                  disabled={isExporting === 'neraca-pdf'}
+                >
+                  <FileText className="mr-1 h-4 w-4" />
+                  PDF
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          </div>
+
+        </div>
 
         {/* Export All */}
-        <Card>
+        <Card className="no-print">
           <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6">
             <div>
-              <h3 className="font-semibold text-slate-900">Export Semua Laporan</h3>
-              <p className="text-sm text-slate-500">
+              <h3 className="font-semibold text-gray-900">Export Semua Laporan</h3>
+              <p className="text-sm text-gray-500">
                 Download Laba Rugi, Neraca, dan Cashflow dalam satu file
               </p>
             </div>

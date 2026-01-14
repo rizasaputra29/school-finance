@@ -64,7 +64,27 @@ const COLORS = ['#c6ef4e', '#94a3b8', '#64748b', '#e2e8f0', '#cbd5e1'];
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'year'>('month');
+  
+  // Generate last 6 months for dropdown
+  const getLast6Months = () => {
+    const months = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      months.push({
+        value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        label: `${monthNames[date.getMonth()]} ${date.getFullYear()}`,
+        year: date.getFullYear(),
+        month: date.getMonth()
+      });
+    }
+    return months;
+  };
+  
+  const last6Months = getLast6Months();
+  const [selectedMonth, setSelectedMonth] = useState(last6Months[0].value);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -83,78 +103,41 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  // Client-side filtering for chart data
+  // Client-side filtering for chart data - show daily breakdown for selected month
   const chartData = useMemo(() => {
     if (!data?.cashflows) return [];
     
     const cashflows = data.cashflows;
-    const now = new Date();
+    const [year, month] = selectedMonth.split('-').map(Number);
     
-    if (chartPeriod === 'week') {
-      // Last 7 days
-      const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-      const result = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - i);
-        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-        
-        const dayCashflows = cashflows.filter((cf) => {
-          const cfDate = new Date(cf.tanggal);
-          return cfDate >= dayStart && cfDate < dayEnd;
-        });
-
-        result.push({
-          month: days[date.getDay()],
-          debit: dayCashflows.reduce((sum, cf) => sum + cf.debit, 0),
-          kredit: dayCashflows.reduce((sum, cf) => sum + cf.kredit, 0),
-        });
-      }
-      return result;
-    } else if (chartPeriod === 'month') {
-      // Last 4 weeks
-      const result = [];
-      for (let i = 3; i >= 0; i--) {
-        const weekEnd = new Date(now);
-        weekEnd.setDate(weekEnd.getDate() - (i * 7));
-        const weekStart = new Date(weekEnd);
-        weekStart.setDate(weekStart.getDate() - 7);
-        
-        const weekCashflows = cashflows.filter((cf) => {
-          const cfDate = new Date(cf.tanggal);
-          return cfDate >= weekStart && cfDate <= weekEnd;
-        });
-
-        result.push({
-          month: `Minggu ${4 - i}`,
-          debit: weekCashflows.reduce((sum, cf) => sum + cf.debit, 0),
-          kredit: weekCashflows.reduce((sum, cf) => sum + cf.kredit, 0),
-        });
-      }
-      return result;
-    } else {
-      // Last 12 months
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-      const result = [];
-      for (let i = 11; i >= 0; i--) {
-        const date = new Date(now);
-        date.setMonth(date.getMonth() - i);
-        
-        const monthCashflows = cashflows.filter((cf) => {
-          const cfDate = new Date(cf.tanggal);
-          return cfDate.getMonth() === date.getMonth() && cfDate.getFullYear() === date.getFullYear();
-        });
-
-        result.push({
-          month: months[date.getMonth()],
-          debit: monthCashflows.reduce((sum, cf) => sum + cf.debit, 0),
-          kredit: monthCashflows.reduce((sum, cf) => sum + cf.kredit, 0),
-        });
-      }
-      return result;
-    }
-  }, [data?.cashflows, chartPeriod]);
+    // Get number of days in the selected month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    // Group by week (4 weeks per month)
+    const weeks = [
+      { start: 1, end: 7, label: 'Minggu 1' },
+      { start: 8, end: 14, label: 'Minggu 2' },
+      { start: 15, end: 21, label: 'Minggu 3' },
+      { start: 22, end: daysInMonth, label: 'Minggu 4' },
+    ];
+    
+    return weeks.map(week => {
+      const weekCashflows = cashflows.filter((cf) => {
+        const cfDate = new Date(cf.tanggal);
+        const cfDay = cfDate.getDate();
+        return cfDate.getFullYear() === year && 
+               cfDate.getMonth() + 1 === month && 
+               cfDay >= week.start && 
+               cfDay <= week.end;
+      });
+      
+      return {
+        month: week.label,
+        debit: weekCashflows.reduce((sum, cf) => sum + cf.debit, 0),
+        kredit: weekCashflows.reduce((sum, cf) => sum + cf.kredit, 0),
+      };
+    });
+  }, [data?.cashflows, selectedMonth]);
 
   if (isLoading) {
     return (
@@ -191,31 +174,32 @@ export default function Dashboard() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Ringkasan keuangan sekolah</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard</h1>
+            <p className="text-xs md:text-sm text-gray-500">Ringkasan keuangan</p>
           </div>
           <Link href="/cashflow">
-            <Button size="lg" className="w-full sm:w-auto">
-              <Plus className="h-4 w-4" />
-              Tambah Transaksi
+            <Button size="sm" className="text-xs md:text-sm">
+              <Plus className="h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Tambah Transaksi</span>
+              <span className="sm:hidden">Tambah</span>
             </Button>
           </Link>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 md:gap-4 grid-cols-2 lg:grid-cols-4">
           {/* Saldo */}
           <Card className="col-span-2 lg:col-span-1 bg-[#c6ef4e] border-0">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-xl bg-white/30 flex items-center justify-center">
-                  <Wallet className="h-6 w-6 text-gray-900" />
+            <CardContent className="p-3 md:p-5">
+              <div className="flex items-center gap-2 md:gap-3">
+                <div className="h-10 w-10 md:h-12 md:w-12 rounded-lg md:rounded-xl bg-white/30 flex items-center justify-center">
+                  <Wallet className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Total Saldo</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(summary.saldo)}</p>
+                  <p className="text-xs md:text-sm font-medium text-gray-700">Total Saldo</p>
+                  <p className="text-lg md:text-2xl font-bold text-gray-900">{formatCurrency(summary.saldo)}</p>
                 </div>
               </div>
             </CardContent>
@@ -223,14 +207,14 @@ export default function Dashboard() {
 
           {/* Pendapatan */}
           <Card className="bg-white">
-            <CardContent className="p-5">
+            <CardContent className="p-3 md:p-5">
               <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Pendapatan</p>
-                  <p className="text-xl font-bold text-gray-900 mt-1">{formatCurrency(summary.totalDebit)}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs md:text-sm font-medium text-gray-500">Pendapatan</p>
+                  <p className="text-sm md:text-xl font-bold text-gray-900 mt-0.5 truncate">{formatCurrency(summary.totalDebit)}</p>
                 </div>
-                <div className="h-10 w-10 rounded-xl bg-green-50 flex items-center justify-center">
-                  <ArrowUpRight className="h-5 w-5 text-green-600" />
+                <div className="h-8 w-8 md:h-10 md:w-10 rounded-lg bg-green-50 flex items-center justify-center shrink-0 ml-2">
+                  <ArrowUpRight className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
                 </div>
               </div>
             </CardContent>
@@ -238,14 +222,14 @@ export default function Dashboard() {
 
           {/* Pengeluaran */}
           <Card className="bg-white">
-            <CardContent className="p-5">
+            <CardContent className="p-3 md:p-5">
               <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Pengeluaran</p>
-                  <p className="text-xl font-bold text-gray-900 mt-1">{formatCurrency(summary.totalKredit)}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs md:text-sm font-medium text-gray-500">Pengeluaran</p>
+                  <p className="text-sm md:text-xl font-bold text-gray-900 mt-0.5 truncate">{formatCurrency(summary.totalKredit)}</p>
                 </div>
-                <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center">
-                  <ArrowDownRight className="h-5 w-5 text-red-500" />
+                <div className="h-8 w-8 md:h-10 md:w-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0 ml-2">
+                  <ArrowDownRight className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
                 </div>
               </div>
             </CardContent>
@@ -253,14 +237,14 @@ export default function Dashboard() {
 
           {/* Total Siswa */}
           <Card className="bg-white">
-            <CardContent className="p-5">
+            <CardContent className="p-3 md:p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-500">Total Siswa</p>
-                  <p className="text-xl font-bold text-gray-900 mt-1">{summary.totalStudents}</p>
+                  <p className="text-xs md:text-sm font-medium text-gray-500">Total Siswa</p>
+                  <p className="text-sm md:text-xl font-bold text-gray-900 mt-0.5">{summary.totalStudents}</p>
                 </div>
-                <div className="h-10 w-10 rounded-xl bg-gray-100 flex items-center justify-center">
-                  <Users className="h-5 w-5 text-black" />
+                <div className="h-8 w-8 md:h-10 md:w-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                  <Users className="h-4 w-4 md:h-5 md:w-5 text-black" />
                 </div>
               </div>
             </CardContent>
@@ -268,64 +252,50 @@ export default function Dashboard() {
         </div>
 
         {/* Main Grid */}
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-3 md:gap-6 lg:grid-cols-3">
           {/* Left Column - Chart & Transactions */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-3 md:space-y-6">
             {/* Trend Chart */}
             <Card className="bg-white">
-              <CardHeader className="pb-4">
-                <div className="flex flex-col gap-4">
+              <CardHeader className="pb-2 md:pb-4 px-3 md:px-6">
+                <div className="flex flex-col gap-2 md:gap-4">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg font-semibold text-gray-900">Arus Kas</CardTitle>
-                    <div className="flex gap-1 border border-gray-200 p-1 rounded-xl bg-gray-50">
-                      <button
-                        onClick={() => setChartPeriod('week')}
-                        className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                          chartPeriod === 'week' 
-                            ? 'bg-white text-gray-900 shadow-sm border border-gray-200' 
-                            : 'text-gray-500 hover:text-gray-900'
-                        }`}
+                    <CardTitle className="text-base md:text-lg font-semibold text-gray-900">Arus Kas</CardTitle>
+                    <div className="relative">
+                      <select
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="appearance-none pl-3 pr-8 py-1.5 md:pl-4 md:pr-10 md:py-2 text-xs md:text-sm font-medium rounded-lg md:rounded-xl border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-2 focus:ring-[#c6ef4e]/50 focus:border-[#c6ef4e] focus:bg-white outline-none cursor-pointer transition-all shadow-sm"
                       >
-                        7 Hari
-                      </button>
-                      <button
-                        onClick={() => setChartPeriod('month')}
-                        className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                          chartPeriod === 'month' 
-                            ? 'bg-white text-gray-900 shadow-sm border border-gray-200' 
-                            : 'text-gray-500 hover:text-gray-900'
-                        }`}
-                      >
-                        30 Hari
-                      </button>
-                      <button
-                        onClick={() => setChartPeriod('year')}
-                        className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                          chartPeriod === 'year' 
-                            ? 'bg-white text-gray-900 shadow-sm border border-gray-200' 
-                            : 'text-gray-500 hover:text-gray-900'
-                        }`}
-                      >
-                        12 Bulan
-                      </button>
+                        {last6Months.map((month) => (
+                          <option key={month.value} value={month.value}>
+                            {month.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg className="w-3 h-3 md:w-4 md:h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6 text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-[#c6ef4e]" />
+                  <div className="flex items-center gap-4 md:gap-6 text-xs md:text-sm">
+                    <div className="flex items-center gap-1.5 md:gap-2">
+                      <div className="h-2.5 w-2.5 md:h-3 md:w-3 rounded-full bg-[#c6ef4e]" />
                       <span className="text-gray-600">Pendapatan</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-gray-400" />
+                    <div className="flex items-center gap-1.5 md:gap-2">
+                      <div className="h-2.5 w-2.5 md:h-3 md:w-3 rounded-full bg-gray-400" />
                       <span className="text-gray-600">Pengeluaran</span>
                     </div>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
-                <div className="h-[300px]">
+              <CardContent className="pt-0 px-2 md:px-6">
+                <div style={{ width: '100%', height: 200 }} className="md:h-[300px]!">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <AreaChart data={chartData} margin={{ top: 10, right: 5, left: -15, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorDebit" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#c6ef4e" stopOpacity={0.4}/>
@@ -340,17 +310,17 @@ export default function Dashboard() {
                       <XAxis 
                         dataKey="month" 
                         stroke="#94a3b8" 
-                        fontSize={12} 
+                        fontSize={10} 
                         tickLine={false}
                         axisLine={false}
-                        dy={10}
+                        dy={5}
                       />
                       <YAxis
                         stroke="#94a3b8"
-                        fontSize={11}
+                        fontSize={9}
                         tickLine={false}
                         axisLine={false}
-                        width={60}
+                        width={45}
                         tickFormatter={(value) =>
                           new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(value)
                         }
@@ -358,11 +328,12 @@ export default function Dashboard() {
                       <Tooltip
                         formatter={(value) => formatCurrency(value as number)}
                         contentStyle={{
-                          borderRadius: '12px',
+                          borderRadius: '8px',
                           border: '1px solid #e2e8f0',
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                           backgroundColor: 'white',
-                          padding: '12px 16px',
+                          padding: '8px 12px',
+                          fontSize: '12px',
                         }}
                         labelStyle={{ color: '#374151', fontWeight: 600, marginBottom: 4 }}
                       />
@@ -371,7 +342,7 @@ export default function Dashboard() {
                         dataKey="debit" 
                         name="Pendapatan"
                         stroke="#c6ef4e" 
-                        strokeWidth={2.5}
+                        strokeWidth={2}
                         fill="url(#colorDebit)" 
                       />
                       <Area 
@@ -379,7 +350,7 @@ export default function Dashboard() {
                         dataKey="kredit" 
                         name="Pengeluaran"
                         stroke="#94a3b8" 
-                        strokeWidth={2}
+                        strokeWidth={1.5}
                         fill="url(#colorKredit)" 
                       />
                     </AreaChart>
@@ -401,29 +372,29 @@ export default function Dashboard() {
                   </Link>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
-                <div className="space-y-1">
+              <CardContent className="pt-0 px-3 md:px-6">
+                <div className="space-y-0">
                   {recentTransactions.slice(0, 5).map((tx) => (
                     <div 
                       key={tx.id} 
-                      className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                      className="flex items-center justify-between py-2 md:py-3 border-b border-gray-100 last:border-0"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+                      <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+                        <div className={`h-8 w-8 md:h-10 md:w-10 rounded-lg md:rounded-xl flex items-center justify-center shrink-0 ${
                           tx.debit > 0 ? 'bg-[#c6ef4e]/20' : 'bg-gray-100'
                         }`}>
                           {tx.debit > 0 ? (
-                            <TrendingUp className="h-5 w-5 text-gray-700" />
+                            <TrendingUp className="h-4 w-4 md:h-5 md:w-5 text-gray-700" />
                           ) : (
-                            <TrendingDown className="h-5 w-5 text-gray-500" />
+                            <TrendingDown className="h-4 w-4 md:h-5 md:w-5 text-gray-500" />
                           )}
                         </div>
-                        <div>
-                          <p className="font-medium text-sm text-gray-900">{tx.keterangan}</p>
-                          <p className="text-xs text-gray-400">{formatDate(tx.tanggal)}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-xs md:text-sm text-gray-900 truncate">{tx.keterangan}</p>
+                          <p className="text-[10px] md:text-xs text-gray-400">{formatDate(tx.tanggal)}</p>
                         </div>
                       </div>
-                      <p className={`font-semibold text-sm ${tx.debit > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                      <p className={`font-semibold text-xs md:text-sm shrink-0 ml-2 ${tx.debit > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
                         {tx.debit > 0 ? '+' : '-'} {formatCurrency(tx.debit > 0 ? tx.debit : tx.kredit)}
                       </p>
                     </div>
@@ -439,7 +410,7 @@ export default function Dashboard() {
           </div>
 
           {/* Right Column */}
-          <div className="space-y-6">
+          <div className="space-y-3 md:space-y-6">
 
             {/* Student Payment Status */}
             <Card className="bg-white">

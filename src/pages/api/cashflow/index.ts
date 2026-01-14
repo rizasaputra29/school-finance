@@ -8,7 +8,7 @@ export default async function handler(
   try {
     switch (req.method) {
       case 'GET': {
-        const { page = '1', limit = '10', startDate, endDate, kodeAkun, type } = req.query;
+        const { page = '1', limit = '10', startDate, endDate, kodeAkun, type, search } = req.query;
         const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
         const where: Record<string, unknown> = {};
@@ -27,6 +27,14 @@ export default async function handler(
           where.debit = { gt: 0 };
         } else if (type === 'expense') {
           where.kredit = { gt: 0 };
+        }
+        
+        // Search by keterangan or kodeAkun
+        if (search) {
+          where.OR = [
+            { keterangan: { contains: search as string, mode: 'insensitive' } },
+            { kodeAkun: { contains: search as string, mode: 'insensitive' } },
+          ];
         }
 
         const [cashflows, total] = await Promise.all([

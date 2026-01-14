@@ -88,7 +88,8 @@ export default function CashflowPage() {
   const [selectedCashflow, setSelectedCashflow] = useState<Cashflow | null>(null);
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [error, setError] = useState('');
-
+  const [accountSearch, setAccountSearch] = useState('');
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const fetchAccounts = async () => {
     try {
       const res = await fetch('/api/accounts');
@@ -108,6 +109,7 @@ export default function CashflowPage() {
       if (startDate) url += `&startDate=${startDate}`;
       if (endDate) url += `&endDate=${endDate}`;
       if (typeFilter !== 'all') url += `&type=${typeFilter}`;
+      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -129,7 +131,7 @@ export default function CashflowPage() {
 
   useEffect(() => {
     fetchData();
-  }, [typeFilter, startDate, endDate]);
+  }, [typeFilter, startDate, endDate, searchTerm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -277,22 +279,67 @@ export default function CashflowPage() {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="kodeAkun">Akun</Label>
-          <select
-            id="kodeAkun"
-            value={formData.kodeAkun}
-            onChange={(e) =>
-              setFormData({ ...formData, kodeAkun: e.target.value })
-            }
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            required
-          >
-            <option value="">-- Pilih Akun --</option>
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.kodeAkun}>
-                {acc.kodeAkun} - {acc.namaAkun}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <Input
+              type="text"
+              placeholder="Cari kode atau nama akun..."
+              value={accountSearch}
+              onChange={(e) => setAccountSearch(e.target.value)}
+              onFocus={() => setShowAccountDropdown(true)}
+              onBlur={() => setTimeout(() => setShowAccountDropdown(false), 200)}
+            />
+            {showAccountDropdown && (
+              <div className="absolute z-10 left-0 right-0 mt-1 max-h-64 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
+                {accounts
+                  .filter((acc) =>
+                    accountSearch === '' ||
+                    acc.kodeAkun.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                    acc.namaAkun.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                    acc.tipeAkun.toLowerCase().includes(accountSearch.toLowerCase())
+                  )
+                  .map((acc) => (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, kodeAkun: acc.kodeAkun });
+                        setAccountSearch('');
+                        setShowAccountDropdown(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors border-b border-gray-50 last:border-b-0 ${
+                        formData.kodeAkun === acc.kodeAkun ? 'bg-[#c6ef4e]/30 font-medium' : ''
+                      }`}
+                    >
+                      <span className="font-mono font-medium">{acc.kodeAkun}</span> - {acc.namaAkun}
+                      <span className="ml-2 text-xs text-gray-400">({acc.tipeAkun})</span>
+                    </button>
+                  ))}
+                {accounts.filter((acc) =>
+                  accountSearch === '' ||
+                  acc.kodeAkun.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                  acc.namaAkun.toLowerCase().includes(accountSearch.toLowerCase())
+                ).length === 0 && (
+                  <p className="px-3 py-2 text-sm text-gray-500">Tidak ada akun ditemukan</p>
+                )}
+              </div>
+            )}
+          </div>
+          {formData.kodeAkun && (
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="secondary" className="font-mono">{formData.kodeAkun}</Badge>
+              <span className="text-sm text-slate-600">
+                {accounts.find(a => a.kodeAkun === formData.kodeAkun)?.namaAkun}
+              </span>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, kodeAkun: '' })}
+                className="text-xs text-red-500 hover:text-red-700"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <input type="hidden" name="kodeAkun" value={formData.kodeAkun} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="kategori">Kategori</Label>
@@ -361,26 +408,31 @@ export default function CashflowPage() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Cashflow</h1>
-            <p className="text-gray-500">Kelola arus kas masuk dan keluar</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Cashflow</h1>
+            <p className="text-xs md:text-sm text-gray-500">Kelola arus kas masuk dan keluar</p>
           </div>
 
           {isAdmin && (
             <Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <Dialog.Trigger asChild>
-                <Button onClick={() => {
-                  setFormData(INITIAL_FORM);
-                  setError('');
-                }}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Tambah Transaksi
+                <Button 
+                  onClick={() => {
+                    setFormData(INITIAL_FORM);
+                    setError('');
+                  }}
+                  size="sm"
+                  className="text-xs md:text-sm"
+                >
+                  <Plus className="h-4 w-4 md:mr-2" />
+                  <span className="hidden md:inline">Tambah Transaksi</span>
+                  <span className="md:hidden">Tambah</span>
                 </Button>
               </Dialog.Trigger>
               <Dialog.Portal>
                 <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-                <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
+                <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-4 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
                   <Dialog.Title className="text-lg font-semibold text-slate-900">
                     Tambah Transaksi
                   </Dialog.Title>
@@ -395,15 +447,15 @@ export default function CashflowPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20">
-                <TrendingUp className="h-6 w-6 text-gray-700" />
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20 shrink-0">
+                <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-gray-700" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Total Pendapatan</p>
-                <p className="text-xl font-bold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Pendapatan</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
                   {formatCurrency(summary.totalDebit)}
                 </p>
               </div>
@@ -411,27 +463,27 @@ export default function CashflowPage() {
           </Card>
 
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
-                <TrendingDown className="h-6 w-6 text-gray-600" />
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-gray-100 shrink-0">
+                <TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-gray-600" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Total Pengeluaran</p>
-                <p className="text-xl font-bold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Pengeluaran</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
                   {formatCurrency(summary.totalKredit)}
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-[#c6ef4e] shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/50">
-                <Wallet className="h-6 w-6 text-gray-900" />
+          <Card className="bg-[#c6ef4e] shadow-sm col-span-2 md:col-span-1">
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
+                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-700">Saldo Akhir</p>
-                <p className={`text-xl font-bold ${summary.saldo >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Saldo Akhir</p>
+                <p className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
                   {formatCurrency(summary.saldo)}
                 </p>
               </div>
@@ -442,64 +494,82 @@ export default function CashflowPage() {
         {/* Search & Filters */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-              <div className="relative flex-1">
+            <div className="flex flex-col gap-4">
+              <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   type="text"
                   placeholder="Cari keterangan, kode akun, atau kategori..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 w-full"
                 />
               </div>
-              <div className="flex flex-wrap gap-3">
-                <div className="space-y-1">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="space-y-1 min-w-[200px]">
                   <Label className="text-xs text-gray-500">Tipe Transaksi</Label>
-                  <div className="flex gap-1">
-                    <Button
-                      variant={typeFilter === 'all' ? 'default' : 'outline'}
-                      size="sm"
+                  <div className="flex w-full rounded-lg border border-gray-200 p-1">
+                    <button
                       onClick={() => setTypeFilter('all')}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                        typeFilter === 'all' 
+                          ? 'bg-gray-900 text-white shadow-sm' 
+                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
                     >
                       Semua
-                    </Button>
-                    <Button
-                      variant={typeFilter === 'income' ? 'default' : 'outline'}
-                      size="sm"
+                    </button>
+                    <button
                       onClick={() => setTypeFilter('income')}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                        typeFilter === 'income' 
+                          ? 'bg-[#c6ef4e] text-gray-900 shadow-sm' 
+                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
                     >
-                      Pendapatan
-                    </Button>
-                    <Button
-                      variant={typeFilter === 'expense' ? 'default' : 'outline'}
-                      size="sm"
+                      Masuk
+                    </button>
+                    <button
                       onClick={() => setTypeFilter('expense')}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                        typeFilter === 'expense' 
+                          ? 'bg-red-100 text-red-700 shadow-sm' 
+                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
                     >
-                      Pengeluaran
-                    </Button>
+                      Keluar
+                    </button>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-500">Dari Tanggal</Label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-40"
-                  />
+                
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="space-y-1 flex-1 sm:flex-none">
+                    <Label className="text-xs text-gray-500">Dari</Label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-40 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1 flex-1 sm:flex-none">
+                    <Label className="text-xs text-gray-500">Sampai</Label>
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-40 text-xs"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-gray-500">Sampai Tanggal</Label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-40"
-                  />
-                </div>
+
                 {(typeFilter !== 'all' || startDate || endDate) && (
-                  <Button variant="outline" size="sm" onClick={clearFilters} className="self-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={clearFilters} 
+                    className="self-end w-full sm:w-auto mt-2 sm:mt-0"
+                  >
                     <Filter className="mr-1 h-3 w-3" />
                     Reset
                   </Button>
@@ -544,7 +614,7 @@ export default function CashflowPage() {
                 <TableBody>
                   {filteredCashflows.map((cf) => (
                     <TableRow key={cf.id}>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium whitespace-nowrap">
                         {formatShortDate(cf.tanggal)}
                       </TableCell>
                       <TableCell>
@@ -611,26 +681,31 @@ export default function CashflowPage() {
 
             {/* Pagination */}
             {pagination.totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-sm text-slate-500">
+              <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
+                <p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
                   Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{' '}
                   {Math.min(pagination.page * pagination.limit, pagination.total)} dari{' '}
                   {pagination.total} transaksi
                 </p>
-                <div className="flex gap-2">
+                <div className="flex justify-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={pagination.page === 1}
                     onClick={() => fetchData(pagination.page - 1)}
+                    className="w-10 p-0"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
+                  <span className="flex items-center px-4 text-sm font-medium border border-gray-200 rounded-md">
+                    {pagination.page} / {pagination.totalPages}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={pagination.page === pagination.totalPages}
                     onClick={() => fetchData(pagination.page + 1)}
+                    className="w-10 p-0"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>

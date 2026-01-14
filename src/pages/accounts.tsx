@@ -304,21 +304,26 @@ export default function AccountsPage() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-6">
+        <div className="flex items-center justify-between gap-2 pb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Daftar Akun</h1>
-            <p className="text-gray-500">Bagan akun untuk laporan keuangan</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Daftar Akun</h1>
+            <p className="text-xs md:text-sm text-gray-500">Bagan akun untuk laporan keuangan</p>
           </div>
 
           {isAdmin && (
             <Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <Dialog.Trigger asChild>
-                <Button onClick={() => {
-                  setFormData(INITIAL_FORM);
-                  setError('');
-                }}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Tambah Akun
+                <Button 
+                  onClick={() => {
+                    setFormData(INITIAL_FORM);
+                    setError('');
+                  }}
+                  size="sm"
+                  className="text-xs md:text-sm"
+                >
+                  <Plus className="h-4 w-4 md:mr-2" />
+                  <span className="hidden md:inline">Tambah Akun</span>
+                  <span className="md:hidden">Tambah</span>
                 </Button>
               </Dialog.Trigger>
               <Dialog.Portal>
@@ -374,18 +379,18 @@ export default function AccountsPage() {
                     {typeAccounts.map((account) => (
                       <div
                         key={account.id}
-                        className="flex items-center justify-between p-4 transition-colors hover:bg-slate-50"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 gap-3 sm:gap-0 transition-colors hover:bg-slate-50"
                       >
-                        <div className="flex items-center gap-4">
-                          <span className="font-mono text-sm font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                        <div className="flex items-center gap-3 sm:gap-4">
+                          <span className="font-mono text-xs sm:text-sm font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
                             {account.kodeAkun}
                           </span>
-                          <span className="font-medium text-slate-700">
+                          <span className="font-medium text-sm sm:text-base text-slate-700">
                             {account.namaAkun}
                           </span>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <span className="font-semibold text-slate-900">
+                        <div className="flex items-center justify-between sm:justify-end gap-4 pl-11 sm:pl-0">
+                          <span className="font-semibold text-sm sm:text-base text-slate-900">
                             {formatCurrency(account.saldo)}
                           </span>
                           {isAdmin && (

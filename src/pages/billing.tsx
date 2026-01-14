@@ -64,7 +64,7 @@ interface Summary {
   countLunas: number;
 }
 
-const JENIS_BIAYA = ['SPP', 'Uang Pangkal', 'Seragam', 'Buku', 'Kegiatan', 'Lainnya'];
+const JENIS_BIAYA = ['Pendaftaran', 'Gedung', 'Kegiatan', 'Seragam', 'ATK', 'SPP'];
 
 export default function BillingPage() {
   const { isAdmin } = useAuth();
@@ -116,6 +116,7 @@ export default function BillingPage() {
     try {
       let url = `/api/billing?page=${page}&limit=10`;
       if (statusFilter) url += `&statusBayar=${statusFilter}`;
+      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -134,7 +135,7 @@ export default function BillingPage() {
   useEffect(() => {
     fetchStudents();
     fetchData();
-  }, [statusFilter]);
+  }, [statusFilter, searchTerm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,18 +211,19 @@ export default function BillingPage() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Biaya Siswa</h1>
-            <p className="text-gray-500">Kelola tagihan dan pembayaran siswa</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Biaya Siswa</h1>
+            <p className="text-xs md:text-sm text-gray-500">Kelola tagihan dan pembayaran siswa</p>
           </div>
 
           {isAdmin && (
             <Dialog.Root open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <Dialog.Trigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Tambah Tagihan
+                <Button size="sm" className="text-xs md:text-sm">
+                  <Plus className="h-4 w-4 md:mr-2" />
+                  <span className="hidden md:inline">Tambah Tagihan</span>
+                  <span className="md:hidden">Tambah</span>
                 </Button>
               </Dialog.Trigger>
               <Dialog.Portal>
@@ -377,15 +379,15 @@ export default function BillingPage() {
           )}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
           <Card className="bg-[#c6ef4e] shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/50">
-                <Receipt className="h-6 w-6 text-gray-900" />
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
+                <Receipt className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-700">Total Tagihan</p>
-                <p className="text-2xl font-bold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Total Tagihan</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
                   {formatCurrency(summary.totalTagihan)}
                 </p>
               </div>
@@ -393,43 +395,43 @@ export default function BillingPage() {
           </Card>
 
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50">
-                <Clock className="h-6 w-6 text-amber-600" />
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-amber-50 shrink-0">
+                <Clock className="h-5 w-5 md:h-6 md:w-6 text-amber-600" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Belum Lunas</p>
-                <p className="text-2xl font-bold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Belum Lunas</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
                   {formatCurrency(summary.totalBelumLunas)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">{summary.countBelumLunas} tagihan</p>
+                <p className="text-[10px] text-gray-400 mt-0.5 md:mt-1 truncate">{summary.countBelumLunas} tagihan</p>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20">
-                <CheckCircle className="h-6 w-6 text-gray-700" />
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20 shrink-0">
+                <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-gray-700" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Lunas</p>
-                <p className="text-2xl font-bold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Lunas</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
                   {formatCurrency(summary.totalLunas)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">{summary.countLunas} tagihan</p>
+                <p className="text-[10px] text-gray-400 mt-0.5 md:mt-1 truncate">{summary.countLunas} tagihan</p>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
-                <CreditCard className="h-6 w-6 text-gray-600" />
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-gray-100 shrink-0">
+                <CreditCard className="h-5 w-5 md:h-6 md:w-6 text-gray-600" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Total Transaksi</p>
-                <p className="text-2xl font-bold text-gray-900">{pagination.total}</p>
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Transaksi</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">{pagination.total}</p>
               </div>
             </CardContent>
           </Card>
@@ -438,38 +440,43 @@ export default function BillingPage() {
         {/* Search */}
         <Card>
           <CardContent className="p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
-                type="text"
-                placeholder="Cari nama siswa, NIS, atau jenis biaya..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button
-                variant={statusFilter === '' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('')}
-              >
-                Semua
-              </Button>
-              <Button
-                variant={statusFilter === 'Lunas' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('Lunas')}
-              >
-                Lunas
-              </Button>
-              <Button
-                variant={statusFilter === 'Belum Lunas' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('Belum Lunas')}
-              >
-                Belum Lunas
-              </Button>
+            <div className="flex flex-col gap-3">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="Cari nama siswa, NIS, atau jenis biaya..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 w-full"
+                />
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 hide-scrollbar">
+                <Button
+                  variant={statusFilter === '' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setStatusFilter('')}
+                  className="whitespace-nowrap"
+                >
+                  Semua
+                </Button>
+                <Button
+                  variant={statusFilter === 'Lunas' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setStatusFilter('Lunas')}
+                  className="whitespace-nowrap"
+                >
+                  Lunas
+                </Button>
+                <Button
+                  variant={statusFilter === 'Belum Lunas' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setStatusFilter('Belum Lunas')}
+                  className="whitespace-nowrap"
+                >
+                  Belum Lunas
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -556,26 +563,31 @@ export default function BillingPage() {
 
             {/* Pagination */}
             {pagination.totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-sm text-slate-500">
+              <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
+                <p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
                   Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{' '}
                   {Math.min(pagination.page * pagination.limit, pagination.total)} dari{' '}
                   {pagination.total} tagihan
                 </p>
-                <div className="flex gap-2">
+                <div className="flex justify-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={pagination.page === 1}
                     onClick={() => fetchData(pagination.page - 1)}
+                    className="w-10 p-0"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
+                  <span className="flex items-center px-4 text-sm font-medium border border-gray-200 rounded-md">
+                    {pagination.page} / {pagination.totalPages}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={pagination.page === pagination.totalPages}
                     onClick={() => fetchData(pagination.page + 1)}
+                    className="w-10 p-0"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>

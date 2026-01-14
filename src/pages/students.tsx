@@ -43,6 +43,9 @@ interface Pagination {
   totalPages: number;
 }
 
+// Class options matching Excel structure
+const KELAS_OPTIONS = ['PLAYGROUP', 'KINDERGARTEN'];
+
 const INITIAL_FORM = {
   nis: '',
   nama: '',
@@ -82,6 +85,7 @@ export default function StudentsPage() {
       let url = `/api/students?page=${page}&limit=10`;
       if (statusFilter) url += `&statusBayar=${statusFilter}`;
       if (showInactive) url += `&status=Inactive`;
+      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
       
       const res = await fetch(url);
       if (res.ok) {
@@ -98,7 +102,7 @@ export default function StudentsPage() {
 
   useEffect(() => {
     fetchData();
-  }, [statusFilter, showInactive]);
+  }, [statusFilter, showInactive, searchTerm]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,30 +208,31 @@ export default function StudentsPage() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Data Siswa</h1>
-            <p className="text-gray-500">Kelola data siswa dan status pembayaran</p>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Data Siswa</h1>
+            <p className="text-xs md:text-sm text-gray-500">Kelola data siswa dan status pembayaran</p>
           </div>
 
           {isAdmin && (
-            <Button onClick={() => setIsCreateOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Tambah Siswa
+            <Button onClick={() => setIsCreateOpen(true)} size="sm" className="text-xs md:text-sm">
+              <Plus className="h-4 w-4 md:mr-2" />
+              <span className="hidden md:inline">Tambah Siswa</span>
+              <span className="md:hidden">Tambah</span>
             </Button>
           )}
         </div>
 
           {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="bg-[#c6ef4e] shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/50">
-                <Users className="h-6 w-6 text-gray-900" />
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+          <Card className="bg-[#c6ef4e] shadow-sm col-span-2 md:col-span-1">
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
+                <Users className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-700">Total Siswa</p>
-                <p className="text-xl font-bold text-gray-900">
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Total Siswa</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
                   {pagination.total}
                 </p>
               </div>
@@ -235,25 +240,25 @@ export default function StudentsPage() {
           </Card>
 
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20">
-                <span className="text-lg font-bold text-gray-700">✓</span>
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20 shrink-0">
+                <span className="text-sm md:text-lg font-bold text-gray-700">✓</span>
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-500">Lunas</p>
-                <p className="text-xl font-bold text-gray-900">{lunasCount}</p>
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Lunas</p>
+                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">{lunasCount}</p>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50">
-                <span className="text-lg font-bold text-amber-600">!</span>
+            <CardContent className="flex items-center gap-3 p-3 md:p-5">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-amber-50 shrink-0">
+                <span className="text-sm md:text-lg font-bold text-amber-600">!</span>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Belum Lunas</p>
-                <p className="text-xl font-bold text-slate-900 font-mono">{belumLunasCount}</p>
+              <div className="min-w-0">
+                <p className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">Belum Lunas</p>
+                <p className="text-sm md:text-xl font-bold text-slate-900 font-mono truncate">{belumLunasCount}</p>
               </div>
             </CardContent>
           </Card>
@@ -262,49 +267,54 @@ export default function StudentsPage() {
         {/* Search & Filters */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="relative flex-1">
+            <div className="flex flex-col gap-3">
+              <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   type="text"
                   placeholder="Cari nama, NIS, atau kelas..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 w-full"
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
-                <input
-                  type="checkbox"
-                  checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                Tampilkan siswa tidak aktif
-              </label>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button
-                variant={statusFilter === '' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('')}
-              >
-                Semua
-              </Button>
-              <Button
-                variant={statusFilter === 'Lunas' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('Lunas')}
-              >
-                Lunas
-              </Button>
-              <Button
-                variant={statusFilter === 'Belum Lunas' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('Belum Lunas')}
-              >
-                Belum Lunas
-              </Button>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 hide-scrollbar flex-1">
+                  <Button
+                    variant={statusFilter === '' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('')}
+                    className="whitespace-nowrap"
+                  >
+                    Semua
+                  </Button>
+                  <Button
+                    variant={statusFilter === 'Lunas' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('Lunas')}
+                    className="whitespace-nowrap"
+                  >
+                    Lunas
+                  </Button>
+                  <Button
+                    variant={statusFilter === 'Belum Lunas' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('Belum Lunas')}
+                    className="whitespace-nowrap"
+                  >
+                    Belum Lunas
+                  </Button>
+                </div>
+                <label className="flex items-center gap-2 text-xs md:text-sm text-gray-600 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={showInactive}
+                    onChange={(e) => setShowInactive(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  Tampilkan non-aktif
+                </label>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -496,13 +506,20 @@ export default function StudentsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="kelas">Kelas *</Label>
-                  <Input
+                  <select
                     id="kelas"
                     value={formData.kelas}
                     onChange={(e) => setFormData({ ...formData, kelas: e.target.value })}
-                    placeholder="VII-A"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
                     required
-                  />
+                  >
+                    <option value="">Pilih Kelas</option>
+                    {KELAS_OPTIONS.map((kelas) => (
+                      <option key={kelas} value={kelas}>
+                        {kelas}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tahunMasuk">Tahun Masuk *</Label>
@@ -605,12 +622,20 @@ export default function StudentsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-kelas">Kelas *</Label>
-                  <Input
+                  <select
                     id="edit-kelas"
                     value={formData.kelas}
                     onChange={(e) => setFormData({ ...formData, kelas: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
                     required
-                  />
+                  >
+                    <option value="">Pilih Kelas</option>
+                    {KELAS_OPTIONS.map((kelas) => (
+                      <option key={kelas} value={kelas}>
+                        {kelas}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-tahunMasuk">Tahun Masuk</Label>

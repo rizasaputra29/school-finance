@@ -8,7 +8,7 @@ export default async function handler(
   try {
     switch (req.method) {
       case 'GET': {
-        const { page = '1', limit = '10', studentId, statusBayar, periodeBulan, jenisBiaya } = req.query;
+        const { page = '1', limit = '10', studentId, statusBayar, periodeBulan, jenisBiaya, search } = req.query;
         const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
         const where: Record<string, unknown> = {};
@@ -17,6 +17,16 @@ export default async function handler(
         if (statusBayar) where.statusBayar = statusBayar;
         if (periodeBulan) where.periodeBulan = periodeBulan;
         if (jenisBiaya) where.jenisBiaya = jenisBiaya;
+        
+        // Search by student name, NIS, or jenisBiaya
+        if (search) {
+          where.OR = [
+            { student: { nama: { contains: search as string, mode: 'insensitive' } } },
+            { student: { nis: { contains: search as string, mode: 'insensitive' } } },
+            { jenisBiaya: { contains: search as string, mode: 'insensitive' } },
+            { periodeBulan: { contains: search as string, mode: 'insensitive' } },
+          ];
+        }
 
         const [billings, total] = await Promise.all([
           prisma.billing.findMany({

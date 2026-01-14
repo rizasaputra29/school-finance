@@ -1,0 +1,144 @@
+{
+  "data": {
+    "students": [
+      { "nis": "PG-2025-001", "nama": "Ahmad Fauzan Hakim", "kelas": "PLAYGROUP", "tahunMasuk": 2025, "statusBayar": "Lunas", "totalTagihan": 12200000, "totalBayar": 12200000 },
+      { "nis": "PG-2025-002", "nama": "Aisyah Putri Ramadhani", "kelas": "PLAYGROUP", "tahunMasuk": 2025, "statusBayar": "Belum Lunas", "totalTagihan": 12200000, "totalBayar": 3700000 },
+      { "nis": "PG-2025-003", "nama": "Muhammad Rizki Pratama", "kelas": "PLAYGROUP", "tahunMasuk": 2025, "statusBayar": "Belum Lunas", "totalTagihan": 12200000, "totalBayar": 350000 },
+      { "nis": "KG-2025-001", "nama": "Siti Nurhaliza", "kelas": "KINDERGARTEN", "tahunMasuk": 2025, "statusBayar": "Lunas", "totalTagihan": 12700000, "totalBayar": 12700000 },
+      { "nis": "KG-2025-002", "nama": "Fajar Ramadhan Putra", "kelas": "KINDERGARTEN", "tahunMasuk": 2025, "statusBayar": "Lunas", "totalTagihan": 12700000, "totalBayar": 12700000 },
+      { "nis": "KG-2025-003", "nama": "Dinda Ayu Lestari", "kelas": "KINDERGARTEN", "tahunMasuk": 2025, "statusBayar": "Belum Lunas", "totalTagihan": 12700000, "totalBayar": 900000 }
+    ],
+    "billings": [
+      { "nis": "PG-2025-001", "jenisBiaya": "Pendaftaran", "jumlah": 350000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-05" },
+      { "nis": "PG-2025-001", "jenisBiaya": "Gedung", "jumlah": 8000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-05" },
+      { "nis": "PG-2025-001", "jenisBiaya": "Kegiatan", "jumlah": 2000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-07" },
+      { "nis": "PG-2025-001", "jenisBiaya": "Seragam", "jumlah": 800000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-10" },
+      { "nis": "PG-2025-001", "jenisBiaya": "ATK", "jumlah": 500000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-10" },
+      { "nis": "PG-2025-001", "jenisBiaya": "SPP", "jumlah": 550000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-05" },
+      
+      { "nis": "PG-2025-002", "jenisBiaya": "Pendaftaran", "jumlah": 350000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-20" },
+      { "nis": "PG-2025-002", "jenisBiaya": "Gedung", "jumlah": 8000000, "periodeBulan": "2025-01", "statusBayar": "Belum Lunas" },
+      { "nis": "PG-2025-002", "jenisBiaya": "Kegiatan", "jumlah": 2000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-25" },
+      { "nis": "PG-2025-002", "jenisBiaya": "Seragam", "jumlah": 800000, "periodeBulan": "2025-01", "statusBayar": "Belum Lunas" },
+      { "nis": "PG-2025-002", "jenisBiaya": "ATK", "jumlah": 500000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-28" },
+      { "nis": "PG-2025-002", "jenisBiaya": "SPP", "jumlah": 550000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-22" },
+      
+      { "nis": "PG-2025-003", "jenisBiaya": "Pendaftaran", "jumlah": 350000, "periodeBulan": "2025-02", "statusBayar": "Lunas", "tanggalBayar": "2025-02-05" },
+      { "nis": "PG-2025-003", "jenisBiaya": "Gedung", "jumlah": 8000000, "periodeBulan": "2025-02", "statusBayar": "Belum Lunas" },
+      { "nis": "PG-2025-003", "jenisBiaya": "Kegiatan", "jumlah": 2000000, "periodeBulan": "2025-02", "statusBayar": "Belum Lunas" },
+      { "nis": "PG-2025-003", "jenisBiaya": "Seragam", "jumlah": 800000, "periodeBulan": "2025-02", "statusBayar": "Belum Lunas" },
+      { "nis": "PG-2025-003", "jenisBiaya": "ATK", "jumlah": 500000, "periodeBulan": "2025-02", "statusBayar": "Belum Lunas" },
+      { "nis": "PG-2025-003", "jenisBiaya": "SPP", "jumlah": 550000, "periodeBulan": "2025-02", "statusBayar": "Belum Lunas" },
+      
+      { "nis": "KG-2025-001", "jenisBiaya": "Pendaftaran", "jumlah": 350000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-10" },
+      { "nis": "KG-2025-001", "jenisBiaya": "Gedung", "jumlah": 8000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-10" },
+      { "nis": "KG-2025-001", "jenisBiaya": "Kegiatan", "jumlah": 2000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-12" },
+      { "nis": "KG-2025-001", "jenisBiaya": "Seragam", "jumlah": 800000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-15" },
+      { "nis": "KG-2025-001", "jenisBiaya": "ATK", "jumlah": 1000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-15" },
+      { "nis": "KG-2025-001", "jenisBiaya": "SPP", "jumlah": 550000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-10" },
+      
+      { "nis": "KG-2025-002", "jenisBiaya": "Pendaftaran", "jumlah": 350000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-15" },
+      { "nis": "KG-2025-002", "jenisBiaya": "Gedung", "jumlah": 8000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-15" },
+      { "nis": "KG-2025-002", "jenisBiaya": "Kegiatan", "jumlah": 2000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-18" },
+      { "nis": "KG-2025-002", "jenisBiaya": "Seragam", "jumlah": 800000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-20" },
+      { "nis": "KG-2025-002", "jenisBiaya": "ATK", "jumlah": 1000000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-20" },
+      { "nis": "KG-2025-002", "jenisBiaya": "SPP", "jumlah": 550000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-15" },
+      
+      { "nis": "KG-2025-003", "jenisBiaya": "Pendaftaran", "jumlah": 350000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-25" },
+      { "nis": "KG-2025-003", "jenisBiaya": "Gedung", "jumlah": 8000000, "periodeBulan": "2025-01", "statusBayar": "Belum Lunas" },
+      { "nis": "KG-2025-003", "jenisBiaya": "Kegiatan", "jumlah": 2000000, "periodeBulan": "2025-01", "statusBayar": "Belum Lunas" },
+      { "nis": "KG-2025-003", "jenisBiaya": "Seragam", "jumlah": 800000, "periodeBulan": "2025-01", "statusBayar": "Belum Lunas" },
+      { "nis": "KG-2025-003", "jenisBiaya": "ATK", "jumlah": 1000000, "periodeBulan": "2025-01", "statusBayar": "Belum Lunas" },
+      { "nis": "KG-2025-003", "jenisBiaya": "SPP", "jumlah": 550000, "periodeBulan": "2025-01", "statusBayar": "Lunas", "tanggalBayar": "2025-01-28" }
+    ],
+    "cashflow": [
+      { "tanggal": "2025-01-02", "keterangan": "Setoran Modal Awal (Kas)", "kodeAkun": "101", "debit": 50000000, "kredit": 0 },
+      { "tanggal": "2025-01-02", "keterangan": "Setoran Modal Awal (Bank)", "kodeAkun": "102", "debit": 50000000, "kredit": 0 },
+      { "tanggal": "2025-01-02", "keterangan": "Modal Awal Pemilik", "kodeAkun": "301", "debit": 0, "kredit": 100000000 },
+      
+      { "tanggal": "2025-01-05", "keterangan": "Pendapatan Pendaftaran - Ahmad Fauzan", "kodeAkun": "400", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-01-05", "keterangan": "Pendapatan Uang Gedung - Ahmad Fauzan", "kodeAkun": "401", "debit": 8000000, "kredit": 0 },
+      { "tanggal": "2025-01-05", "keterangan": "Pendapatan SPP - Ahmad Fauzan", "kodeAkun": "405", "debit": 550000, "kredit": 0 },
+      { "tanggal": "2025-01-05", "keterangan": "Kas masuk - Ahmad Fauzan", "kodeAkun": "101", "debit": 8900000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-07", "keterangan": "Pendapatan Kegiatan - Ahmad Fauzan", "kodeAkun": "402", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-07", "keterangan": "Kas masuk Kegiatan - Ahmad Fauzan", "kodeAkun": "101", "debit": 2000000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-08", "keterangan": "Biaya Gaji Guru Januari", "kodeAkun": "500", "debit": 0, "kredit": 15000000 },
+      { "tanggal": "2025-01-08", "keterangan": "Kas keluar Gaji Januari", "kodeAkun": "101", "debit": 0, "kredit": 15000000 },
+      
+      { "tanggal": "2025-01-10", "keterangan": "Pendapatan Seragam - Ahmad Fauzan", "kodeAkun": "403", "debit": 800000, "kredit": 0 },
+      { "tanggal": "2025-01-10", "keterangan": "Pendapatan ATK - Ahmad Fauzan", "kodeAkun": "404", "debit": 500000, "kredit": 0 },
+      { "tanggal": "2025-01-10", "keterangan": "Kas masuk Seragam ATK - Ahmad Fauzan", "kodeAkun": "101", "debit": 1300000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-10", "keterangan": "Pendapatan Pendaftaran - Siti Nurhaliza", "kodeAkun": "400", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-01-10", "keterangan": "Pendapatan Gedung - Siti Nurhaliza", "kodeAkun": "401", "debit": 8000000, "kredit": 0 },
+      { "tanggal": "2025-01-10", "keterangan": "Pendapatan SPP - Siti Nurhaliza", "kodeAkun": "405", "debit": 550000, "kredit": 0 },
+      { "tanggal": "2025-01-10", "keterangan": "Kas masuk - Siti Nurhaliza", "kodeAkun": "101", "debit": 8900000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-12", "keterangan": "Pendapatan Kegiatan - Siti Nurhaliza", "kodeAkun": "402", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-12", "keterangan": "Kas masuk Kegiatan - Siti Nurhaliza", "kodeAkun": "101", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-12", "keterangan": "Biaya Listrik Internet Telepon", "kodeAkun": "504", "debit": 0, "kredit": 2500000 },
+      { "tanggal": "2025-01-12", "keterangan": "Kas keluar Listrik", "kodeAkun": "101", "debit": 0, "kredit": 2500000 },
+      
+      { "tanggal": "2025-01-15", "keterangan": "Pendapatan Seragam - Siti Nurhaliza", "kodeAkun": "403", "debit": 800000, "kredit": 0 },
+      { "tanggal": "2025-01-15", "keterangan": "Pendapatan ATK - Siti Nurhaliza", "kodeAkun": "404", "debit": 1000000, "kredit": 0 },
+      { "tanggal": "2025-01-15", "keterangan": "Kas masuk Seragam ATK - Siti Nurhaliza", "kodeAkun": "101", "debit": 1800000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-15", "keterangan": "Pendapatan Pendaftaran - Fajar Ramadhan", "kodeAkun": "400", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-01-15", "keterangan": "Pendapatan Gedung - Fajar Ramadhan", "kodeAkun": "401", "debit": 8000000, "kredit": 0 },
+      { "tanggal": "2025-01-15", "keterangan": "Pendapatan SPP - Fajar Ramadhan", "kodeAkun": "405", "debit": 550000, "kredit": 0 },
+      { "tanggal": "2025-01-15", "keterangan": "Kas masuk - Fajar Ramadhan", "kodeAkun": "101", "debit": 8900000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-18", "keterangan": "Pendapatan Kegiatan - Fajar Ramadhan", "kodeAkun": "402", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-18", "keterangan": "Kas masuk Kegiatan - Fajar Ramadhan", "kodeAkun": "101", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-18", "keterangan": "Biaya Kebersihan & Keamanan", "kodeAkun": "506", "debit": 0, "kredit": 1200000 },
+      { "tanggal": "2025-01-18", "keterangan": "Kas keluar Kebersihan", "kodeAkun": "101", "debit": 0, "kredit": 1200000 },
+      
+      { "tanggal": "2025-01-20", "keterangan": "Pendapatan Pendaftaran - Aisyah", "kodeAkun": "400", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-01-20", "keterangan": "Kas masuk - Aisyah", "kodeAkun": "101", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-01-20", "keterangan": "Pendapatan Seragam - Fajar Ramadhan", "kodeAkun": "403", "debit": 800000, "kredit": 0 },
+      { "tanggal": "2025-01-20", "keterangan": "Pendapatan ATK - Fajar Ramadhan", "kodeAkun": "404", "debit": 1000000, "kredit": 0 },
+      { "tanggal": "2025-01-20", "keterangan": "Kas masuk Seragam ATK - Fajar Ramadhan", "kodeAkun": "101", "debit": 1800000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-22", "keterangan": "Pendapatan SPP - Aisyah", "kodeAkun": "405", "debit": 550000, "kredit": 0 },
+      { "tanggal": "2025-01-22", "keterangan": "Kas masuk SPP - Aisyah", "kodeAkun": "101", "debit": 550000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-25", "keterangan": "Pendapatan Kegiatan - Aisyah", "kodeAkun": "402", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-25", "keterangan": "Kas masuk Kegiatan - Aisyah", "kodeAkun": "101", "debit": 2000000, "kredit": 0 },
+      { "tanggal": "2025-01-25", "keterangan": "Pendapatan Pendaftaran - Dinda", "kodeAkun": "400", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-01-25", "keterangan": "Kas masuk - Dinda", "kodeAkun": "101", "debit": 350000, "kredit": 0 },
+      
+      { "tanggal": "2025-01-28", "keterangan": "Pendapatan ATK - Aisyah", "kodeAkun": "404", "debit": 500000, "kredit": 0 },
+      { "tanggal": "2025-01-28", "keterangan": "Kas masuk ATK - Aisyah", "kodeAkun": "101", "debit": 500000, "kredit": 0 },
+      { "tanggal": "2025-01-28", "keterangan": "Pendapatan SPP - Dinda", "kodeAkun": "405", "debit": 550000, "kredit": 0 },
+      { "tanggal": "2025-01-28", "keterangan": "Kas masuk SPP - Dinda", "kodeAkun": "101", "debit": 550000, "kredit": 0 },
+      
+      { "tanggal": "2025-02-05", "keterangan": "Pendapatan Pendaftaran - Rizki", "kodeAkun": "400", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-02-05", "keterangan": "Kas masuk - Rizki", "kodeAkun": "101", "debit": 350000, "kredit": 0 },
+      { "tanggal": "2025-02-05", "keterangan": "Biaya Gaji Guru Februari", "kodeAkun": "500", "debit": 0, "kredit": 15000000 },
+      { "tanggal": "2025-02-05", "keterangan": "Kas keluar Gaji Februari", "kodeAkun": "101", "debit": 0, "kredit": 15000000 },
+      
+      { "tanggal": "2025-02-10", "keterangan": "Biaya Listrik Februari", "kodeAkun": "504", "debit": 0, "kredit": 2650000 },
+      { "tanggal": "2025-02-10", "keterangan": "Kas keluar Listrik Feb", "kodeAkun": "101", "debit": 0, "kredit": 2650000 },
+      
+      { "tanggal": "2025-02-18", "keterangan": "Biaya Kebersihan Feb", "kodeAkun": "506", "debit": 0, "kredit": 1200000 },
+      { "tanggal": "2025-02-18", "keterangan": "Kas keluar Kebersihan Feb", "kodeAkun": "101", "debit": 0, "kredit": 1200000 },
+      
+      { "tanggal": "2025-02-20", "keterangan": "Biaya ATK Kantor", "kodeAkun": "502", "debit": 0, "kredit": 750000 },
+      { "tanggal": "2025-02-20", "keterangan": "Kas keluar ATK Kantor", "kodeAkun": "101", "debit": 0, "kredit": 750000 },
+      
+      { "tanggal": "2025-02-25", "keterangan": "Hutang Usaha Supplier", "kodeAkun": "200", "debit": 0, "kredit": 5000000 },
+      { "tanggal": "2025-02-25", "keterangan": "Biaya Pembelian ATK Kredit", "kodeAkun": "521", "debit": 0, "kredit": 5000000 },
+      
+      { "tanggal": "2025-03-05", "keterangan": "Biaya Gaji Guru Maret", "kodeAkun": "500", "debit": 0, "kredit": 15000000 },
+      { "tanggal": "2025-03-05", "keterangan": "Kas keluar Gaji Maret", "kodeAkun": "101", "debit": 0, "kredit": 15000000 },
+      
+      { "tanggal": "2025-03-10", "keterangan": "Biaya Listrik Maret", "kodeAkun": "504", "debit": 0, "kredit": 2400000 },
+      { "tanggal": "2025-03-10", "keterangan": "Kas keluar Listrik Maret", "kodeAkun": "101", "debit": 0, "kredit": 2400000 },
+      
+      { "tanggal": "2025-03-15", "keterangan": "Biaya Kebersihan Maret", "kodeAkun": "506", "debit": 0, "kredit": 1200000 },
+      { "tanggal": "2025-03-15", "keterangan": "Kas keluar Kebersihan Maret", "kodeAkun": "101", "debit": 0, "kredit": 1200000 }
+    ]
+  }
+}

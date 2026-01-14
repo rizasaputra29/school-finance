@@ -34,6 +34,7 @@ const navigation = [
   { name: "Biaya Siswa", href: "/billing", icon: Receipt },
   { name: "Data Siswa", href: "/students", icon: Users },
   { name: "Akun", href: "/accounts", icon: BookOpen },
+  { name: "Buku Kas", href: "/cashbook", icon: Wallet },
   { name: "Laporan", href: "/reports", icon: FileText },
 ]
 
