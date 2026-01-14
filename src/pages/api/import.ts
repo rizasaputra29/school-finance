@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 
 export const config = {
   api: {
@@ -39,12 +41,24 @@ function excelDateToJSDate(excelDate: number): Date {
   return new Date((excelDate - 25569) * 86400 * 1000);
 }
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Rate Limiting for Import
+  const ip = getClientIp(req);
+  const identifier = `import:${ip}`;
+  const rateLimitResult = rateLimit(identifier, RATE_LIMITS.import);
+
+  if (!rateLimitResult.success) {
+    return res.status(429).json({ 
+      error: formatRateLimitError(rateLimitResult),
+      code: 'RATE_LIMIT_EXCEEDED' 
+    });
   }
 
   try {
@@ -384,3 +398,6 @@ export default async function handler(
     return res.status(500).json({ error: 'Gagal mengimport data' });
   }
 }
+
+// Protect route with admin requirement
+export default withAuth(handler, { requireAdmin: true });

@@ -1,13 +1,27 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
+  }
+
+  // Rate Limiting for Reset (Critical Action)
+  const ip = getClientIp(req);
+  const identifier = `reset:${ip}`;
+  const rateLimitResult = rateLimit(identifier, RATE_LIMITS.reset);
+
+  if (!rateLimitResult.success) {
+    return res.status(429).json({ 
+      error: formatRateLimitError(rateLimitResult),
+      code: 'RATE_LIMIT_EXCEEDED' 
+    });
   }
 
   // Double check "confirm" body param just in case
@@ -38,3 +52,7 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to reset database' });
   }
 }
+
+// Protect route with admin requirement
+export default withAuth(handler, { requireAdmin: true });
+

@@ -26,17 +26,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Check for existing session
     const checkAuth = async () => {
       try {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-          const res = await fetch('/api/auth/verify', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setUser(data.user);
-          } else {
-            localStorage.removeItem('auth_token');
-          }
+        // Token is now in cookie, automatically sent with request
+        const res = await fetch('/api/auth/verify');
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user);
+        } else {
+          setUser(null);
         }
       } catch (error) {
         console.error('Auth check failed:', error);
@@ -55,12 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
       });
       
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
-        localStorage.setItem('auth_token', data.token);
+        // Token is set in HttpOnly cookie by server
         setUser(data.user);
         return true;
       }
+      
+      // Handle rate limit or auth error
+      if (res.status === 429) {
+        console.error('Rate limit exceeded:', data.error);
+        throw new Error(data.error);
+      }
+
       return false;
     } catch (error) {
       console.error('Login failed:', error);
@@ -68,9 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('auth_token');
-    setUser(null);
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      setUser(null);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   const continueAsGuest = () => {
