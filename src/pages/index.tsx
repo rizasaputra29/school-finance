@@ -18,18 +18,6 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
 
 interface CashflowItem {
   id: string;
@@ -59,7 +47,7 @@ interface DashboardData {
   }[];
 }
 
-const COLORS = ['#c6ef4e', '#94a3b8', '#64748b', '#e2e8f0', '#cbd5e1'];
+const COLORS = ['#059DEA', '#94a3b8', '#64748b', '#e2e8f0', '#cbd5e1'];
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -143,7 +131,7 @@ export default function Dashboard() {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#c6ef4e]" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
           <p className="text-sm text-gray-500">Memuat dashboard...</p>
         </div>
       </div>
@@ -188,298 +176,275 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid gap-2 md:gap-4 grid-cols-2 lg:grid-cols-4">
-          {/* Saldo */}
-          <Card className="col-span-2 lg:col-span-1 bg-[#c6ef4e] border-0">
-            <CardContent className="p-3 md:p-5">
-              <div className="flex items-center gap-2 md:gap-3">
-                <div className="h-10 w-10 md:h-12 md:w-12 rounded-lg md:rounded-xl bg-white/30 flex items-center justify-center">
-                  <Wallet className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
+        {/* Compact Bento Grid Layout */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-3">
+          {/* Saldo - spans 2 cols on all screens */}
+          <Card className="col-span-2 bg-[#059DEA] border-0">
+            <CardContent className="p-4 md:p-6">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-white/30 flex items-center justify-center">
+                  <Wallet className="h-6 w-6 md:h-7 md:w-7 text-white" />
                 </div>
                 <div>
-                  <p className="text-xs md:text-sm font-medium text-gray-700">Total Saldo</p>
-                  <p className="text-lg md:text-2xl font-bold text-gray-900">{formatCurrency(summary.saldo)}</p>
+                  <p className="text-sm md:text-base font-medium text-white/80">Total Saldo</p>
+                  <p className="text-xl md:text-2xl font-bold text-white">{formatCurrency(summary.saldo)}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Pendapatan */}
-          <Card className="bg-white">
-            <CardContent className="p-3 md:p-5">
+          <Card className="col-span-1 bg-white">
+            <CardContent className="p-4 md:p-5">
               <div className="flex items-start justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs md:text-sm font-medium text-gray-500">Pendapatan</p>
-                  <p className="text-sm md:text-xl font-bold text-gray-900 mt-0.5 truncate">{formatCurrency(summary.totalDebit)}</p>
+                  <p className="text-base md:text-xl font-bold text-gray-900 mt-1 truncate">{formatCurrency(summary.totalDebit)}</p>
                 </div>
-                <div className="h-8 w-8 md:h-10 md:w-10 rounded-lg bg-green-50 flex items-center justify-center shrink-0 ml-2">
-                  <ArrowUpRight className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
+                <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-green-50 flex items-center justify-center shrink-0">
+                  <ArrowUpRight className="h-5 w-5 text-green-600" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Pengeluaran */}
-          <Card className="bg-white">
-            <CardContent className="p-3 md:p-5">
+          <Card className="col-span-1 bg-white">
+            <CardContent className="p-4 md:p-5">
               <div className="flex items-start justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs md:text-sm font-medium text-gray-500">Pengeluaran</p>
-                  <p className="text-sm md:text-xl font-bold text-gray-900 mt-0.5 truncate">{formatCurrency(summary.totalKredit)}</p>
+                  <p className="text-base md:text-xl font-bold text-gray-900 mt-1 truncate">{formatCurrency(summary.totalKredit)}</p>
                 </div>
-                <div className="h-8 w-8 md:h-10 md:w-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0 ml-2">
-                  <ArrowDownRight className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
+                <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+                  <ArrowDownRight className="h-5 w-5 text-red-500" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Total Siswa */}
-          <Card className="bg-white">
-            <CardContent className="p-3 md:p-5">
+          <Card className="col-span-1 bg-white">
+            <CardContent className="p-4 md:p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs md:text-sm font-medium text-gray-500">Total Siswa</p>
-                  <p className="text-sm md:text-xl font-bold text-gray-900 mt-0.5">{summary.totalStudents}</p>
+                  <p className="text-base md:text-xl font-bold text-gray-900 mt-1">{summary.totalStudents}</p>
                 </div>
-                <div className="h-8 w-8 md:h-10 md:w-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                  <Users className="h-4 w-4 md:h-5 md:w-5 text-black" />
+                <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                  <Users className="h-5 w-5 text-gray-700" />
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Main Grid */}
-        <div className="grid gap-3 md:gap-6 lg:grid-cols-3">
-          {/* Left Column - Chart & Transactions */}
-          <div className="lg:col-span-2 space-y-3 md:space-y-6">
-            {/* Trend Chart */}
-            <Card className="bg-white">
-              <CardHeader className="pb-2 md:pb-4 px-3 md:px-6">
-                <div className="flex flex-col gap-2 md:gap-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base md:text-lg font-semibold text-gray-900">Arus Kas</CardTitle>
-                    <div className="relative">
-                      <select
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="appearance-none pl-3 pr-8 py-1.5 md:pl-4 md:pr-10 md:py-2 text-xs md:text-sm font-medium rounded-lg md:rounded-xl border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-2 focus:ring-[#c6ef4e]/50 focus:border-[#c6ef4e] focus:bg-white outline-none cursor-pointer transition-all shadow-sm"
-                      >
-                        {last6Months.map((month) => (
-                          <option key={month.value} value={month.value}>
-                            {month.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-3 h-3 md:w-4 md:h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 md:gap-6 text-xs md:text-sm">
-                    <div className="flex items-center gap-1.5 md:gap-2">
-                      <div className="h-2.5 w-2.5 md:h-3 md:w-3 rounded-full bg-[#c6ef4e]" />
-                      <span className="text-gray-600">Pendapatan</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 md:gap-2">
-                      <div className="h-2.5 w-2.5 md:h-3 md:w-3 rounded-full bg-gray-400" />
-                      <span className="text-gray-600">Pengeluaran</span>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-2 md:px-6">
-                <div style={{ width: '100%', height: 200 }} className="md:h-[300px]!">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 5, left: -15, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorDebit" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#c6ef4e" stopOpacity={0.4}/>
-                          <stop offset="95%" stopColor="#c6ef4e" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorKredit" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#94a3b8" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                      <XAxis 
-                        dataKey="month" 
-                        stroke="#94a3b8" 
-                        fontSize={10} 
-                        tickLine={false}
-                        axisLine={false}
-                        dy={5}
-                      />
-                      <YAxis
-                        stroke="#94a3b8"
-                        fontSize={9}
-                        tickLine={false}
-                        axisLine={false}
-                        width={45}
-                        tickFormatter={(value) =>
-                          new Intl.NumberFormat('id-ID', { notation: 'compact' }).format(value)
-                        }
-                      />
-                      <Tooltip
-                        formatter={(value) => formatCurrency(value as number)}
-                        contentStyle={{
-                          borderRadius: '8px',
-                          border: '1px solid #e2e8f0',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                          backgroundColor: 'white',
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                        }}
-                        labelStyle={{ color: '#374151', fontWeight: 600, marginBottom: 4 }}
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="debit" 
-                        name="Pendapatan"
-                        stroke="#c6ef4e" 
-                        strokeWidth={2}
-                        fill="url(#colorDebit)" 
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="kredit" 
-                        name="Pengeluaran"
-                        stroke="#94a3b8" 
-                        strokeWidth={1.5}
-                        fill="url(#colorKredit)" 
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Transactions */}
-            <Card className="bg-white">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold text-gray-900">Transaksi Terakhir</CardTitle>
-                  <Link href="/cashflow">
-                    <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
-                      Lihat Semua
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-3 md:px-6">
-                <div className="space-y-0">
-                  {recentTransactions.slice(0, 5).map((tx) => (
-                    <div 
-                      key={tx.id} 
-                      className="flex items-center justify-between py-2 md:py-3 border-b border-gray-100 last:border-0"
-                    >
-                      <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
-                        <div className={`h-8 w-8 md:h-10 md:w-10 rounded-lg md:rounded-xl flex items-center justify-center shrink-0 ${
-                          tx.debit > 0 ? 'bg-[#c6ef4e]/20' : 'bg-gray-100'
-                        }`}>
-                          {tx.debit > 0 ? (
-                            <TrendingUp className="h-4 w-4 md:h-5 md:w-5 text-gray-700" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4 md:h-5 md:w-5 text-gray-500" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-xs md:text-sm text-gray-900 truncate">{tx.keterangan}</p>
-                          <p className="text-[10px] md:text-xs text-gray-400">{formatDate(tx.tanggal)}</p>
-                        </div>
-                      </div>
-                      <p className={`font-semibold text-xs md:text-sm shrink-0 ml-2 ${tx.debit > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
-                        {tx.debit > 0 ? '+' : '-'} {formatCurrency(tx.debit > 0 ? tx.debit : tx.kredit)}
-                      </p>
-                    </div>
-                  ))}
-                  {recentTransactions.length === 0 && (
-                    <div className="py-8 text-center text-gray-400 text-sm">
-                      Belum ada transaksi
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-3 md:space-y-6">
-
-            {/* Student Payment Status */}
-            <Card className="bg-white">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold text-gray-900">Status Pembayaran</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Progress Bar */}
+          {/* Tingkat Lunas */}
+          <Card className="col-span-1 bg-white">
+            <CardContent className="p-4 md:p-5">
+              <div className="flex items-start justify-between">
                 <div>
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="text-gray-500">Tingkat Kelulusan</span>
-                    <span className="font-semibold text-gray-900">{lunasPercentage}%</span>
+                  <p className="text-xs md:text-sm font-medium text-gray-500">Lunas</p>
+                  <p className="text-base md:text-xl font-bold text-[#059DEA] mt-1">{lunasPercentage}%</p>
+                </div>
+                <div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-[#059DEA]/10 flex items-center justify-center shrink-0">
+                  <CheckCircle className="h-5 w-5 text-[#059DEA]" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Chart - spans 4 cols on large screens */}
+          <Card className="col-span-2 md:col-span-4 lg:col-span-4 bg-white row-span-2">
+            <CardHeader className="pb-2 px-3 md:px-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm md:text-base font-semibold text-gray-900">Arus Kas</CardTitle>
+                <div className="flex items-center gap-3">
+                  <div className="hidden md:flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-2.5 w-2.5 rounded-full bg-[#059DEA]" />
+                      <span className="text-gray-600">Masuk</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-2.5 w-2.5 rounded-full bg-gray-400" />
+                      <span className="text-gray-600">Keluar</span>
+                    </div>
                   </div>
-                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-[#c6ef4e] rounded-full transition-all"
-                      style={{ width: `${lunasPercentage}%` }}
-                    />
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="appearance-none pl-2 pr-6 py-1 text-xs font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-1 focus:ring-[#059DEA]/50 outline-none cursor-pointer"
+                  >
+                    {last6Months.map((month) => (
+                      <option key={month.value} value={month.value}>{month.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-2 md:px-4 pb-3">
+              {chartData.length > 0 && chartData.some(d => d.debit > 0 || d.kredit > 0) ? (
+                <div className="w-full">
+                  <div className="flex items-end justify-around gap-2 md:gap-4 h-[120px] md:h-[160px]">
+                    {(() => {
+                      const maxValue = Math.max(...chartData.map(d => Math.max(d.debit, d.kredit)));
+                      return chartData.map((week, index) => {
+                        const debitHeight = maxValue > 0 ? (week.debit / maxValue) * 100 : 0;
+                        const kreditHeight = maxValue > 0 ? (week.kredit / maxValue) * 100 : 0;
+                        return (
+                          <div key={index} className="flex-1 flex flex-col items-center gap-2">
+                            <div className="w-full flex items-end justify-center gap-1 h-[80px] md:h-[120px]">
+                              <div className="relative group flex-1 h-full flex items-end">
+                                <div 
+                                  className="w-full bg-[#059DEA] rounded-t-md transition-all duration-300 hover:bg-[#0589d4] cursor-pointer"
+                                  style={{ height: week.debit > 0 ? `${debitHeight}%` : '0%', minHeight: week.debit > 0 ? '4px' : '0' }}
+                                />
+                                {week.debit > 0 && (
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20">
+                                    <div className="bg-gray-900 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">{formatCurrency(week.debit)}</div>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="relative group flex-1 h-full flex items-end">
+                                <div 
+                                  className="w-full bg-gray-400 rounded-t-md transition-all duration-300 hover:bg-gray-500 cursor-pointer"
+                                  style={{ height: week.kredit > 0 ? `${kreditHeight}%` : '0%', minHeight: week.kredit > 0 ? '4px' : '0' }}
+                                />
+                                {week.kredit > 0 && (
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20">
+                                    <div className="bg-gray-900 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">{formatCurrency(week.kredit)}</div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-[10px] md:text-xs text-gray-500">{week.month.replace('Minggu ', 'M')}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-gray-100 grid grid-cols-2 gap-2">
+                    <div className="bg-blue-50 rounded-lg p-2 md:p-3">
+                      <p className="text-[10px] md:text-xs text-gray-500">Total Masuk</p>
+                      <p className="text-xs md:text-sm font-bold text-[#059DEA]">{formatCurrency(chartData.reduce((sum, d) => sum + d.debit, 0))}</p>
+                    </div>
+                    <div className="bg-gray-100 rounded-lg p-2 md:p-3">
+                      <p className="text-[10px] md:text-xs text-gray-500">Total Keluar</p>
+                      <p className="text-xs md:text-sm font-bold text-gray-700">{formatCurrency(chartData.reduce((sum, d) => sum + d.kredit, 0))}</p>
+                    </div>
                   </div>
                 </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-[#c6ef4e]/10">
-                    <div className="flex items-center gap-2 mb-1">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-xs font-medium text-gray-600">Lunas</span>
-                    </div>
-                    <p className="text-xl font-bold text-gray-900">{summary.lunasCount}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gray-50">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Clock className="h-4 w-4 text-gray-400" />
-                      <span className="text-xs font-medium text-gray-600">Belum</span>
-                    </div>
-                    <p className="text-xl font-bold text-gray-900">{summary.belumLunasCount}</p>
-                  </div>
+              ) : (
+                <div className="h-[160px] flex flex-col items-center justify-center text-gray-400">
+                  <p className="text-xs">Tidak ada data</p>
                 </div>
+              )}
+            </CardContent>
+          </Card>
 
-                <Link href="/billing" className="block">
-                  <Button variant="outline" className="w-full">
-                    Kelola Tagihan
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
+          {/* Payment Status - spans 2 cols */}
+          <Card className="col-span-2 bg-white row-span-2">
+            <CardHeader className="pb-2 px-3 md:px-4">
+              <CardTitle className="text-sm md:text-base font-semibold text-gray-900">Status Pembayaran</CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 md:px-4 pb-3 space-y-3">
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-gray-500">Tingkat Kelulusan</span>
+                  <span className="font-semibold text-gray-900">{lunasPercentage}%</span>
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#059DEA] rounded-full" style={{ width: `${lunasPercentage}%` }} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2 md:p-3 rounded-lg bg-[#059DEA]/10">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <CheckCircle className="h-3 w-3 text-green-600" />
+                    <span className="text-[10px] md:text-xs text-gray-600">Lunas</span>
+                  </div>
+                  <p className="text-lg md:text-xl font-bold text-gray-900">{summary.lunasCount}</p>
+                </div>
+                <div className="p-2 md:p-3 rounded-lg bg-gray-100">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <Clock className="h-3 w-3 text-gray-400" />
+                    <span className="text-[10px] md:text-xs text-gray-600">Belum</span>
+                  </div>
+                  <p className="text-lg md:text-xl font-bold text-gray-900">{summary.belumLunasCount}</p>
+                </div>
+              </div>
+              <Link href="/billing" className="block">
+                <Button variant="outline" size="sm" className="w-full text-xs">
+                  Kelola Tagihan <ChevronRight className="h-3 w-3" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
 
-            {/* Quick Actions */}
-            <Card className="bg-white">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold text-gray-900">Aksi Cepat</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Link href="/students" className="block">
-                  <Button variant="secondary" className="w-full justify-start">
-                    <Users className="h-4 w-4" />
-                    Kelola Siswa
+          {/* Recent Transactions - spans 4 cols on large screens */}
+          <Card className="col-span-2 md:col-span-4 lg:col-span-4 bg-white">
+            <CardHeader className="pb-2 px-3 md:px-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm md:text-base font-semibold text-gray-900">Transaksi Terakhir</CardTitle>
+                <Link href="/cashflow">
+                  <Button variant="ghost" size="sm" className="text-xs text-gray-500 hover:text-gray-900 h-7 px-2">
+                    Lihat Semua <ChevronRight className="h-3 w-3" />
                   </Button>
                 </Link>
-                <Link href="/accounts" className="block">
-                  <Button variant="secondary" className="w-full justify-start">
-                    <Wallet className="h-4 w-4" />
-                    Kelola Akun
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 px-3 md:px-4 pb-3">
+              <div className="space-y-0">
+                {recentTransactions.slice(0, 4).map((tx) => (
+                  <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className={`h-7 w-7 md:h-8 md:w-8 rounded-lg flex items-center justify-center shrink-0 ${tx.debit > 0 ? 'bg-[#059DEA]/20' : 'bg-gray-100'}`}>
+                        {tx.debit > 0 ? <TrendingUp className="h-3.5 w-3.5 text-gray-700" /> : <TrendingDown className="h-3.5 w-3.5 text-gray-500" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-xs text-gray-900 truncate">{tx.keterangan}</p>
+                        <p className="text-[10px] text-gray-400">{formatDate(tx.tanggal)}</p>
+                      </div>
+                    </div>
+                    <p className={`font-semibold text-xs shrink-0 ml-2 ${tx.debit > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                      {tx.debit > 0 ? '+' : '-'} {formatCurrency(tx.debit > 0 ? tx.debit : tx.kredit)}
+                    </p>
+                  </div>
+                ))}
+                {recentTransactions.length === 0 && (
+                  <div className="py-6 text-center text-gray-400 text-xs">Belum ada transaksi</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions - spans 2 cols */}
+          <Card className="col-span-2 bg-white">
+            <CardHeader className="pb-2 px-3 md:px-4">
+              <CardTitle className="text-sm md:text-base font-semibold text-gray-900">Aksi Cepat</CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 md:px-4 pb-3 grid grid-cols-2 gap-2">
+              <Link href="/students" className="block">
+                <Button variant="secondary" size="sm" className="w-full justify-start text-xs h-9">
+                  <Users className="h-3.5 w-3.5" /> Siswa
+                </Button>
+              </Link>
+              <Link href="/accounts" className="block">
+                <Button variant="secondary" size="sm" className="w-full justify-start text-xs h-9">
+                  <Wallet className="h-3.5 w-3.5" /> Akun
+                </Button>
+              </Link>
+              <Link href="/cashflow" className="block">
+                <Button variant="secondary" size="sm" className="w-full justify-start text-xs h-9">
+                  <TrendingUp className="h-3.5 w-3.5" /> Cashflow
+                </Button>
+              </Link>
+              <Link href="/reports" className="block">
+                <Button variant="secondary" size="sm" className="w-full justify-start text-xs h-9">
+                  <ChevronRight className="h-3.5 w-3.5" /> Laporan
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </>

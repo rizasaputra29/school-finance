@@ -77,7 +77,7 @@ export function BottomNav() {
                   onClick={() => setIsMenuOpen(false)}
                   className={`flex flex-col items-center justify-center p-4 rounded-xl transition-all ${
                     isActive 
-                      ? 'bg-[#c6ef4e] text-gray-900' 
+                      ? 'bg-[#059DEA] text-white' 
                       : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                   }`}
                 >
@@ -109,7 +109,7 @@ export function BottomNav() {
               >
                 <div className={`flex items-center justify-center h-9 w-9 rounded-xl transition-all ${
                   isActive 
-                    ? 'bg-[#c6ef4e] shadow-sm' 
+                    ? 'bg-[#059DEA] text-white shadow-sm' 
                     : 'bg-transparent'
                 }`}>
                   <item.icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />
@@ -129,7 +129,7 @@ export function BottomNav() {
             }`}
           >
             <div className={`flex items-center justify-center h-9 w-9 rounded-xl transition-all ${
-              isMenuOpen ? 'bg-[#c6ef4e] shadow-sm' : 'bg-transparent'
+              isMenuOpen ? 'bg-[#059DEA] text-white shadow-sm' : 'bg-transparent'
             }`}>
               <MoreHorizontal className="h-5 w-5" strokeWidth={isMenuOpen ? 2.5 : 2} />
             </div>

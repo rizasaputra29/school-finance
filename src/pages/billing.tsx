@@ -270,7 +270,7 @@ export default function BillingPage() {
                                     setStudentSearch('');
                                   }}
                                   className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                                    formData.studentId === s.id ? 'bg-[#c6ef4e]/30 font-medium' : ''
+                                    formData.studentId === s.id ? 'bg-[#059DEA]/30 font-medium' : ''
                                   }`}
                                 >
                                   <span className="font-medium">{s.nis}</span> - {s.nama} <span className="text-gray-500">({s.kelas})</span>
@@ -380,14 +380,14 @@ export default function BillingPage() {
         </div>
 
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          <Card className="bg-[#c6ef4e] shadow-sm">
+          <Card className="bg-[#059DEA] shadow-sm">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
               <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
-                <Receipt className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
+                <Receipt className="h-5 w-5 md:h-6 md:w-6 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Total Tagihan</p>
-                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
+                <p className="text-[10px] md:text-xs font-medium text-white/80 truncate">Total Tagihan</p>
+                <p className="text-sm md:text-xl font-bold text-white truncate">
                   {formatCurrency(summary.totalTagihan)}
                 </p>
               </div>
@@ -411,7 +411,7 @@ export default function BillingPage() {
 
           <Card className="bg-white shadow-sm">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20 shrink-0">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
                 <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-gray-700" />
               </div>
               <div className="min-w-0">

@@ -289,7 +289,7 @@ export default function AccountsPage() {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#c6ef4e]" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
           <p className="text-sm text-gray-500">Memuat daftar akun...</p>
         </div>
       </div>
@@ -352,7 +352,7 @@ export default function AccountsPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#c6ef4e]/20 text-gray-700"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#059DEA]/20 text-gray-700"
                     >
                       <Icon className="h-5 w-5" />
                     </div>

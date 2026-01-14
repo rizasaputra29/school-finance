@@ -225,14 +225,14 @@ export default function StudentsPage() {
 
           {/* Stats */}
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
-          <Card className="bg-[#c6ef4e] shadow-sm col-span-2 md:col-span-1">
+          <Card className="bg-[#059DEA] shadow-sm col-span-2 md:col-span-1">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
               <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
-                <Users className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
+                <Users className="h-5 w-5 md:h-6 md:w-6 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Total Siswa</p>
-                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
+                <p className="text-[10px] md:text-xs font-medium text-white/80 truncate">Total Siswa</p>
+                <p className="text-sm md:text-xl font-bold text-white truncate">
                   {pagination.total}
                 </p>
               </div>
@@ -241,7 +241,7 @@ export default function StudentsPage() {
 
           <Card className="bg-white shadow-sm">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20 shrink-0">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
                 <span className="text-sm md:text-lg font-bold text-gray-700">✓</span>
               </div>
               <div className="min-w-0">

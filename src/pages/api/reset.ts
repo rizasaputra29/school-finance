@@ -17,15 +17,21 @@ export default async function handler(
   }
 
   try {
-    // Delete in order to respect dependencies (though Cascade would handle it, explicit is better for "Reset")
-    await prisma.$transaction([
-      prisma.cashflow.deleteMany(),
-      prisma.billing.deleteMany(),
-      prisma.student.deleteMany(),
-      prisma.account.deleteMany(),
-      // Reset sequences if needed, but Prisma/Postgres usually handles this via auto-increment/CUID
-    ]);
+    // Delete sequentially instead of using transaction to avoid timeout on serverless DBs
+    // Order matters due to foreign key dependencies
+    console.log('Deleting cashflows...');
+    await prisma.cashflow.deleteMany();
+    
+    console.log('Deleting billings...');
+    await prisma.billing.deleteMany();
+    
+    console.log('Deleting students...');
+    await prisma.student.deleteMany();
+    
+    console.log('Deleting accounts...');
+    await prisma.account.deleteMany();
 
+    console.log('Database reset successful');
     return res.status(200).json({ message: 'Database reset successful' });
   } catch (error) {
     console.error('Reset API Error:', error);

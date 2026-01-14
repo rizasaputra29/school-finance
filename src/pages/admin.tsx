@@ -425,13 +425,13 @@ export default function AdminPage() {
                     
                     <div className="mt-4 space-y-3">
                       <Label htmlFor="confirm-reset" className="text-sm text-slate-700">
-                        Ketik <strong>RESET_DATA</strong> untuk konfirmasi:
+                        Ketik <strong>RESET_DATABASE</strong> untuk konfirmasi:
                       </Label>
                       <Input
                         id="confirm-reset"
                         value={resetConfirmation}
                         onChange={(e) => setResetConfirmation(e.target.value)}
-                        placeholder="RESET_DATA"
+                        placeholder="RESET_DATABASE"
                         className="border-red-300 focus:border-red-500 focus:ring-red-500/20"
                       />
                     </div>
@@ -443,7 +443,7 @@ export default function AdminPage() {
                       <Button 
                         variant="destructive" 
                         onClick={handleReset}
-                        disabled={resetConfirmation !== 'RESET_DATA' || isResetting}
+                        disabled={resetConfirmation !== 'RESET_DATABASE' || isResetting}
                       >
                         {isResetting ? 'Menghapus...' : 'Ya, Hapus Semua Data'}
                       </Button>

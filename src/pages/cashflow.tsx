@@ -307,7 +307,7 @@ export default function CashflowPage() {
                         setShowAccountDropdown(false);
                       }}
                       className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors border-b border-gray-50 last:border-b-0 ${
-                        formData.kodeAkun === acc.kodeAkun ? 'bg-[#c6ef4e]/30 font-medium' : ''
+                        formData.kodeAkun === acc.kodeAkun ? 'bg-[#059DEA]/30 font-medium' : ''
                       }`}
                     >
                       <span className="font-mono font-medium">{acc.kodeAkun}</span> - {acc.namaAkun}
@@ -450,7 +450,7 @@ export default function CashflowPage() {
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
           <Card className="bg-white shadow-sm">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#c6ef4e]/20 shrink-0">
+              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
                 <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-gray-700" />
               </div>
               <div className="min-w-0">
@@ -476,14 +476,14 @@ export default function CashflowPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#c6ef4e] shadow-sm col-span-2 md:col-span-1">
+          <Card className="bg-[#059DEA] shadow-sm col-span-2 md:col-span-1">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
               <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
-                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
+                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Saldo Akhir</p>
-                <p className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                <p className="text-[10px] md:text-xs font-medium text-white/80 truncate">Saldo Akhir</p>
+                <p className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? 'text-white' : 'text-white'}`}>
                   {formatCurrency(summary.saldo)}
                 </p>
               </div>
@@ -523,7 +523,7 @@ export default function CashflowPage() {
                       onClick={() => setTypeFilter('income')}
                       className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
                         typeFilter === 'income' 
-                          ? 'bg-[#c6ef4e] text-gray-900 shadow-sm' 
+                          ? 'bg-[#059DEA] text-white shadow-sm' 
                           : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                       }`}
                     >

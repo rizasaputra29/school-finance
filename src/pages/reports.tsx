@@ -175,6 +175,13 @@ export default function ReportsPage() {
             <CardContent className="p-0">
               {/* Report Header */}
               <div className="border-b-2 border-gray-800 bg-white rounded-2xl p-3 md:p-6 text-center">
+                <div className="flex justify-center mb-3">
+                  <img 
+                    src="/logo.svg" 
+                    alt="Al Madeena Islamic School" 
+                    className="h-20 w-20 object-contain"
+                  />
+                </div>
                 <h1 className="text-xl font-bold uppercase tracking-wide text-gray-900">
                   YAYASAN AL MADEENA
                 </h1>
@@ -295,6 +302,13 @@ export default function ReportsPage() {
           <Card className="border-2 border-gray-800 shadow-none print:border print:shadow-none min-w-[700px] md:min-w-0">
             <CardContent className="p-0">
               {/* Report Header */}
+              <div className="flex justify-center mt-4">
+                <img 
+                  src="/logo.svg" 
+                  alt="Al Madeena Islamic School" 
+                  className="h-20 w-20 object-contain"
+                />
+              </div>
               <div className="border-b-2 border-gray-800 bg-white rounded-2xl p-3 md:p-6 text-center">
                 <h1 className="text-xl font-bold uppercase tracking-wide text-gray-900">
                   YAYASAN AL MADEENA

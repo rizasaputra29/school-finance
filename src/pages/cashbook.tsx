@@ -138,7 +138,7 @@ export default function CashbookPage() {
           <Card className="bg-white shadow-sm">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
               <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-blue-50 shrink-0">
-                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-blue-600" />
+                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-[#059DEA]" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Saldo Awal</p>
@@ -177,14 +177,14 @@ export default function CashbookPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#c6ef4e] shadow-sm">
+          <Card className="bg-[#059DEA] shadow-sm">
             <CardContent className="flex items-center gap-3 p-3 md:p-5">
               <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
-                <BookOpen className="h-5 w-5 md:h-6 md:w-6 text-gray-900" />
+                <BookOpen className="h-5 w-5 md:h-6 md:w-6 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-gray-700 truncate">Saldo Akhir</p>
-                <p className="text-sm md:text-2xl font-bold text-gray-900 truncate">
+                <p className="text-[10px] md:text-xs font-medium text-white/80 truncate">Saldo Akhir</p>
+                <p className="text-sm md:text-2xl font-bold text-white truncate">
                   {formatCurrency(summary.saldoAkhir)}
                 </p>
               </div>
@@ -256,7 +256,7 @@ export default function CashbookPage() {
           <CardContent>
             {isLoading ? (
               <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[#c6ef4e]" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
               </div>
             ) : entries.length > 0 ? (
               <>
@@ -319,7 +319,7 @@ export default function CashbookPage() {
 
                       {/* Closing Balance Row - only on last page */}
                       {currentPage === totalPages && (
-                        <TableRow className="bg-[#c6ef4e]/30 font-bold">
+                        <TableRow className="bg-[#059DEA]/30 font-bold">
                           <TableCell>-</TableCell>
                           <TableCell>{endDate ? formatShortDate(endDate) : '-'}</TableCell>
                           <TableCell className="italic">Saldo Akhir</TableCell>

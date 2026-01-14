@@ -7,79 +7,79 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Clean Color Palette: White Primary, Green Secondary, Black Text */
+  /* Al Madeena Islamic School Color Palette: Blue Primary, Gold Accent */
   --background: 0 0% 97%; /* Light gray background */
-  --foreground: 0 0% 9%; /* Near black for text */
+  --foreground: 212 41% 24%; /* Deep blue for text */
   --card: 0 0% 100%; /* Pure white cards */
-  --card-foreground: 0 0% 9%;
+  --card-foreground: 212 41% 24%;
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --primary: 75 85% 55%; /* Lime green as primary */
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 96%; /* Light gray secondary */
-  --secondary-foreground: 0 0% 9%;
+  --popover-foreground: 212 41% 24%;
+  --primary: 212 50% 25%; /* Deep navy blue from logo */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 42 58% 58%; /* Gold from logo */
+  --secondary-foreground: 212 41% 24%;
   --muted: 0 0% 94%;
   --muted-foreground: 0 0% 45%;
-  --accent: 75 85% 55%; /* Lime green accent */
-  --accent-foreground: 0 0% 9%;
+  --accent: 42 58% 58%; /* Gold accent */
+  --accent-foreground: 212 41% 24%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
   --border: 0 0% 90%;
   --input: 0 0% 90%;
-  --ring: 75 85% 55%;
+  --ring: 212 50% 25%;
   --radius: 0.75rem;
 
   /* Chart Colors */
-  --chart-1: 75 85% 55%; /* Lime */
-  --chart-2: 0 0% 25%; /* Dark gray */
-  --chart-3: 75 60% 70%; /* Light lime */
-  --chart-4: 45 93% 58%; /* Amber */
-  --chart-5: 200 80% 50%; /* Blue */
+  --chart-1: 212 50% 25%; /* Navy Blue */
+  --chart-2: 42 58% 58%; /* Gold */
+  --chart-3: 212 50% 45%; /* Light Blue */
+  --chart-4: 42 58% 72%; /* Light Gold */
+  --chart-5: 200 80% 50%; /* Sky Blue */
 
-  /* Sidebar - White theme */
+  /* Sidebar - White theme with blue accent */
   --sidebar: 0 0% 100%; /* White */
-  --sidebar-foreground: 0 0% 20%;
-  --sidebar-primary: 75 85% 55%; /* Lime green */
-  --sidebar-primary-foreground: 0 0% 9%;
-  --sidebar-accent: 0 0% 96%;
-  --sidebar-accent-foreground: 0 0% 20%;
+  --sidebar-foreground: 212 41% 24%;
+  --sidebar-primary: 212 50% 25%; /* Navy Blue */
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 42 58% 90%; /* Light Gold background */
+  --sidebar-accent-foreground: 212 41% 24%;
   --sidebar-border: 0 0% 92%;
-  --sidebar-ring: 75 85% 55%;
+  --sidebar-ring: 212 50% 25%;
 }
 
 .dark {
-  --background: 0 0% 7%;
+  --background: 212 41% 8%;
   --foreground: 0 0% 98%;
-  --card: 0 0% 10%;
+  --card: 212 41% 12%;
   --card-foreground: 0 0% 98%;
-  --popover: 0 0% 10%;
+  --popover: 212 41% 12%;
   --popover-foreground: 0 0% 98%;
-  --primary: 75 85% 55%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 15%;
+  --primary: 42 58% 58%; /* Gold as primary in dark mode */
+  --primary-foreground: 212 41% 12%;
+  --secondary: 212 50% 30%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 15%;
+  --muted: 212 41% 18%;
   --muted-foreground: 0 0% 65%;
-  --accent: 75 85% 55%;
-  --accent-foreground: 0 0% 9%;
+  --accent: 42 58% 58%;
+  --accent-foreground: 212 41% 12%;
   --destructive: 0 62% 30%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 18%;
-  --input: 0 0% 18%;
-  --ring: 75 85% 55%;
-  --chart-1: 75 85% 60%;
-  --chart-2: 0 0% 70%;
-  --chart-3: 75 60% 75%;
-  --chart-4: 45 93% 60%;
+  --border: 212 41% 20%;
+  --input: 212 41% 20%;
+  --ring: 42 58% 58%;
+  --chart-1: 42 58% 62%; /* Gold */
+  --chart-2: 212 50% 50%; /* Light Blue */
+  --chart-3: 42 58% 75%;
+  --chart-4: 212 50% 65%;
   --chart-5: 200 80% 55%;
-  --sidebar: 0 0% 8%;
+  --sidebar: 212 41% 10%;
   --sidebar-foreground: 0 0% 85%;
-  --sidebar-primary: 75 85% 55%;
-  --sidebar-primary-foreground: 0 0% 9%;
-  --sidebar-accent: 0 0% 12%;
+  --sidebar-primary: 42 58% 58%;
+  --sidebar-primary-foreground: 212 41% 12%;
+  --sidebar-accent: 212 41% 15%;
   --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 15%;
-  --sidebar-ring: 75 85% 55%;
+  --sidebar-border: 212 41% 18%;
+  --sidebar-ring: 42 58% 58%;
 }
 
 * {

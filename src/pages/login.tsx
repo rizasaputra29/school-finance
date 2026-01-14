@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, Eye, EyeOff, User } from 'lucide-react';
+import { Eye, EyeOff, User, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -44,23 +44,37 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      
+
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#c6ef4e]/20 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-[#c6ef4e]/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#059DEA]/20 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-[#059DEA]/10 blur-3xl" />
       </div>
 
       <Card className="relative w-full max-w-md border border-gray-200 bg-white shadow-xl rounded-2xl">
+        {/* Back Button */}
+        <button
+          onClick={() => router.push('/')}
+          className="absolute top-4 left-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-white/80 transition-all"
+        >
+          <ArrowLeft className="h-5 w-5" />
+          <span className="text-sm font-medium">Kembali</span>
+      </button>
         <CardHeader className="space-y-4 text-center pb-2">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#c6ef4e] shadow-lg">
-            <Wallet className="h-8 w-8 text-gray-900" />
+          <div className="mx-auto flex h-20 w-20 items-center justify-center">
+            <img 
+              src="/logo.svg" 
+              alt="Al Madeena Islamic School" 
+              className="h-20 w-20 object-contain"
+            />
           </div>
           <div className="space-y-1">
             <CardTitle className="text-2xl font-bold text-gray-900">
-              Keuangan Sekolah
+              Al Madeena Islamic School
             </CardTitle>
             <CardDescription className="text-gray-500">
-              Masuk untuk mengelola keuangan sekolah
+              Sistem Keuangan Sekolah
             </CardDescription>
           </div>
         </CardHeader>
@@ -110,12 +124,12 @@ export default function LoginPage() {
 
             <Button 
               type="submit" 
-              className="w-full h-11 bg-[#c6ef4e] text-gray-900 hover:bg-[#b8e23e] font-medium rounded-xl" 
+              className="w-full h-11 bg-[#059DEA] text-white hover:bg-[#0589d4] font-medium rounded-xl" 
               disabled={isLoading}
             >
               {isLoading ? (
                 <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-900/30 border-t-gray-900" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   Memproses...
                 </div>
               ) : (

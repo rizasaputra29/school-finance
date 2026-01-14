@@ -57,13 +57,17 @@ export function AppSidebar() {
         {/* Header with Logo */}
         <SidebarHeader className="border-b border-gray-200 p-4">
           <div className={`flex items-center gap-3 ${!isExpanded ? 'justify-center' : ''}`}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#c6ef4e]">
-              <Wallet className="h-5 w-5 text-gray-900" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+              <img 
+                src="/logo.svg" 
+                alt="Al Madeena Islamic School" 
+                className="h-10 w-10 object-contain"
+              />
             </div>
             {isExpanded && (
               <div className="flex flex-col overflow-hidden">
-                <span className="text-base font-bold text-gray-900">Keuangan</span>
-                <span className="text-xs text-gray-500">Sekolah</span>
+                <span className="text-sm font-bold text-gray-900 leading-tight">Al Madeena</span>
+                <span className="text-xs text-gray-600 font-medium">Islamic School</span>
               </div>
             )}
           </div>
@@ -83,15 +87,15 @@ export function AppSidebar() {
                         isActive={isActive}
                         className={`h-10 rounded-xl transition-all ${
                           isActive 
-                            ? 'bg-[#c6ef4e] text-gray-900 font-medium' 
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                            ? 'bg-[#059DEA] text-white font-medium border-2 border-gray-900' 
+                            : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                         }`}
                       >
                         <Link 
                           href={item.href} 
                           className={`flex items-center gap-3 ${isExpanded ? 'px-3 justify-start' : 'justify-center'}`}
                         >
-                          <item.icon className="h-5 w-5 shrink-0 text-gray-900" strokeWidth={2} />
+                          <item.icon className="h-5 w-5 shrink-0" strokeWidth={2} />
                           {isExpanded && <span className="truncate">{item.name}</span>}
                         </Link>
                       </SidebarMenuButton>
@@ -115,15 +119,15 @@ export function AppSidebar() {
                           isActive={isActive}
                           className={`h-10 rounded-xl transition-all ${
                             isActive 
-                              ? 'bg-[#c6ef4e] text-gray-900 font-medium' 
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                              ? 'bg-[#059DEA] text-white font-medium border-2 border-gray-900' 
+                              : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                           }`}
                         >
                           <Link 
                             href={item.href} 
                             className={`flex items-center gap-3 ${isExpanded ? 'px-3 justify-start' : 'justify-center'}`}
                           >
-                            <item.icon className="h-5 w-5 shrink-0 text-gray-900" strokeWidth={2} />
+                            <item.icon className="h-5 w-5 shrink-0" strokeWidth={2} />
                             {isExpanded && <span className="truncate">{item.name}</span>}
                           </Link>
                         </SidebarMenuButton>
@@ -140,7 +144,7 @@ export function AppSidebar() {
         <SidebarFooter className="border-t border-gray-200 p-3">
           {user ? (
             <div className={`flex items-center gap-3 ${!isExpanded ? 'justify-center' : ''}`}>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700 text-xs font-semibold">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#059DEA] text-white text-xs font-semibold">
                 {user.role === 'admin' ? 'A' : 'G'}
               </div>
               {isExpanded && (
@@ -168,7 +172,7 @@ export function AppSidebar() {
                 href="/login" 
                 className={`flex items-center gap-3 ${isExpanded ? 'px-3 justify-start' : 'justify-center'}`}
               >
-                <LogIn className="h-5 w-5 shrink-0 text-gray-900" />
+                <LogIn className="h-5 w-5 shrink-0 text-gray-700" />
                 {isExpanded && <span className="truncate">Login</span>}
               </Link>
             </SidebarMenuButton>
