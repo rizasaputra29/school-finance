@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
             value: '1; mode=block'
           },
           {
+            key: 'X-Robots-Tag',
+            value: 'noindex, nofollow'
+          },
+          {
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN'
           },

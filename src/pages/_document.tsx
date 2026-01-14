@@ -6,7 +6,10 @@ export default function Document() {
       <Head>
         <meta charSet="utf-8" />
         <meta name="description" content="Aplikasi Manajemen Keuangan Sekolah" />
-        <link rel="icon" href="/favicon.ico" />
+        <meta name="robots" content="noindex, nofollow" />
+        <link rel="icon" type="image/png" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
+        <link rel="shortcut icon" href="/logo.png" />
         
         {/* PWA and Mobile Optimization */}
         <meta name="application-name" content="Keuangan Sekolah" />
