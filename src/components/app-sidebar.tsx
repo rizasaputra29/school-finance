@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/router"
 import { useAuth } from "@/context/AuthContext"
 import {
@@ -58,10 +59,12 @@ export function AppSidebar() {
         <SidebarHeader className="border-b border-gray-200 p-4">
           <div className={`flex items-center gap-3 ${!isExpanded ? 'justify-center' : ''}`}>
             <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-              <img 
+              <Image 
                 src="/logo.svg" 
                 alt="Al Madeena Islamic School" 
-                className="h-10 w-10 object-contain"
+                width={40}
+                height={40}
+                className="object-contain"
               />
             </div>
             {isExpanded && (

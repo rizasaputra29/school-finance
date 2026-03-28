@@ -54,7 +54,11 @@ export default async function handler(
     res.setHeader('Set-Cookie', cookie);
 
     // Return user info but NOT the token in body
-    return res.status(200).json({ user });
+    // Also return token expiry info for client-side tracking
+    return res.status(200).json({ 
+      user,
+      tokenExpiresIn: 4 * 60 * 60, // 4 hours in seconds
+    });
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Internal server error' });

@@ -74,9 +74,11 @@ export function withAuth(
       return handler(req as AuthenticatedRequest, res);
     } catch (error) {
       console.error('Auth middleware error:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return res.status(500).json({ 
         error: 'Terjadi kesalahan server',
-        code: 'INTERNAL_ERROR'
+        code: 'INTERNAL_ERROR',
+        details: process.env.NODE_ENV !== 'production' ? message : undefined
       });
     }
   };

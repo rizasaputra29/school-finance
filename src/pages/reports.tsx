@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +11,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from '@/components/ui/table';
 import {
@@ -176,10 +175,12 @@ export default function ReportsPage() {
               {/* Report Header */}
               <div className="border-b-2 border-gray-800 bg-white rounded-2xl p-3 md:p-6 text-center">
                 <div className="flex justify-center mb-3">
-                  <img 
+                  <Image 
                     src="/logo.svg" 
                     alt="Al Madeena Islamic School" 
-                    className="h-20 w-20 object-contain"
+                    width={80}
+                    height={80}
+                    className="object-contain"
                   />
                 </div>
                 <h1 className="text-xl font-bold uppercase tracking-wide text-gray-900">
@@ -202,7 +203,7 @@ export default function ReportsPage() {
                   </h3>
                   <Table className="border-collapse">
                     <TableBody>
-                      {revenues.map((a, idx) => (
+                      {revenues.map((a) => (
                         <TableRow key={a.id} className="border-0">
                           <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
                             {a.kodeAkun}
@@ -303,10 +304,12 @@ export default function ReportsPage() {
             <CardContent className="p-0">
               {/* Report Header */}
               <div className="flex justify-center mt-4">
-                <img 
+                <Image 
                   src="/logo.svg" 
                   alt="Al Madeena Islamic School" 
-                  className="h-20 w-20 object-contain"
+                  width={80}
+                  height={80}
+                  className="object-contain"
                 />
               </div>
               <div className="border-b-2 border-gray-800 bg-white rounded-2xl p-3 md:p-6 text-center">

@@ -1,8 +1,15 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { 
+  getIdempotencyResult, 
+  setIdempotencyResult,
+  getIdempotencyKeyFromRequest,
+  isValidIdempotencyKey 
+} from '@/lib/idempotency';
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   const { id } = req.query;
@@ -10,6 +17,9 @@ export default async function handler(
   if (!id || typeof id !== 'string') {
     return res.status(400).json({ error: 'Invalid billing ID' });
   }
+
+  // Check for idempotency key in headers (for PATCH and DELETE)
+  const idempotencyKey = getIdempotencyKeyFromRequest(req);
 
   try {
     switch (req.method) {
@@ -36,6 +46,13 @@ export default async function handler(
       }
 
       case 'PATCH': {
+        // Check for idempotency - return cached result if same request
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(200).json(cachedResult);
+          }
+        }
         const { statusBayar, jumlah, catatan } = req.body;
 
         // Get current billing for comparison
@@ -170,10 +187,23 @@ export default async function handler(
           },
         });
 
+        // Cache result for idempotency
+        if (idempotencyKey) {
+          setIdempotencyResult(idempotencyKey, billing);
+        }
+
         return res.status(200).json(billing);
       }
 
       case 'DELETE': {
+        // Check for idempotency
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(200).json(cachedResult);
+          }
+        }
+
         const billing = await prisma.billing.findUnique({
           where: { id },
         });
@@ -200,7 +230,7 @@ export default async function handler(
             await prisma.cashflow.delete({
               where: { id: billing.cashflowId },
             });
-          } catch (e) {
+          } catch {
              // If cashflow missing for some reason, try deleting billing directly
              await prisma.billing.delete({ where: { id } });
           }
@@ -208,6 +238,11 @@ export default async function handler(
           await prisma.billing.delete({
             where: { id },
           });
+        }
+
+        // Cache result for idempotency
+        if (idempotencyKey) {
+          setIdempotencyResult(idempotencyKey, { message: 'Tagihan berhasil dihapus' });
         }
 
         return res.status(200).json({ message: 'Tagihan berhasil dihapus' });
@@ -221,3 +256,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

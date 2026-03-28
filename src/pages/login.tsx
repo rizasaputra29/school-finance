@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,10 +64,12 @@ export default function LoginPage() {
       </button>
         <CardHeader className="space-y-4 text-center pb-2">
           <div className="mx-auto flex h-20 w-20 items-center justify-center">
-            <img 
+            <Image 
               src="/logo.svg" 
               alt="Al Madeena Islamic School" 
-              className="h-20 w-20 object-contain"
+              width={80}
+              height={80}
+              className="object-contain"
             />
           </div>
           <div className="space-y-1">

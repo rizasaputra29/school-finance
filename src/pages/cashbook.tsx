@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -60,7 +60,8 @@ export default function CashbookPage() {
   const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const fetchData = async () => {
+  // Data fetching - using useCallback to fix exhaustive-deps warning
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       let url = `/api/reports/cashbook`;
@@ -81,11 +82,11 @@ export default function CashbookPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [startDate, endDate]);
 
   useEffect(() => {
     fetchData();
-  }, [startDate, endDate]);
+  }, [fetchData]);
 
   const handleExport = async (format: 'excel' | 'pdf') => {
     window.open(
@@ -99,12 +100,6 @@ export default function CashbookPage() {
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
   const currentEntries = entries.slice(startIndex, endIndex);
-
-  // Calculate running saldo for current page
-  const getRunningBalance = (index: number) => {
-    const actualIndex = startIndex + index;
-    return entries[actualIndex]?.saldo || 0;
-  };
 
   return (
     <>

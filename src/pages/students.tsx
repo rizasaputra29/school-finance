@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Search, ChevronLeft, ChevronRight, Users, Plus, Pencil, Trash2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { useDebounce } from '@/hooks/use-debounce';
 import * as Dialog from '@radix-ui/react-dialog';
 
 interface Student {
@@ -71,6 +72,9 @@ export default function StudentsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   
+  // Debounce search term to avoid excessive API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  
   // Dialog states
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -79,13 +83,13 @@ export default function StudentsPage() {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [error, setError] = useState('');
 
-  const fetchData = async (page = 1) => {
+  const fetchData = useCallback(async (page = 1) => {
     setIsLoading(true);
     try {
       let url = `/api/students?page=${page}&limit=10`;
       if (statusFilter) url += `&statusBayar=${statusFilter}`;
       if (showInactive) url += `&status=Inactive`;
-      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
+      if (debouncedSearchTerm) url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
       
       const res = await fetch(url);
       if (res.ok) {
@@ -98,11 +102,11 @@ export default function StudentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [statusFilter, showInactive, debouncedSearchTerm]);
 
   useEffect(() => {
     fetchData();
-  }, [statusFilter, showInactive, searchTerm]);
+  }, [fetchData]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

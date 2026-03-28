@@ -1,10 +1,34 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
+import { z } from 'zod';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { validateBody, sendValidationError } from '@/lib/validation';
+import { 
+  getIdempotencyResult, 
+  setIdempotencyResult,
+  getIdempotencyKeyFromRequest,
+  isValidIdempotencyKey 
+} from '@/lib/idempotency';
 
-export default async function handler(
-  req: NextApiRequest,
+// Validation schemas
+const createStudentSchema = z.object({
+  nis: z.string().min(1, 'NIS wajib diisi').max(20, 'NIS maksimal 20 karakter'),
+  nama: z.string().min(1, 'Nama wajib diisi').max(100, 'Nama maksimal 100 karakter'),
+  kelas: z.string().optional(),
+  tahunMasuk: z.union([z.number(), z.string()]).optional(),
+  tahunAjaran: z.string().optional(),
+  namaOrtu: z.string().optional(),
+  noTelp: z.string().optional(),
+  statusBayar: z.string().optional(),
+});
+
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
+  const ip = getClientIp(req);
+  
   try {
     switch (req.method) {
       case 'GET': {
@@ -57,11 +81,32 @@ export default async function handler(
       }
 
       case 'POST': {
-        const { nis, nama, jenisKelamin, kelas, tahunMasuk, tahunAjaran, namaOrtu, noTelp, statusBayar, totalTagihan, totalBayar } = req.body;
-
-        if (!nis || !nama || !kelas || !tahunMasuk) {
-          return res.status(400).json({ error: 'NIS, nama, kelas, dan tahun masuk wajib diisi' });
+        // Rate limiting for create operations
+        const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
+        if (!rateLimitResult.success) {
+          res.setHeader('Retry-After', Math.ceil((rateLimitResult.reset - Date.now()) / 1000));
+          return res.status(429).json({ 
+            error: formatRateLimitError(rateLimitResult),
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
         }
+
+        // Check for idempotency key in headers
+        const idempotencyKey = getIdempotencyKeyFromRequest(req);
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(201).json(cachedResult);
+          }
+        }
+
+        // Validate request body
+        const validationErrors = validateBody(req.body, createStudentSchema);
+        if (validationErrors) {
+          return sendValidationError(res, validationErrors);
+        }
+
+        const { nis, nama, kelas, tahunMasuk, tahunAjaran, namaOrtu, noTelp, statusBayar } = req.body as z.infer<typeof createStudentSchema>;
 
         // Check for duplicate NIS
         const existingStudent = await prisma.student.findUnique({
@@ -76,18 +121,22 @@ export default async function handler(
           data: {
             nis,
             nama,
-            jenisKelamin: jenisKelamin || null,
-            kelas,
-            tahunMasuk: parseInt(tahunMasuk),
+            kelas: kelas || '',
+            tahunMasuk: typeof tahunMasuk === 'string' ? parseInt(tahunMasuk) : (tahunMasuk || new Date().getFullYear()),
             tahunAjaran: tahunAjaran || null,
             namaOrtu: namaOrtu || null,
             noTelp: noTelp || null,
             statusBayar: statusBayar || 'Belum Lunas',
             status: 'Active',
-            totalTagihan: parseFloat(totalTagihan) || 0,
-            totalBayar: parseFloat(totalBayar) || 0,
+            totalTagihan: 0,
+            totalBayar: 0,
           },
         });
+
+        // Cache result for idempotency
+        if (idempotencyKey) {
+          setIdempotencyResult(idempotencyKey, student);
+        }
 
         return res.status(201).json(student);
       }
@@ -100,4 +149,6 @@ export default async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });
 

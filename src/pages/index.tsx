@@ -36,7 +36,6 @@ interface DashboardData {
     belumLunasCount: number;
   };
   cashflows: CashflowItem[];
-  accountDistribution: { name: string; value: number }[];
   recentTransactions: {
     id: string;
     tanggal: string;
@@ -46,8 +45,6 @@ interface DashboardData {
     kredit: number;
   }[];
 }
-
-const COLORS = ['#059DEA', '#94a3b8', '#64748b', '#e2e8f0', '#cbd5e1'];
 
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -147,7 +144,6 @@ export default function Dashboard() {
     belumLunasCount: 0,
   };
 
-  const accountDistribution = data?.accountDistribution || [];
   const recentTransactions = data?.recentTransactions || [];
 
   const lunasPercentage = summary.totalStudents > 0 

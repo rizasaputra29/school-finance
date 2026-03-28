@@ -1,6 +1,7 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
 // Define types inline for Prisma v7 compatibility
 interface AccountRecord {
@@ -29,8 +30,8 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   if (req.method !== 'GET') {
@@ -215,3 +216,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Gagal mengexport data' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

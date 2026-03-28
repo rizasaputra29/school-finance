@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,8 +27,8 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { formatCurrency, formatShortDate, formatNumberInput, parseFormattedNumber } from '@/lib/utils';
+import { useDebounce } from '@/hooks/use-debounce';
 import * as Dialog from '@radix-ui/react-dialog';
-import * as Select from '@radix-ui/react-select';
 
 interface Student {
   id: string;
@@ -88,6 +88,9 @@ export default function BillingPage() {
   const [studentSearch, setStudentSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
+  // Debounce search term to avoid excessive API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
   const [selectedBilling, setSelectedBilling] = useState<Billing | null>(null);
   const [error, setError] = useState('');
@@ -99,7 +102,7 @@ export default function BillingPage() {
     catatan: '',
   });
 
-  const fetchStudents = async () => {
+  const fetchStudents = useCallback(async () => {
     try {
       const res = await fetch('/api/students?limit=1000&status=Active');
       if (res.ok) {
@@ -109,14 +112,14 @@ export default function BillingPage() {
     } catch (error) {
       console.error('Failed to fetch students:', error);
     }
-  };
+  }, []);
 
-  const fetchData = async (page = 1) => {
+  const fetchData = useCallback(async (page = 1) => {
     setIsLoading(true);
     try {
       let url = `/api/billing?page=${page}&limit=10`;
       if (statusFilter) url += `&statusBayar=${statusFilter}`;
-      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
+      if (debouncedSearchTerm) url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -130,12 +133,12 @@ export default function BillingPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [statusFilter, debouncedSearchTerm]);
 
   useEffect(() => {
     fetchStudents();
     fetchData();
-  }, [statusFilter, searchTerm]);
+  }, [fetchStudents, fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

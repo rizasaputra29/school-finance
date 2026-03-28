@@ -1,8 +1,15 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { 
+  getIdempotencyResult, 
+  setIdempotencyResult,
+  getIdempotencyKeyFromRequest,
+  isValidIdempotencyKey 
+} from '@/lib/idempotency';
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   const { id } = req.query;
@@ -11,9 +18,20 @@ export default async function handler(
     return res.status(400).json({ error: 'Invalid ID' });
   }
 
+  // Check for idempotency key in headers
+  const idempotencyKey = getIdempotencyKeyFromRequest(req);
+
   try {
     switch (req.method) {
       case 'PATCH': {
+        // Check for idempotency - return cached result if same request
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(200).json(cachedResult);
+          }
+        }
+
         const { tanggal, keterangan, kodeAkun, kategori, debit, kredit } = req.body;
         const newDebit = parseFloat(debit) || 0;
         const newKredit = parseFloat(kredit) || 0;
@@ -94,13 +112,27 @@ export default async function handler(
             return updatedCashflow;
           });
 
+          // Cache result for idempotency
+          if (idempotencyKey) {
+            setIdempotencyResult(idempotencyKey, result);
+          }
+
           return res.status(200).json(result);
-        } catch (error: any) {
-          return res.status(400).json({ error: error.message });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          return res.status(400).json({ error: message });
         }
       }
 
       case 'DELETE': {
+        // Check for idempotency
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(200).json(cachedResult);
+          }
+        }
+
         try {
           const result = await prisma.$transaction(async (tx) => {
             // 1. Get existing cashflow
@@ -141,9 +173,15 @@ export default async function handler(
             return { message: 'Transaksi berhasil dihapus' };
           });
 
+          // Cache result for idempotency
+          if (idempotencyKey) {
+            setIdempotencyResult(idempotencyKey, result);
+          }
+
           return res.status(200).json(result);
-        } catch (error: any) {
-          return res.status(400).json({ error: error.message });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          return res.status(400).json({ error: message });
         }
       }
 
@@ -155,3 +193,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

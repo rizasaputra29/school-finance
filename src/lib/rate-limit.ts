@@ -103,6 +103,12 @@ export const RATE_LIMITS = {
   reset: { interval: 60 * 60 * 1000, limit: 1 },
   // Import: 10 attempts per hour
   import: { interval: 60 * 60 * 1000, limit: 10 },
+  // Write operations: 30 requests per minute
+  write: { interval: 60 * 1000, limit: 30 },
+  // Create operations: 20 per minute
+  create: { interval: 60 * 1000, limit: 20 },
+  // Delete operations: 10 per minute
+  delete: { interval: 60 * 1000, limit: 10 },
 };
 
 // Helper to format rate limit error message

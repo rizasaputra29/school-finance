@@ -1,10 +1,33 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
+import { z } from 'zod';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { validateBody, sendValidationError } from '@/lib/validation';
+import { 
+  getIdempotencyResult, 
+  setIdempotencyResult,
+  getIdempotencyKeyFromRequest,
+  isValidIdempotencyKey 
+} from '@/lib/idempotency';
+// import { revalidateCache } from '@/lib/cache';
 
-export default async function handler(
-  req: NextApiRequest,
+// Validation schemas
+const createCashflowSchema = z.object({
+  tanggal: z.string().min(1, 'Tanggal wajib diisi'),
+  keterangan: z.string().min(1, 'Keterangan wajib diisi').max(500, 'Keterangan maksimal 500 karakter'),
+  kodeAkun: z.string().min(1, 'Kode akun wajib diisi'),
+  kategori: z.string().optional(),
+  debit: z.union([z.number(), z.string()]).optional().default(0),
+  kredit: z.union([z.number(), z.string()]).optional().default(0),
+});
+
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
+  const ip = getClientIp(req);
+  
   try {
     switch (req.method) {
       case 'GET': {
@@ -69,13 +92,32 @@ export default async function handler(
       }
 
       case 'POST': {
-        const { tanggal, keterangan, kodeAkun, kategori, debit, kredit } = req.body;
-
-        if (!tanggal || !keterangan || !kodeAkun) {
-          return res.status(400).json({ error: 'Data tidak lengkap' });
+        // Rate limiting for create operations
+        const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
+        if (!rateLimitResult.success) {
+          res.setHeader('Retry-After', Math.ceil((rateLimitResult.reset - Date.now()) / 1000));
+          return res.status(429).json({ 
+            error: formatRateLimitError(rateLimitResult),
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
         }
 
-        console.log('Creating cashflow:', { tanggal, keterangan, kodeAkun, debit, kredit });
+        // Check for idempotency key in headers
+        const idempotencyKey = getIdempotencyKeyFromRequest(req);
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(201).json(cachedResult);
+          }
+        }
+
+        // Validate request body
+        const validationErrors = validateBody(req.body, createCashflowSchema);
+        if (validationErrors) {
+          return sendValidationError(res, validationErrors);
+        }
+
+        const { tanggal, keterangan, kodeAkun, kategori, debit, kredit } = req.body as z.infer<typeof createCashflowSchema>;
 
         const debitAmount = typeof debit === 'string' ? parseFloat(debit) : Number(debit) || 0;
         const kreditAmount = typeof kredit === 'string' ? parseFloat(kredit) : Number(kredit) || 0;
@@ -124,10 +166,16 @@ export default async function handler(
             return cashflow;
           });
 
+          // Cache result for idempotency
+          if (idempotencyKey) {
+            setIdempotencyResult(idempotencyKey, result);
+          }
+
           return res.status(201).json(result);
-        } catch (error: any) {
+        } catch (error) {
           console.error('Transaction error:', error);
-          return res.status(400).json({ error: error.message });
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          return res.status(400).json({ error: message });
         }
       }
 
@@ -139,3 +187,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

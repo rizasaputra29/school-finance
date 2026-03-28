@@ -1,5 +1,7 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { getCachedDashboardData } from '@/lib/cache';
 
 // Define types inline for Prisma v7 compatibility
 interface CashflowRecord {
@@ -36,41 +38,31 @@ interface AccountRecord {
   updatedAt: Date;
 }
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   try {
-    // Get date range for last 12 months (all data needed for client-side filtering)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setFullYear(startDate.getFullYear() - 1);
-
-    // Get cashflow data
-    const cashflows = await prisma.cashflow.findMany({
-      where: {
-        tanggal: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      orderBy: { tanggal: 'asc' },
-    }) as CashflowRecord[];
-
-    // Calculate totals
+    // Use cached dashboard data for better performance
+    const cachedData = await getCachedDashboardData();
+    
+    // Process cached data
+    const cashflows = cachedData.recentCashflows as CashflowRecord[];
+    const allAccounts = cachedData.totalAccounts as AccountRecord[];
+    
+    // Calculate totals from cached cashflows
     const totalDebit = cashflows.reduce((sum: number, cf) => sum + cf.debit, 0);
     const totalKredit = cashflows.reduce((sum: number, cf) => sum + cf.kredit, 0);
     const saldo = totalDebit - totalKredit;
 
-    // Get student stats
-    const students = await prisma.student.findMany() as StudentRecord[];
+    // Get student stats (less frequently changing, so not cached)
+    const students = await prisma.student.findMany({ where: { status: 'Active' } }) as StudentRecord[];
     const totalStudents = students.length;
     const lunasCount = students.filter((s) => s.statusBayar === 'Lunas').length;
     const belumLunasCount = totalStudents - lunasCount;
 
-    // Get account distribution for pie chart
-    const accounts = await prisma.account.findMany() as AccountRecord[];
-    const accountDistribution = accounts
+    // Get account distribution from cached accounts
+    const accountDistribution = allAccounts
       .filter((a) => a.tipeAkun === 'Expense' && a.saldo > 0)
       .map((a) => ({
         name: a.namaAkun,
@@ -79,7 +71,7 @@ export default async function handler(
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Get recent transactions
+    // Get recent transactions (not cached - needs to be fresh)
     const recentTransactions = await prisma.cashflow.findMany({
       orderBy: { tanggal: 'desc' },
       take: 5,
@@ -109,3 +101,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withAuth(handler);

@@ -1,8 +1,9 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   if (req.method !== 'GET') {
@@ -35,3 +36,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to export data' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

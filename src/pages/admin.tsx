@@ -34,19 +34,11 @@ export default function AdminPage() {
     'Data Siswa',
     'Akun',
   ]);
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
 
-  // Redirect non-admin
-  if (!isAdmin) {
-    return (
-      <div className="flex h-[60vh] flex-col items-center justify-center gap-4">
-        <AlertCircle className="h-16 w-16 text-amber-500" />
-        <h1 className="text-2xl font-bold text-gray-900">Akses Ditolak</h1>
-        <p className="text-gray-500">Halaman ini hanya untuk admin</p>
-        <Button onClick={() => router.push('/login')}>Login sebagai Admin</Button>
-      </div>
-    );
-  }
-
+  // Callbacks - defined after all state hooks
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -157,9 +149,17 @@ export default function AdminPage() {
     }
   };
 
-  const [isResetOpen, setIsResetOpen] = useState(false);
-  const [resetConfirmation, setResetConfirmation] = useState('');
-  const [isResetting, setIsResetting] = useState(false);
+  // Early return AFTER all hooks - following React best practices
+  if (!isAdmin) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-4">
+        <AlertCircle className="h-16 w-16 text-amber-500" />
+        <h1 className="text-2xl font-bold text-gray-900">Akses Ditolak</h1>
+        <p className="text-gray-500">Halaman ini hanya untuk admin</p>
+        <Button onClick={() => router.push('/login')}>Login sebagai Admin</Button>
+      </div>
+    );
+  }
 
   const handleReset = async () => {
     if (resetConfirmation !== 'RESET_DATABASE') return;

@@ -1,7 +1,8 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
 // Define types inline for Prisma v7 compatibility
 interface AccountRecord {
@@ -12,8 +13,21 @@ interface AccountRecord {
   saldo: number;
 }
 
-export default async function handler(
-  req: NextApiRequest,
+// Proper type for jsPDF with autotable plugin
+interface JsPDFWithAutoTable extends jsPDF {
+  lastAutoTable?: {
+    finalY: number;
+  };
+}
+
+// Helper to get lastAutoTable finalY with fallback
+function getLastAutoTableFinalY(doc: jsPDF): number {
+  const typedDoc = doc as JsPDFWithAutoTable;
+  return typedDoc.lastAutoTable?.finalY ?? 0;
+}
+
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   if (req.method !== 'GET') {
@@ -117,7 +131,7 @@ export default async function handler(
     };
 
     if (type === 'laba-rugi') {
-      let startY = addHeader('LAPORAN LABA RUGI');
+      const startY = addHeader('LAPORAN LABA RUGI');
 
       const revenues = accounts.filter((a) => a.tipeAkun === 'Revenue');
       const expenses = accounts.filter((a) => a.tipeAkun === 'Expense');
@@ -151,7 +165,7 @@ export default async function handler(
       });
 
       // Beban section
-      const finalY1 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+      const finalY1 = getLastAutoTableFinalY(doc) + 10;
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.text('BEBAN', 14, finalY1);
@@ -176,7 +190,7 @@ export default async function handler(
       });
 
       // Laba Rugi summary
-      const finalY2 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      const finalY2 = getLastAutoTableFinalY(doc) + 8;
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.5);
       doc.line(14, finalY2, pageWidth - 14, finalY2);
@@ -191,7 +205,7 @@ export default async function handler(
     }
 
     if (type === 'neraca') {
-      let startY = addHeader('NERACA');
+      const startY = addHeader('NERACA');
 
       const assets = accounts.filter((a) => a.tipeAkun === 'Asset');
       const liabilities = accounts.filter((a) => a.tipeAkun === 'Liability');
@@ -227,7 +241,7 @@ export default async function handler(
       });
 
       // Kewajiban section
-      const finalY1 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+      const finalY1 = getLastAutoTableFinalY(doc) + 10;
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.text('KEWAJIBAN', 14, finalY1);
@@ -252,7 +266,7 @@ export default async function handler(
       });
 
       // Ekuitas section
-      const finalY2 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+      const finalY2 = getLastAutoTableFinalY(doc) + 10;
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.text('EKUITAS', 14, finalY2);
@@ -277,7 +291,7 @@ export default async function handler(
       });
 
       // Total summary
-      const finalY3 = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      const finalY3 = getLastAutoTableFinalY(doc) + 8;
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.5);
       doc.line(14, finalY3, pageWidth - 14, finalY3);
@@ -304,3 +318,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Gagal mengexport data' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

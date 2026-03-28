@@ -1,5 +1,5 @@
-require('dotenv').config();
-const { Pool } = require('pg');
+import 'dotenv/config';
+import { Pool } from 'pg';
 
 async function resetDatabase() {
   const pool = new Pool({ 
@@ -17,7 +17,7 @@ async function resetDatabase() {
       await pool.query('SELECT 1');
       console.log('✓ Connected to database');
       break;
-    } catch (err) {
+    } catch {
       retries--;
       console.log(`⚠️ Connection failed, retrying... (${retries} attempts left)`);
       if (retries === 0) {

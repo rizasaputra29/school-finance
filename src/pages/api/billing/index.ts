@@ -1,10 +1,31 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
+import { z } from 'zod';
 import prisma from '@/lib/prisma';
+import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
+import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { validateBody, sendValidationError } from '@/lib/validation';
+import { 
+  getIdempotencyResult, 
+  setIdempotencyResult,
+  getIdempotencyKeyFromRequest,
+  isValidIdempotencyKey 
+} from '@/lib/idempotency';
 
-export default async function handler(
-  req: NextApiRequest,
+// Validation schemas
+const createBillingSchema = z.object({
+  studentId: z.string().min(1, 'Siswa wajib dipilih'),
+  jenisBiaya: z.string().min(1, 'Jenis biaya wajib diisi'),
+  periodeBulan: z.string().optional(),
+  jumlah: z.union([z.number(), z.string()]).optional(),
+  catatan: z.string().optional(),
+});
+
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
+  const ip = getClientIp(req);
+  
   try {
     switch (req.method) {
       case 'GET': {
@@ -76,11 +97,32 @@ export default async function handler(
       }
 
       case 'POST': {
-        const { studentId, jenisBiaya, periodeBulan, jumlah, catatan } = req.body;
-
-        if (!studentId || !jenisBiaya || !periodeBulan || !jumlah) {
-          return res.status(400).json({ error: 'Semua field wajib diisi' });
+        // Rate limiting for create operations
+        const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
+        if (!rateLimitResult.success) {
+          res.setHeader('Retry-After', Math.ceil((rateLimitResult.reset - Date.now()) / 1000));
+          return res.status(429).json({ 
+            error: formatRateLimitError(rateLimitResult),
+            code: 'RATE_LIMIT_EXCEEDED'
+          });
         }
+
+        // Check for idempotency key in headers
+        const idempotencyKey = getIdempotencyKeyFromRequest(req);
+        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+          const cachedResult = getIdempotencyResult(idempotencyKey);
+          if (cachedResult !== null) {
+            return res.status(201).json(cachedResult);
+          }
+        }
+
+        // Validate request body
+        const validationErrors = validateBody(req.body, createBillingSchema);
+        if (validationErrors) {
+          return sendValidationError(res, validationErrors);
+        }
+
+        const { studentId, jenisBiaya, periodeBulan, jumlah, catatan } = req.body as z.infer<typeof createBillingSchema>;
 
         // Check for duplicate billing
         const existingBilling = await prisma.billing.findUnique({
@@ -88,7 +130,7 @@ export default async function handler(
             studentId_jenisBiaya_periodeBulan: {
               studentId,
               jenisBiaya,
-              periodeBulan,
+              periodeBulan: periodeBulan || '',
             },
           },
         });
@@ -112,8 +154,8 @@ export default async function handler(
           data: {
             studentId,
             jenisBiaya,
-            periodeBulan,
-            jumlah: parseFloat(jumlah as string),
+            periodeBulan: periodeBulan || '',
+            jumlah: typeof jumlah === 'string' ? parseFloat(jumlah) : (jumlah || 0),
             catatan: catatan || null,
             statusBayar: 'Belum Lunas',
           },
@@ -138,6 +180,11 @@ export default async function handler(
           },
         });
 
+        // Cache result for idempotency
+        if (idempotencyKey) {
+          setIdempotencyResult(idempotencyKey, billing);
+        }
+
         return res.status(201).json(billing);
       }
 
@@ -149,3 +196,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+
+export default withAuth(handler, { requireAdmin: true });

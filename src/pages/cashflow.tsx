@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Plus, Search, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Filter, Pencil, Trash2 } from 'lucide-react';
 import { formatCurrency, formatShortDate, formatNumberInput, parseFormattedNumber } from '@/lib/utils';
+import { useDebounce } from '@/hooks/use-debounce';
 import * as Dialog from '@radix-ui/react-dialog';
 
 interface Cashflow {
@@ -81,6 +82,9 @@ export default function CashflowPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
+  // Debounce search term to avoid excessive API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  
   // Dialog States
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -90,7 +94,7 @@ export default function CashflowPage() {
   const [error, setError] = useState('');
   const [accountSearch, setAccountSearch] = useState('');
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
-  const fetchAccounts = async () => {
+  const fetchAccounts = useCallback(async () => {
     try {
       const res = await fetch('/api/accounts');
       if (res.ok) {
@@ -100,16 +104,16 @@ export default function CashflowPage() {
     } catch (error) {
       console.error('Failed to fetch accounts:', error);
     }
-  };
+  }, []);
 
-  const fetchData = async (page = 1) => {
+  const fetchData = useCallback(async (page = 1) => {
     setIsLoading(true);
     try {
       let url = `/api/cashflow?page=${page}&limit=10`;
       if (startDate) url += `&startDate=${startDate}`;
       if (endDate) url += `&endDate=${endDate}`;
       if (typeFilter !== 'all') url += `&type=${typeFilter}`;
-      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
+      if (debouncedSearchTerm) url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -123,15 +127,15 @@ export default function CashflowPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [typeFilter, startDate, endDate, debouncedSearchTerm]);
 
   useEffect(() => {
     fetchAccounts();
-  }, []);
+  }, [fetchAccounts]);
 
   useEffect(() => {
     fetchData();
-  }, [typeFilter, startDate, endDate, searchTerm]);
+  }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,17 +233,13 @@ export default function CashflowPage() {
     setIsEditOpen(true);
   };
 
-  const filteredCashflows = cashflows.filter(
-    (cf) =>
-      cf.keterangan.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cf.kodeAkun.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (cf.kategori && cf.kategori.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
+  // Note: Filtering is now done server-side via API
+  // Client-side filtering kept for immediate UI feedback
   const clearFilters = () => {
     setTypeFilter('all');
     setStartDate('');
     setEndDate('');
+    setSearchTerm('');
   };
 
   const renderForm = (onSubmit: (e: React.FormEvent) => Promise<void>, submitLabel: string) => (
@@ -596,7 +596,7 @@ export default function CashflowPage() {
               <div className="flex h-48 items-center justify-center">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
               </div>
-            ) : filteredCashflows.length > 0 ? (
+            ) : cashflows.length > 0 ? (
               <div className="overflow-x-auto -mx-4 px-4">
               <Table className="min-w-[800px]">
                 <TableHeader>
@@ -612,7 +612,7 @@ export default function CashflowPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCashflows.map((cf) => (
+                  {cashflows.map((cf) => (
                     <TableRow key={cf.id}>
                       <TableCell className="font-medium whitespace-nowrap">
                         {formatShortDate(cf.tanggal)}
