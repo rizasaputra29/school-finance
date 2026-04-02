@@ -1,0 +1,30 @@
+{
+  "id": "buku-besar-n1-fix-01",
+  "seq": "01",
+  "title": "Analyze current implementation and document query patterns",
+  "status": "pending",
+  "depends_on": [],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "/Users/riza/school-finance/src/pages/api/reports/buku-besar.ts",
+    "/Users/riza/school-finance/prisma/schema.prisma"
+  ],
+  "acceptance_criteria": [
+    "Document current N+1 query pattern with exact query count formula",
+    "Identify all Prisma queries in getLedgerForAccount function",
+    "Map query execution flow for both single account and 'Semua' scenarios",
+    "Document the 3N+1 query problem with concrete examples",
+    "Create analysis document showing query execution per account"
+  ],
+  "deliverables": [
+    "Query analysis document (can be comments in code or separate markdown)",
+    "List of all Prisma queries that need optimization"
+  ],
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

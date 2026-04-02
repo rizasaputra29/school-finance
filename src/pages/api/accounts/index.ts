@@ -64,8 +64,10 @@ async function handler(
   try {
     switch (req.method) {
       case 'GET': {
-        // Use cached accounts for better performance
-        const accounts = await getCachedAccounts();
+        // Use direct query to bypass cache for accurate data
+        const accounts = await prisma.account.findMany({
+          orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
+        });
         return res.status(200).json(accounts);
       }
 

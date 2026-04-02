@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { validateBody, sendValidationError } from '@/lib/validation';
-import { invalidateDashboardCache } from '@/lib/cache';
+
 
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -114,6 +114,7 @@ async function processDoubleEntry(
         debit: entry.debit,
         kredit: entry.kredit,
         source,
+        status: 'draft',
       } as never,
     });
 
@@ -136,7 +137,7 @@ async function handler(
   try {
     switch (req.method) {
       case 'GET': {
-        const { page = '1', limit = '10', startDate, endDate, kodeAkun, type, search, transactionType } = req.query;
+        const { page = '1', limit = '10', startDate, endDate, kodeAkun, type, search, transactionType, status } = req.query;
         const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
         const where: Record<string, unknown> = {};
@@ -148,6 +149,11 @@ async function handler(
         }
         if (kodeAkun) {
           where.kodeAkun = kodeAkun;
+        }
+        
+        // Filter by status (draft, approved, posted, rejected)
+        if (status) {
+          where.status = status;
         }
         
         // Filter by transaction type (kategori)
@@ -300,6 +306,9 @@ async function handler(
               }
 
               return processResult;
+            }, {
+              maxWait: 10000,
+              timeout: 30000,
             });
 
             return res.status(201).json({
@@ -384,14 +393,15 @@ async function handler(
                 debit: debitAmount,
                 kredit: kreditAmount,
                 source: source as 'kas' | 'bank' | undefined,
+                status: 'draft',
               },
             } as never);
 
             return cashflow;
+          }, {
+            maxWait: 10000,
+            timeout: 30000,
           });
-
-          // Invalidate dashboard cache after successful transaction
-          invalidateDashboardCache();
 
           return res.status(201).json({
             ...result,

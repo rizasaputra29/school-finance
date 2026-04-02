@@ -1,0 +1,32 @@
+{
+  "id": "buku-besar-n1-fix-07",
+  "seq": "07",
+  "title": "Test with multiple accounts and verify pagination",
+  "status": "pending",
+  "depends_on": ["05"],
+  "parallel": true,
+  "suggested_agent": "TestEngineer",
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "/Users/riza/school-finance/src/pages/api/reports/buku-besar.ts",
+    "/Users/riza/school-finance/src/pages/buku-besar.tsx"
+  ],
+  "acceptance_criteria": [
+    "Test API with 1 account selected",
+    "Test API with 5 accounts selected",
+    "Test API with 20+ accounts selected (Semua)",
+    "Verify pagination works correctly (page, limit, total, totalPages)",
+    "Verify sorting by date and createdAt is correct",
+    "Test with various date ranges (single day, month, year)",
+    "Confirm query count stays at 3 or fewer regardless of account count"
+  ],
+  "deliverables": [
+    "Test results document",
+    "Query count verification for each test case"
+  ],
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

@@ -14,6 +14,9 @@ import {
   Wallet,
   FileText,
   Upload,
+  Briefcase,
+  Building2,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -25,9 +28,13 @@ const mainNavItems = [
 ];
 
 const moreNavItems = [
+  { name: 'Karyawan', href: '/karyawan', icon: Briefcase },
+  { name: 'Gaji', href: '/karyawan/payroll', icon: Wallet },
   { name: 'Akun', href: '/accounts', icon: BookOpen },
-  { name: 'Buku Kas', href: '/cashbook', icon: Wallet },
+  { name: 'Kas & Bank', href: '/keuangan', icon: Building2 },
   { name: 'Laporan', href: '/reports', icon: FileText },
+  { name: 'Buku Kas', href: '/cashbook', icon: Wallet },
+  { name: 'Performa', href: '/performa', icon: BarChart3 },
 ];
 
 const adminNavItems = [

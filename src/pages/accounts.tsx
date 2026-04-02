@@ -222,7 +222,7 @@ export default function AccountsPage() {
           id="kodeAkun"
           value={formData.kodeAkun}
           onChange={(e) => setFormData({ ...formData, kodeAkun: e.target.value })}
-          placeholder="Contoh: 1101"
+          placeholder="Contoh: 101"
           required
           disabled={isEdit} // Kode akun shouldn't ideally be changed easily as it breaks relations
         />

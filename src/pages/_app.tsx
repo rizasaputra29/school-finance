@@ -2,6 +2,7 @@ import '@/styles/globals.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { AuthProvider } from '@/context/AuthContext';
+import { AcademicYearProvider } from '@/context/AcademicYearContext';
 import { Layout } from '@/components/Layout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useRouter } from 'next/router';
@@ -17,13 +18,15 @@ export default function App({ Component, pageProps }: AppProps) {
       </Head>
       <ErrorBoundary>
         <AuthProvider>
-          {isLoginPage ? (
-            <Component {...pageProps} />
-          ) : (
-            <Layout>
+          <AcademicYearProvider>
+            {isLoginPage ? (
               <Component {...pageProps} />
-            </Layout>
-          )}
+            ) : (
+              <Layout>
+                <Component {...pageProps} />
+              </Layout>
+            )}
+          </AcademicYearProvider>
         </AuthProvider>
       </ErrorBoundary>
     </>

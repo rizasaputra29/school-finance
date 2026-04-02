@@ -32,7 +32,69 @@ async function handler(
           }
         }
 
-        const { tanggal, keterangan, kodeAkun, kategori, debit, kredit } = req.body;
+        const { tanggal, keterangan, kodeAkun, kategori, debit, kredit, status } = req.body;
+
+        // Handle status update (approve/reject)
+        if (status) {
+          const validStatuses = ['draft', 'approved', 'posted', 'rejected'];
+          if (!validStatuses.includes(status)) {
+            return res.status(400).json({ error: 'Status tidak valid' });
+          }
+
+          try {
+            const result = await prisma.$transaction(async (tx) => {
+              // Get existing cashflow
+              const oldCashflow = await tx.cashflow.findUnique({
+                where: { id },
+              });
+
+              if (!oldCashflow) {
+                throw new Error('Transaksi tidak ditemukan');
+              }
+
+              // If changing to 'posted' or 'approved', update account balances
+              if ((status === 'posted' || status === 'approved') && oldCashflow.status === 'draft') {
+                const account = await tx.account.findUnique({
+                  where: { kodeAkun: oldCashflow.kodeAkun },
+                });
+
+                if (account) {
+                  let saldoChange = 0;
+                  const isDebitNormal = ['Asset', 'Expense'].includes(account.tipeAkun);
+
+                  if (isDebitNormal) {
+                    saldoChange = oldCashflow.debit - oldCashflow.kredit;
+                  } else {
+                    saldoChange = oldCashflow.kredit - oldCashflow.debit;
+                  }
+
+                  await tx.account.update({
+                    where: { kodeAkun: oldCashflow.kodeAkun },
+                    data: { saldo: { increment: saldoChange } },
+                  });
+                }
+              }
+
+              // Update cashflow status
+              const updatedCashflow = await tx.cashflow.update({
+                where: { id },
+                data: { status },
+              });
+
+              return updatedCashflow;
+            });
+
+            if (idempotencyKey) {
+              setIdempotencyResult(idempotencyKey, result);
+            }
+
+            return res.status(200).json(result);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            return res.status(400).json({ error: message });
+          }
+        }
+
         const newDebit = parseFloat(debit) || 0;
         const newKredit = parseFloat(kredit) || 0;
 

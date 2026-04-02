@@ -2,21 +2,12 @@ import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
-// Types for Prisma v7
 interface AccountRecord {
   id: string;
   kodeAkun: string;
   namaAkun: string;
   tipeAkun: string;
   saldo: number;
-}
-
-interface CashflowRecord {
-  id: string;
-  tanggal: Date;
-  kodeAkun: string;
-  debit: number;
-  kredit: number;
 }
 
 async function handler(
@@ -28,36 +19,21 @@ async function handler(
   }
 
   try {
-    // Parse query params for period filtering
     const { bulan, tahun } = req.query;
 
-    // Build date filter for cashflows
-    const cashflowWhere: Record<string, unknown> = {};
+    const journalWhereDate: any = {};
     
     if (bulan && tahun) {
       const month = parseInt(bulan as string, 10);
       const year = parseInt(tahun as string, 10);
-      
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0, 23, 59, 59); // Last day of month
-      
-      cashflowWhere.tanggal = {
-        gte: startDate,
-        lte: endDate,
-      };
+      journalWhereDate.gte = new Date(year, month - 1, 1);
+      journalWhereDate.lte = new Date(year, month, 0, 23, 59, 59);
     } else if (tahun) {
-      // Filter by year only
       const year = parseInt(tahun as string, 10);
-      const startDate = new Date(year, 0, 1);
-      const endDate = new Date(year, 11, 31, 23, 59, 59);
-      
-      cashflowWhere.tanggal = {
-        gte: startDate,
-        lte: endDate,
-      };
+      journalWhereDate.gte = new Date(year, 0, 1);
+      journalWhereDate.lte = new Date(year, 11, 31, 23, 59, 59);
     }
 
-    // Get all Revenue and Expense accounts
     const accounts = await prisma.account.findMany({
       where: {
         tipeAkun: { in: ['Revenue', 'Expense'] },
@@ -65,59 +41,69 @@ async function handler(
       orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
     }) as AccountRecord[];
 
-    // Get cashflows for the period
-    const cashflows = await prisma.cashflow.findMany({
-      where: cashflowWhere,
-      orderBy: [{ tanggal: 'asc' }, { createdAt: 'asc' }],
-    }) as CashflowRecord[];
+    // If there is no specific date bounds that slice out the beginning of the system,
+    // we should include initial seeded saldo in calculation (e.g. they want overall view or YTD)
+    // If there's a strict `gte` start date, we likely only want net movement in that specific period.
+    const shouldIncludeSeededSaldo = !journalWhereDate.gte;
 
-    // Calculate totals from cashflows (more accurate for period filtering)
+    const queryWhere: any = {};
+    if (journalWhereDate.gte || journalWhereDate.lte) {
+      queryWhere.journalEntry = { tanggal: journalWhereDate };
+    }
+
+    const lineTotals = await prisma.journalEntryLine.groupBy({
+      by: ['kodeAkun'],
+      _sum: { debit: true, kredit: true },
+      where: queryWhere
+    });
+
+    const accountMap = new Map<string, { debit: number; kredit: number }>();
+    for (const line of lineTotals) {
+      accountMap.set(line.kodeAkun, {
+        debit: line._sum.debit || 0,
+        kredit: line._sum.kredit || 0
+      });
+    }
+
     const revenueAccounts = accounts.filter((a) => a.tipeAkun === 'Revenue');
     const expenseAccounts = accounts.filter((a) => a.tipeAkun === 'Expense');
 
-    // Calculate totals for each Revenue account from cashflows
     const revenueData = revenueAccounts.map((account) => {
-      const accountCashflows = cashflows.filter((cf) => cf.kodeAkun === account.kodeAkun);
-      const totalDebit = accountCashflows.reduce((sum, cf) => sum + cf.debit, 0);
-      const totalKredit = accountCashflows.reduce((sum, cf) => sum + cf.kredit, 0);
-      
-      // For Revenue accounts: kredit increases revenue
-      const jumlah = totalKredit - totalDebit;
+      const movements = accountMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
+      // Revenue is normal credit balance
+      const netMovement = movements.kredit - movements.debit;
+      let total = netMovement;
+      if (shouldIncludeSeededSaldo) total += account.saldo;
       
       return {
         kodeAkun: account.kodeAkun,
         namaAkun: account.namaAkun,
         tipeAkun: account.tipeAkun,
-        jumlah: Math.max(0, jumlah), // Ensure non-negative
+        jumlah: Math.max(0, total),
       };
     });
 
-    // Calculate totals for each Expense account from cashflows
     const expenseData = expenseAccounts.map((account) => {
-      const accountCashflows = cashflows.filter((cf) => cf.kodeAkun === account.kodeAkun);
-      const totalDebit = accountCashflows.reduce((sum, cf) => sum + cf.debit, 0);
-      const totalKredit = accountCashflows.reduce((sum, cf) => sum + cf.kredit, 0);
-      
-      // For Expense accounts: debit increases expense
-      const jumlah = totalDebit - totalKredit;
+      const movements = accountMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
+      // Expense is normal debit balance
+      const netMovement = movements.debit - movements.kredit;
+      let total = netMovement;
+      if (shouldIncludeSeededSaldo) total += account.saldo;
       
       return {
         kodeAkun: account.kodeAkun,
         namaAkun: account.namaAkun,
         tipeAkun: account.tipeAkun,
-        jumlah: Math.max(0, jumlah),
+        jumlah: Math.max(0, total),
       };
     });
 
-    // Calculate summary totals
     const totalPendapatan = revenueData.reduce((sum, item) => sum + item.jumlah, 0);
     const totalBeban = expenseData.reduce((sum, item) => sum + item.jumlah, 0);
     const labaRugi = totalPendapatan - totalBeban;
 
-    // Determine status: LABA (profit) or RUGI (loss)
     const status = labaRugi >= 0 ? 'LABA' : 'RUGI';
 
-    // Build response data - combine revenues and expenses
     const data = [
       ...revenueData.map((item) => ({
         ...item,
@@ -134,7 +120,7 @@ async function handler(
       summary: {
         totalPendapatan,
         totalBeban,
-        labaRugi: Math.abs(labaRugi), // Return absolute value for display
+        labaRugi: Math.abs(labaRugi),
         status,
         isPositive: labaRugi >= 0,
       },
@@ -149,4 +135,4 @@ async function handler(
   }
 }
 
-export default withAuth(handler, { requireAdmin: true });
+export default withAuth(handler);

@@ -2,72 +2,16 @@ import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
-// Types for Prisma v7
 interface AccountRecord {
   id: string;
   kodeAkun: string;
   namaAkun: string;
   tipeAkun: string;
   saldo: number;
+  isContra: boolean;
 }
 
-interface CashflowRecord {
-  id: string;
-  tanggal: Date;
-  kodeAkun: string;
-  debit: number;
-  kredit: number;
-}
-
-/**
- * Calculate account balance from cashflows for a given period
- * This ensures accurate period-based calculations
- */
-function calculateAccountBalance(
-  cashflows: CashflowRecord[],
-  kodeAkun: string,
-  accountType: string
-): number {
-  const accountCashflows = cashflows.filter((cf) => cf.kodeAkun === kodeAkun);
-  const totalDebit = accountCashflows.reduce((sum, cf) => sum + cf.debit, 0);
-  const totalKredit = accountCashflows.reduce((sum, cf) => sum + cf.kredit, 0);
-
-  // Asset: debit increases (normal balance is debit)
-  // Liability & Equity: credit increases (normal balance is credit)
-  // Akumulasi Penyusutan is a contra-asset (credit increases, shown as negative)
-
-  if (accountType === 'Asset') {
-    // For Asset accounts: debit - credit
-    return totalDebit - totalKredit;
-  } else if (accountType === 'Liability' || accountType === 'Equity') {
-    // For Liability & Equity: credit - debit
-    return totalKredit - totalDebit;
-  }
-
-  return 0;
-}
-
-/**
- * Calculate current period profit/loss (Laba/Rugi)
- */
-async function calculateLabaRugi(
-  cashflows: CashflowRecord[],
-  accounts: AccountRecord[]
-): Promise<number> {
-  const revenueAccounts = accounts.filter((a) => a.tipeAkun === 'Revenue');
-  const expenseAccounts = accounts.filter((a) => a.tipeAkun === 'Expense');
-
-  const totalRevenue = revenueAccounts.reduce((sum, account) => {
-    return sum + calculateAccountBalance(cashflows, account.kodeAkun, 'Revenue');
-  }, 0);
-
-  const totalExpense = expenseAccounts.reduce((sum, account) => {
-    return sum + calculateAccountBalance(cashflows, account.kodeAkun, 'Expense');
-  }, 0);
-
-  // Laba = Revenue - Expense (can be positive or negative)
-  return totalRevenue - totalExpense;
-}
+const DEBIT_NORMAL_ACCOUNTS = ['Asset', 'Aset', 'Expense', 'Beban'];
 
 async function handler(
   req: AuthenticatedRequest,
@@ -78,35 +22,18 @@ async function handler(
   }
 
   try {
-    // Parse query params for period filtering
     const { bulan, tahun } = req.query;
 
-    // Build date filter for cashflows
-    const cashflowWhere: Record<string, unknown> = {};
-
+    let endDate = new Date();
     if (bulan && tahun) {
       const month = parseInt(bulan as string, 10);
       const year = parseInt(tahun as string, 10);
-
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0, 23, 59, 59);
-
-      cashflowWhere.tanggal = {
-        gte: startDate,
-        lte: endDate,
-      };
+      endDate = new Date(year, month, 0, 23, 59, 59);
     } else if (tahun) {
       const year = parseInt(tahun as string, 10);
-      const startDate = new Date(year, 0, 1);
-      const endDate = new Date(year, 11, 31, 23, 59, 59);
-
-      cashflowWhere.tanggal = {
-        gte: startDate,
-        lte: endDate,
-      };
+      endDate = new Date(year, 11, 31, 23, 59, 59);
     }
 
-    // Get all Asset, Liability, and Equity accounts
     const accounts = await prisma.account.findMany({
       where: {
         tipeAkun: { in: ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'] },
@@ -114,60 +41,74 @@ async function handler(
       orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
     }) as AccountRecord[];
 
-    // Get cashflows for the period
-    const cashflows = await prisma.cashflow.findMany({
-      where: cashflowWhere,
-      orderBy: [{ tanggal: 'asc' }, { createdAt: 'asc' }],
-    }) as CashflowRecord[];
+    // Use JournalEntryLine for proper accounting
+    const lineTotals = await prisma.journalEntryLine.groupBy({
+      by: ['kodeAkun'],
+      _sum: { debit: true, kredit: true },
+      where: {
+        journalEntry: {
+          tanggal: { lte: endDate },
+          status: 'posted'
+        }
+      }
+    });
 
-    // Get account type groups
+    const accountMap = new Map<string, { debit: number; kredit: number }>();
+    for (const line of lineTotals) {
+      accountMap.set(line.kodeAkun, {
+        debit: line._sum.debit || 0,
+        kredit: line._sum.kredit || 0
+      });
+    }
+
+    let calculatedLabaRugiAccumulated = 0;
+    const netBalances = new Map<string, number>();
+
+    // Calculate balances
+    for (const account of accounts) {
+      const movements = accountMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
+      const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
+      
+      let netMovement = isDebitNormal ? (movements.debit - movements.kredit) : (movements.kredit - movements.debit);
+      let totalBalance = account.saldo + netMovement;
+      
+      netBalances.set(account.kodeAkun, totalBalance);
+
+      if (account.tipeAkun === 'Revenue') {
+        calculatedLabaRugiAccumulated += totalBalance;
+      } else if (account.tipeAkun === 'Expense') {
+        calculatedLabaRugiAccumulated -= totalBalance;
+      }
+    }
+
     const assetAccounts = accounts.filter((a) => a.tipeAkun === 'Asset');
     const liabilityAccounts = accounts.filter((a) => a.tipeAkun === 'Liability');
     const equityAccounts = accounts.filter((a) => a.tipeAkun === 'Equity');
 
-    // Calculate current period profit/loss
-    const labaRugi = await calculateLabaRugi(cashflows, accounts);
-
-    // Calculate Aset (Asset) items
-    // For Akumulasi Penyusutan, we need special handling (contra-asset)
     const asetData = assetAccounts.map((account) => {
-      const jumlah = calculateAccountBalance(cashflows, account.kodeAkun, 'Asset');
-
-      // Check if this is Akumulasi Penyusutan (contra-asset)
-      const isAkumulasiPenyusutan =
-        account.namaAkun.toLowerCase().includes('akumulasi') ||
-        account.namaAkun.toLowerCase().includes('penyusutan');
-
+      const jumlah = netBalances.get(account.kodeAkun) || 0;
       return {
         kodeAkun: account.kodeAkun,
         namaAkun: account.namaAkun,
-        jumlah: isAkumulasiPenyusutan ? -Math.abs(jumlah) : Math.max(0, jumlah),
+        jumlah: account.isContra ? -Math.abs(jumlah) : jumlah,
       };
     });
 
-    // Calculate Total Aset
-    // Sum of all assets minus accumulated depreciation
     const totalAset = asetData.reduce((sum, item) => sum + item.jumlah, 0);
 
-    // Calculate Kewajiban (Liability) items - shown as negative
     const kewajibanData = liabilityAccounts.map((account) => {
-      const jumlah = calculateAccountBalance(cashflows, account.kodeAkun, 'Liability');
-
-      // Show liabilities as negative (credit balance)
+      const jumlah = netBalances.get(account.kodeAkun) || 0;
       return {
         kodeAkun: account.kodeAkun,
         namaAkun: account.namaAkun,
-        jumlah: -Math.abs(jumlah), // Always negative for display
+        jumlah, 
       };
     });
 
-    // Calculate Total Kewajiban (Liabilities)
     const totalKewajiban = kewajibanData.reduce((sum, item) => sum + item.jumlah, 0);
 
-    // Calculate Ekuitas (Equity) items
     const ekuitasData = equityAccounts.map((account) => {
-      const jumlah = calculateAccountBalance(cashflows, account.kodeAkun, 'Equity');
-
+      const jumlah = netBalances.get(account.kodeAkun) || 0;
       return {
         kodeAkun: account.kodeAkun,
         namaAkun: account.namaAkun,
@@ -175,24 +116,16 @@ async function handler(
       };
     });
 
-    // Add Laba/Rugi as separate line item in Ekuitas
-    // If profit: adds to equity. If loss: reduces equity
     const labaRugiItem = {
       kodeAkun: 'LABA_RUGI',
       namaAkun: 'Laba/Rugi Berjalan',
-      jumlah: labaRugi,
+      jumlah: calculatedLabaRugiAccumulated,
     };
 
-    // Calculate Total Ekuitas (including current period profit/loss)
-    const totalEkuitas =
-      ekuitasData.reduce((sum, item) => sum + item.jumlah, 0) + labaRugi;
-
-    // Total Liabilitas + Ekuitas
+    const totalEkuitas = ekuitasData.reduce((sum, item) => sum + item.jumlah, 0) + calculatedLabaRugiAccumulated;
     const totalLiabilitasEkuitas = totalKewajiban + totalEkuitas;
-
-    // Balance check: Aset = Liabilitas + Ekuitas
     const balanceDifference = totalAset - totalLiabilitasEkuitas;
-    const isBalance = balanceDifference === 0;
+    const isBalance = Math.abs(balanceDifference) < 0.01;
 
     return res.status(200).json({
       data: {
@@ -219,4 +152,4 @@ async function handler(
   }
 }
 
-export default withAuth(handler, { requireAdmin: true });
+export default withAuth(handler);

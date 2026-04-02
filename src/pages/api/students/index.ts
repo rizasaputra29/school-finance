@@ -59,18 +59,41 @@ async function handler(
           ];
         }
 
-        const [students, total] = await Promise.all([
-          prisma.student.findMany({
-            where,
-            orderBy: { nama: 'asc' },
-            skip,
-            take: parseInt(limit as string),
-          }),
-          prisma.student.count({ where }),
-        ]);
+        // Get students with billing aggregations
+        const students = await prisma.student.findMany({
+          where,
+          orderBy: { nama: 'asc' },
+          skip,
+          take: parseInt(limit as string),
+          include: {
+            billings: true,
+          },
+        });
+
+        // Compute totalTagihan and totalBayar from billing data
+        const studentsWithTotals = students.map(student => {
+          const totalTagihan = student.billings.reduce((sum, b) => sum + b.jumlah, 0);
+          const totalBayar = student.billings
+            .filter(b => b.statusBayar === 'Lunas')
+            .reduce((sum, b) => sum + b.jumlah, 0);
+          
+          // Determine statusBayar based on actual billing status
+          const allLunas = student.billings.length > 0 && student.billings.every(b => b.statusBayar === 'Lunas');
+          const anyLunas = student.billings.some(b => b.statusBayar === 'Lunas');
+          const computedStatusBayar = allLunas ? 'Lunas' : (anyLunas ? 'Belum Lunas' : (student.statusBayar || 'Belum Lunas'));
+          
+          return {
+            ...student,
+            totalTagihan,
+            totalBayar,
+            statusBayar: computedStatusBayar,
+          };
+        });
+
+        const total = await prisma.student.count({ where });
 
         return res.status(200).json({
-          data: students,
+          data: studentsWithTotals,
           pagination: {
             page: parseInt(page as string),
             limit: parseInt(limit as string),

@@ -1,0 +1,30 @@
+{
+  "id": "buku-besar-n1-fix-06",
+  "seq": "06",
+  "title": "Add query count logging and performance benchmarking",
+  "status": "pending",
+  "depends_on": ["05"],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "/Users/riza/school-finance/src/pages/api/reports/buku-besar.ts"
+  ],
+  "acceptance_criteria": [
+    "Add query count logging using Prisma middleware or query logging",
+    "Log total number of Prisma queries executed per request",
+    "Measure and log response time for API calls",
+    "Create performance comparison showing before/after query counts",
+    "Document maximum query count guarantee (3 queries max)"
+  ],
+  "deliverables": [
+    "Query logging implementation",
+    "Performance benchmark results",
+    "Documentation of query count improvements"
+  ],
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

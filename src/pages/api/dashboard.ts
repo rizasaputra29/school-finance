@@ -1,23 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
-import { getFilteredDashboardCache, invalidateDashboardCache } from '@/lib/cache';
 
-// Define types inline for Prisma v7 compatibility
-
-interface StudentRecord {
-  id: string;
-  nis: string;
-  nama: string;
-  kelas: string;
-  tahunMasuk: number;
+interface Billing {
   statusBayar: string;
-  totalTagihan: number;
-  totalBayar: number;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
+interface StudentWithBillings {
+  id: string;
+  billings: Billing[];
+}
 
 interface DashboardFilterParams {
   bulan?: number;
@@ -26,9 +18,6 @@ interface DashboardFilterParams {
   endDate?: string;
 }
 
-/**
- * Parse filter parameters from request query
- */
 function parseFilterParams(req: NextApiRequest): DashboardFilterParams {
   const { bulan, tahun, startDate, endDate } = req.query;
   
@@ -40,65 +29,169 @@ function parseFilterParams(req: NextApiRequest): DashboardFilterParams {
   };
 }
 
-/**
- * Build response with filtered dashboard data
- */
-async function buildFilteredDashboardResponse(
+async function buildDashboardData(
   params: DashboardFilterParams
 ): Promise<{
   summary: { totalPendapatan: number; totalBeban: number; saldo: number };
-  pieChart: Array<{ name: string; value: number }>;
+  pieChart: Array<{ name: string; value: number; color: string }>;
   barChart: Array<{ bulan: string; pendapatan: number; beban: number }>;
 }> {
-  const getDashboardData = getFilteredDashboardCache(
-    params.bulan,
-    params.tahun,
-    params.startDate,
-    params.endDate
-  );
+  let start: Date;
+  let end: Date;
   
-  return getDashboardData() as Promise<{
-    summary: { totalPendapatan: number; totalBeban: number; saldo: number };
-    pieChart: Array<{ name: string; value: number }>;
-    barChart: Array<{ bulan: string; pendapatan: number; beban: number }>;
-  }>;
+  if (params.startDate && params.endDate) {
+    start = new Date(params.startDate);
+    end = new Date(params.endDate);
+  } else if (params.bulan && params.tahun) {
+    start = new Date(params.tahun, params.bulan - 1, 1);
+    end = new Date(params.tahun, params.bulan, 0, 23, 59, 59);
+  } else if (params.tahun) {
+    start = new Date(params.tahun, 0, 1);
+    end = new Date(params.tahun, 11, 31, 23, 59, 59);
+  } else {
+    end = new Date();
+    start = new Date();
+    start.setMonth(start.getMonth() - 6);
+  }
+  
+  // Fetch all relevant data in parallel - USE JournalEntryLine for proper accounting
+  const [accounts, allLines] = await Promise.all([
+    prisma.account.findMany(),
+    prisma.journalEntryLine.findMany({
+      where: {
+        journalEntry: {
+          tanggal: { lte: end },
+          status: 'posted'
+        }
+      },
+      include: {
+        journalEntry: { select: { tanggal: true } }
+      }
+    })
+  ]);
+  
+  const accountMap = new Map(accounts.map(a => [a.kodeAkun, a]));
+
+  // 1. Calculate Current Total Saldo from journal entries
+  const assetAccounts = accounts.filter(a => a.tipeAkun === 'Asset' || a.tipeAkun === 'Aset');
+  let currentSaldo = 0;
+  
+  for (const acc of assetAccounts) {
+    const lines = allLines.filter(l => l.kodeAkun === acc.kodeAkun);
+    const netMovement = lines.reduce((sum, l) => sum + (l.debit - l.kredit), 0);
+    currentSaldo += acc.saldo + netMovement;
+  }
+
+  // 2. Calculate Period Summary from journal entries within date range
+  const periodLines = allLines.filter(l => {
+    const d = new Date(l.journalEntry.tanggal);
+    return d >= start && d <= end;
+  });
+
+  let totalPendapatan = 0;
+  let totalBeban = 0;
+  const expenseByCategory: Record<string, number> = {};
+
+  for (const line of periodLines) {
+    const acc = accountMap.get(line.kodeAkun);
+    if (!acc) continue;
+
+    if (acc.tipeAkun === 'Revenue') {
+      totalPendapatan += (line.kredit - line.debit);
+    } else if (acc.tipeAkun === 'Expense') {
+      const amount = (line.debit - line.kredit);
+      totalBeban += amount;
+      if (amount > 0) {
+        expenseByCategory[acc.namaAkun] = (expenseByCategory[acc.namaAkun] || 0) + amount;
+      }
+    }
+  }
+
+  // 3. Build Pie Chart
+  const COLORS = ['#059DEA', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+  const pieChart = Object.entries(expenseByCategory)
+    .map(([name, value], index) => ({ 
+      name, 
+      value, 
+      color: COLORS[index % COLORS.length] 
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  // 4. Build Bar Chart (12 months)
+  const barChart: Array<{ bulan: string; pendapatan: number; beban: number }> = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const chartYear = params.tahun || end.getFullYear();
+
+  for (let m = 0; m < 12; m++) {
+    const mStart = new Date(chartYear, m, 1);
+    const mEnd = new Date(chartYear, m + 1, 0, 23, 59, 59);
+    
+    let mPendapatan = 0;
+    let mBeban = 0;
+
+    const mLines = allLines.filter(l => {
+      const d = new Date(l.journalEntry.tanggal);
+      return d >= mStart && d <= mEnd;
+    });
+
+    for (const line of mLines) {
+      const acc = accountMap.get(line.kodeAkun);
+      if (!acc) continue;
+      if (acc.tipeAkun === 'Revenue') mPendapatan += (line.kredit - line.debit);
+      else if (acc.tipeAkun === 'Expense') mBeban += (line.debit - line.kredit);
+    }
+
+    barChart.push({
+      bulan: monthNames[m],
+      pendapatan: Math.max(0, mPendapatan),
+      beban: Math.max(0, mBeban),
+    });
+  }
+
+  return {
+    summary: { totalPendapatan, totalBeban, saldo: currentSaldo },
+    pieChart,
+    barChart,
+  };
 }
 
 async function handler(
   req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
-  // Handle filtered dashboard request (with query params)
-  if (req.method === 'GET' && (req.query.bulan || req.query.tahun || req.query.startDate || req.query.endDate)) {
-    return handleFilteredDashboard(req, res);
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
   
-  // Handle chart data request (legacy - keep for backward compatibility)
-  if (req.method === 'GET' && req.query.chart) {
-    return handleChartData(req, res);
-  }
-  
-  // Original dashboard handler - get dashboard data with filters
   try {
     const filterParams = parseFilterParams(req);
-    const dashboardData = await buildFilteredDashboardResponse(filterParams);
+    const dashboardData = await buildDashboardData(filterParams);
     
-    // Get student stats (less frequently changing, so not cached)
-    const students = await prisma.student.findMany({ where: { status: 'Active' } }) as StudentRecord[];
+    // Get student stats
+    const students = await prisma.student.findMany({ 
+      where: { status: 'Active' },
+      include: { billings: true }
+    }) as unknown as StudentWithBillings[];
+    
     const totalStudents = students.length;
-    const lunasCount = students.filter((s) => s.statusBayar === 'Lunas').length;
+    const lunasCount = students.filter((s) => {
+      const allLunas = s.billings.length > 0 && s.billings.every((b) => b.statusBayar === 'Lunas');
+      return allLunas;
+    }).length;
     const belumLunasCount = totalStudents - lunasCount;
     
-    // Get recent transactions (not cached - needs to be fresh)
+    // Get recent transactions from cashflow for display
     const recentTransactions = await prisma.cashflow.findMany({
+      where: { status: 'posted' },
       orderBy: { tanggal: 'desc' },
       take: 5,
     });
     
-    // Return filtered dashboard data with additional student info
     return res.status(200).json({
       summary: {
-        ...dashboardData.summary,
+        totalDebit: dashboardData.summary.totalPendapatan,
+        totalKredit: dashboardData.summary.totalBeban,
+        saldo: dashboardData.summary.saldo,
         totalStudents,
         lunasCount,
         belumLunasCount,
@@ -112,55 +205,5 @@ async function handler(
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
-
-/**
- * Handle filtered dashboard requests
- * Supports: bulan, tahun, startDate, endDate
- */
-async function handleFilteredDashboard(
-  req: AuthenticatedRequest,
-  res: NextApiResponse
-) {
-  try {
-    const filterParams = parseFilterParams(req);
-    const dashboardData = await buildFilteredDashboardResponse(filterParams);
-    
-    return res.status(200).json({
-      summary: dashboardData.summary,
-      pieChart: dashboardData.pieChart,
-      barChart: dashboardData.barChart,
-    });
-  } catch (error) {
-    console.error('Filtered dashboard error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-// Handle chart data requests (legacy - keep for backward compatibility)
-async function handleChartData(
-  req: AuthenticatedRequest,
-  res: NextApiResponse
-) {
-  try {
-    const bulan = parseInt(req.query.bulan as string) || new Date().getMonth() + 1;
-    const tahun = parseInt(req.query.tahun as string) || new Date().getFullYear();
-    
-    // Build filtered dashboard data for chart
-    const dashboardData = await buildFilteredDashboardResponse({ bulan, tahun });
-    
-    return res.status(200).json({
-      pieChart: dashboardData.pieChart,
-      barChart: dashboardData.barChart,
-    });
-  } catch (error) {
-    console.error('Chart data error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-/**
- * Export cache invalidation for use in transaction handlers
- */
-export { invalidateDashboardCache };
 
 export default withAuth(handler);

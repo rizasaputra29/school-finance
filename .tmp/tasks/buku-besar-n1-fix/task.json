@@ -1,0 +1,25 @@
+{
+  "id": "buku-besar-n1-fix",
+  "name": "Fix N+1 Query Problem in Buku Besar",
+  "status": "active",
+  "objective": "Fix N+1 query problem in Buku Besar API to reduce 3N+1 queries to maximum 3 queries regardless of account count",
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md",
+    "/Users/riza/.config/opencode/context/core/standards/security-patterns.md"
+  ],
+  "reference_files": [
+    "/Users/riza/school-finance/src/pages/api/reports/buku-besar.ts",
+    "/Users/riza/school-finance/src/pages/buku-besar.tsx",
+    "/Users/riza/school-finance/prisma/schema.prisma"
+  ],
+  "exit_criteria": [
+    "API executes maximum 3 queries regardless of account count",
+    "All existing functionality preserved (pagination, filtering, sorting)",
+    "Tests pass",
+    "Performance improvement documented with before/after query counts"
+  ],
+  "subtask_count": 8,
+  "completed_count": 0,
+  "created_at": "2026-04-02T10:00:00Z",
+  "completed_at": null
+}

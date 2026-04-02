@@ -21,16 +21,27 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
-interface Account {
-  id: string;
+interface AccountReportItem {
   kodeAkun: string;
   namaAkun: string;
-  tipeAkun: string;
-  saldo: number;
+  tipeAkun?: string;
+  jumlah: number;
+  kategori?: string;
+}
+
+interface ReportSummary {
+  totalAset?: number;
+  totalKewajiban?: number;
+  totalEkuitas?: number;
+  totalPendapatan?: number;
+  totalBeban?: number;
+  labaRugi?: number;
+  isPositive?: boolean;
 }
 
 export default function ReportsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [neracaData, setNeracaData] = useState<{ data: { aset: AccountReportItem[]; kewajiban: AccountReportItem[]; ekuitas: AccountReportItem[] }; summary: ReportSummary } | null>(null);
+  const [labaRugiData, setLabaRugiData] = useState<{ data: AccountReportItem[]; summary: ReportSummary } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
@@ -38,19 +49,30 @@ export default function ReportsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch('/api/accounts');
-        if (res.ok) {
-          const data = await res.json();
-          setAccounts(data);
+        const year = new Date(reportDate).getFullYear();
+        const month = new Date(reportDate).getMonth() + 1;
+
+        // Fetch neraca data dynamically
+        const neracaRes = await fetch(`/api/reports/neraca?tahun=${year}&bulan=${month}`);
+        if (neracaRes.ok) {
+          const neracaJson = await neracaRes.json();
+          setNeracaData(neracaJson);
+        }
+
+        // Fetch laba rugi data dynamically
+        const labaRugiRes = await fetch(`/api/reports/laba-rugi?tahun=${year}&bulan=${month}`);
+        if (labaRugiRes.ok) {
+          const labaRugiJson = await labaRugiRes.json();
+          setLabaRugiData(labaRugiJson);
         }
       } catch (error) {
-        console.error('Failed to fetch accounts:', error);
+        console.error('Failed to fetch data:', error);
       } finally {
         setIsLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [reportDate]);
 
   const handleExport = async (type: string, format: 'excel' | 'pdf') => {
     setIsExporting(`${type}-${format}`);
@@ -79,20 +101,20 @@ export default function ReportsPage() {
     window.print();
   };
 
-  // Calculate Laba Rugi
-  const revenues = accounts.filter((a) => a.tipeAkun === 'Revenue');
-  const expenses = accounts.filter((a) => a.tipeAkun === 'Expense');
-  const totalRevenue = revenues.reduce((sum, a) => sum + a.saldo, 0);
-  const totalExpense = expenses.reduce((sum, a) => sum + a.saldo, 0);
-  const labaRugi = totalRevenue - totalExpense;
+  // Use dynamic Laba Rugi data from API
+  const revenues = labaRugiData?.data?.filter((a: AccountReportItem) => a.kategori === 'PENDAPATAN') || [];
+  const expenses = labaRugiData?.data?.filter((a: AccountReportItem) => a.kategori === 'BEBAN') || [];
+  const totalRevenue = labaRugiData?.summary?.totalPendapatan || 0;
+  const totalExpense = labaRugiData?.summary?.totalBeban || 0;
+  const labaRugi = (labaRugiData?.summary?.isPositive ? 1 : -1) * (labaRugiData?.summary?.labaRugi || 0);
 
-  // Calculate Neraca
-  const assets = accounts.filter((a) => a.tipeAkun === 'Asset');
-  const liabilities = accounts.filter((a) => a.tipeAkun === 'Liability');
-  const equity = accounts.filter((a) => a.tipeAkun === 'Equity');
-  const totalAssets = assets.reduce((sum, a) => sum + a.saldo, 0);
-  const totalLiabilities = liabilities.reduce((sum, a) => sum + a.saldo, 0);
-  const totalEquity = equity.reduce((sum, a) => sum + a.saldo, 0);
+  // Use dynamic neraca data from API
+  const assets = neracaData?.data?.aset || [];
+  const liabilities = neracaData?.data?.kewajiban || [];
+  const equity = neracaData?.data?.ekuitas || [];
+  const totalAssets = neracaData?.summary?.totalAset || 0;
+  const totalLiabilities = neracaData?.summary?.totalKewajiban || 0;
+  const totalEquity = neracaData?.summary?.totalEkuitas || 0;
 
   const formatReportDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -204,7 +226,7 @@ export default function ReportsPage() {
                   <Table className="border-collapse">
                     <TableBody>
                       {revenues.map((a) => (
-                        <TableRow key={a.id} className="border-0">
+                        <TableRow key={a.kodeAkun} className="border-0">
                           <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
                             {a.kodeAkun}
                           </TableCell>
@@ -212,7 +234,7 @@ export default function ReportsPage() {
                             {a.namaAkun}
                           </TableCell>
                           <TableCell className="py-1 text-right font-mono w-40">
-                            {formatCurrency(a.saldo)}
+                            {formatCurrency(a.jumlah)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -236,7 +258,7 @@ export default function ReportsPage() {
                   <Table className="border-collapse">
                     <TableBody>
                       {expenses.map((a) => (
-                        <TableRow key={a.id} className="border-0">
+                        <TableRow key={a.kodeAkun} className="border-0">
                           <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
                             {a.kodeAkun}
                           </TableCell>
@@ -244,7 +266,7 @@ export default function ReportsPage() {
                             {a.namaAkun}
                           </TableCell>
                           <TableCell className="py-1 text-right font-mono w-40">
-                            {formatCurrency(a.saldo)}
+                            {formatCurrency(a.jumlah)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -336,8 +358,8 @@ export default function ReportsPage() {
                     
                     <Table className="border-collapse">
                       <TableBody>
-                        {assets.map((a) => (
-                          <TableRow key={a.id} className="border-0">
+                        {assets.map((a: AccountReportItem) => (
+                          <TableRow key={a.kodeAkun} className="border-0">
                             <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
                               {a.kodeAkun}
                             </TableCell>
@@ -345,7 +367,7 @@ export default function ReportsPage() {
                               {a.namaAkun}
                             </TableCell>
                             <TableCell className="py-1 text-right font-mono w-40">
-                              {formatCurrency(a.saldo)}
+                              {formatCurrency(Math.abs(a.jumlah || 0))}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -373,8 +395,8 @@ export default function ReportsPage() {
                       <h4 className="font-semibold text-gray-700 text-sm mb-2 pl-2">Kewajiban</h4>
                       <Table className="border-collapse">
                         <TableBody>
-                          {liabilities.map((a) => (
-                            <TableRow key={a.id} className="border-0">
+                          {liabilities.map((a: AccountReportItem) => (
+                            <TableRow key={a.kodeAkun} className="border-0">
                               <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
                                 {a.kodeAkun}
                               </TableCell>
@@ -382,7 +404,7 @@ export default function ReportsPage() {
                                 {a.namaAkun}
                               </TableCell>
                               <TableCell className="py-1 text-right font-mono w-40">
-                                {formatCurrency(a.saldo)}
+                                {formatCurrency(Math.abs(a.jumlah || 0))}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -397,7 +419,7 @@ export default function ReportsPage() {
                       </Table>
                       <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between items-center px-2">
                         <span className="font-semibold text-sm">Total Kewajiban</span>
-                        <span className="font-semibold font-mono text-sm">{formatCurrency(totalLiabilities)}</span>
+                        <span className="font-semibold font-mono text-sm">{formatCurrency(Math.abs(totalLiabilities))}</span>
                       </div>
                     </div>
 
@@ -406,8 +428,8 @@ export default function ReportsPage() {
                       <h4 className="font-semibold text-gray-700 text-sm mb-2 pl-2">Ekuitas</h4>
                       <Table className="border-collapse">
                         <TableBody>
-                          {equity.map((a) => (
-                            <TableRow key={a.id} className="border-0">
+                          {equity.map((a: AccountReportItem) => (
+                            <TableRow key={a.kodeAkun} className="border-0">
                               <TableCell className="py-1 pl-4 w-16 text-gray-700 font-mono text-sm">
                                 {a.kodeAkun}
                               </TableCell>
@@ -415,7 +437,7 @@ export default function ReportsPage() {
                                 {a.namaAkun}
                               </TableCell>
                               <TableCell className="py-1 text-right font-mono w-40">
-                                {formatCurrency(a.saldo)}
+                                {formatCurrency(Math.abs(a.jumlah || 0))}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -423,13 +445,13 @@ export default function ReportsPage() {
                       </Table>
                       <div className="border-t border-gray-300 pt-1 mt-1 flex justify-between items-center px-2">
                         <span className="font-semibold text-sm">Total Ekuitas</span>
-                        <span className="font-semibold font-mono text-sm">{formatCurrency(totalEquity)}</span>
+                        <span className="font-semibold font-mono text-sm">{formatCurrency(Math.abs(totalEquity))}</span>
                       </div>
                     </div>
                     
                     <div className="border-t-4 border-double border-gray-800 pt-4 flex justify-between items-center">
                       <span className="text-lg font-bold text-gray-900">TOTAL PASIVA</span>
-                      <span className="text-lg font-bold font-mono text-gray-900">{formatCurrency(totalLiabilities + totalEquity)}</span>
+                      <span className="text-lg font-bold font-mono text-gray-900">{formatCurrency(Math.abs(totalLiabilities + totalEquity))}</span>
                     </div>
                   </div>
 

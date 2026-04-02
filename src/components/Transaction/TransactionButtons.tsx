@@ -138,6 +138,7 @@ interface TransactionButtonsProps {
 
 export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsProps) {
   const [openType, setOpenType] = useState<TransactionType | null>(null);
+  const [isMainModalOpen, setIsMainModalOpen] = useState(false);
   const [formData, setFormData] = useState<TransactionFormData>(INITIAL_FORM);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -234,6 +235,7 @@ export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsPr
       if (res.ok) {
         setSuccess(true);
         setTimeout(() => {
+          setIsMainModalOpen(false);
           setOpenType(null);
           setFormData(INITIAL_FORM);
           setSelectedCategory("");
@@ -259,7 +261,7 @@ export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsPr
     const cashAccount = accounts.find(
       (a) => a.tipeAkun === "Asset" && a.kategori?.toLowerCase().includes("kas")
     );
-    const cashCode = cashAccount?.kodeAkun || "1101";
+    const cashCode = cashAccount?.kodeAkun || "101";
 
     switch (type) {
       case "pemasukan":
@@ -560,9 +562,9 @@ export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsPr
         )}
 
         <div className="flex justify-end gap-3 pt-4">
-          <Dialog.Close asChild>
-            <Button type="button" variant="outline">Batal</Button>
-          </Dialog.Close>
+          <Button type="button" variant="ghost" onClick={() => setOpenType(null)}>
+            Kembali
+          </Button>
           <Button onClick={() => handleSubmit(type)} disabled={isLoading || !formData.kodeAkun || !formData.jumlah}>
             {isLoading ? "Menyimpan..." : "Simpan"}
           </Button>
@@ -572,48 +574,68 @@ export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsPr
   };
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {(Object.keys(TRANSACTION_CONFIG) as TransactionType[]).map((type) => {
-        const config = TRANSACTION_CONFIG[type];
-        return (
-          <Dialog.Root
-            key={type}
-            open={openType === type}
-            onOpenChange={(open) => {
-              setOpenType(open ? type : null);
-              if (!open) {
-                setFormData(INITIAL_FORM);
-                setSelectedCategory("");
-                setError("");
-              }
-            }}
-          >
-            <Dialog.Trigger asChild>
-              <Button variant="outline" className="flex items-center gap-2">
-                <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${config.color} text-white`}>
-                  {config.icon}
+    <Dialog.Root
+      open={openType !== null || isMainModalOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          setIsMainModalOpen(false);
+          setOpenType(null);
+          setFormData(INITIAL_FORM);
+          setSelectedCategory("");
+          setError("");
+        } else {
+          setIsMainModalOpen(true);
+        }
+      }}
+    >
+      <Dialog.Trigger asChild>
+        <Button className="bg-[#059DEA] hover:bg-[#0480c4] text-white flex items-center gap-2">
+          <span className="hidden sm:inline">Tambah Transaksi</span>
+          <span className="sm:hidden">Tambah</span>
+        </Button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-4 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+          {openType === null ? (
+            <>
+              <Dialog.Title className="text-lg font-semibold mb-4 text-center">
+                Pilih Jenis Transaksi
+              </Dialog.Title>
+              <div className="grid grid-cols-2 gap-3">
+                {(Object.keys(TRANSACTION_CONFIG) as TransactionType[]).map((type) => {
+                  const config = TRANSACTION_CONFIG[type];
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setOpenType(type)}
+                      className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-gray-300 hover:bg-gray-50 transition-all gap-3"
+                    >
+                      <div className={`p-3 rounded-xl ${config.color} text-white`}>
+                        {config.icon}
+                      </div>
+                      <span className="font-medium text-sm text-gray-700">{config.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              <Dialog.Title className="text-lg font-semibold flex items-center gap-2">
+                <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${TRANSACTION_CONFIG[openType].color} text-white`}>
+                  {TRANSACTION_CONFIG[openType].icon}
                 </span>
-                <span className="hidden sm:inline">{config.label}</span>
-              </Button>
-            </Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-              <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-4 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-                <Dialog.Title className="text-lg font-semibold flex items-center gap-2">
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${config.color} text-white`}>
-                    {config.icon}
-                  </span>
-                  {config.label}
-                </Dialog.Title>
-                <Dialog.Description className="mt-1 text-sm text-slate-500 mb-4">
-                  {config.description}
-                </Dialog.Description>
-                {renderForm(type)}
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
-        );
-      })}
-    </div>
+                {TRANSACTION_CONFIG[openType].label}
+              </Dialog.Title>
+              <Dialog.Description className="mt-1 text-sm text-slate-500 mb-4">
+                {TRANSACTION_CONFIG[openType].description}
+              </Dialog.Description>
+              {renderForm(openType)}
+            </>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
