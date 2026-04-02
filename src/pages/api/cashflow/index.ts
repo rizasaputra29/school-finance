@@ -4,23 +4,128 @@ import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { validateBody, sendValidationError } from '@/lib/validation';
-import { 
-  getIdempotencyResult, 
-  setIdempotencyResult,
-  getIdempotencyKeyFromRequest,
-  isValidIdempotencyKey 
-} from '@/lib/idempotency';
-// import { revalidateCache } from '@/lib/cache';
+import { invalidateDashboardCache } from '@/lib/cache';
 
-// Validation schemas
+type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+// Transaction type enum - extended with ekuitas
+type TransactionType = 'pemasukan' | 'pengeluaran' | 'aset' | 'hutang' | 'piutang' | 'ekuitas';
+
+
+// Full schema for double-entry transactions with special options
 const createCashflowSchema = z.object({
   tanggal: z.string().min(1, 'Tanggal wajib diisi'),
   keterangan: z.string().min(1, 'Keterangan wajib diisi').max(500, 'Keterangan maksimal 500 karakter'),
-  kodeAkun: z.string().min(1, 'Kode akun wajib diisi'),
+  kodeAkun: z.string().optional(),
   kategori: z.string().optional(),
   debit: z.union([z.number(), z.string()]).optional().default(0),
   kredit: z.union([z.number(), z.string()]).optional().default(0),
+  source: z.enum(['kas', 'bank']).optional(),
+  // New transaction type fields
+  transactionType: z.enum(['pemasukan', 'pengeluaran', 'aset', 'hutang', 'piutang', 'ekuitas']).optional(),
+  entries: z.array(z.object({
+    kodeAkun: z.string(),
+    debit: z.number(),
+    kredit: z.number(),
+    keterangan: z.string(),
+  })).optional(),
+  // Asset options
+  namaAset: z.string().optional(),
+  kategoriAset: z.string().optional(),
+  lokasiAset: z.string().optional(),
+  umurTeknis: z.number().optional(),
+  nilaiResidu: z.number().optional(),
+  isTanah: z.boolean().optional(),
+  // Debt/Kewajiban options
+  tenor: z.number().optional(),
+  dueDate: z.string().optional(),
+  kreditur: z.string().optional(),
+  // Equity options
+  jenisEkuitas: z.string().optional(),
+  // Piutang options
+  studentName: z.string().optional(),
+  nis: z.string().optional(),
 });
+
+
+
+// Process double-entry transaction
+async function processDoubleEntry(
+  tx: PrismaTransactionClient,
+  entries: Array<{
+    kodeAkun: string;
+    debit: number;
+    kredit: number;
+    keterangan: string;
+  }>,
+  transactionType: TransactionType,
+): Promise<{ cashflows: Array<{
+  id: string;
+  tanggal: Date;
+  keterangan: string;
+  kodeAkun: string;
+  kategori: string | null;
+  debit: number;
+  kredit: number;
+}>; summary: { totalDebit: number; totalKredit: number } }> {
+  const createdCashflows = [];
+  let totalDebit = 0;
+  let totalKredit = 0;
+
+  for (const entry of entries) {
+    // Validate account exists
+    const account = await tx.account.findUnique({
+      where: { kodeAkun: entry.kodeAkun },
+    });
+
+    if (!account) {
+      throw new Error(`Akun dengan kode ${entry.kodeAkun} tidak ditemukan`);
+    }
+
+    // Calculate balance adjustment based on account type
+    const isDebitNormal = ['Asset', 'Expense'].includes(account.tipeAkun);
+    let saldoChange = 0;
+
+    if (isDebitNormal) {
+      saldoChange = entry.debit - entry.kredit;
+    } else {
+      saldoChange = entry.kredit - entry.debit;
+    }
+
+    // Update account balance
+    await tx.account.update({
+      where: { kodeAkun: entry.kodeAkun },
+      data: {
+        saldo: { increment: saldoChange },
+      },
+    });
+
+    // Determine source based on account code (111x = bank, 110x = kas)
+    const isBankAccount = entry.kodeAkun.startsWith('111') || entry.kodeAkun === '102';
+    const source = isBankAccount ? 'bank' : 'kas';
+
+    // Create cashflow record
+    const cashflow = await tx.cashflow.create({
+      data: {
+        tanggal: new Date(),
+        keterangan: entry.keterangan,
+        kodeAkun: entry.kodeAkun,
+        kategori: transactionType,
+        debit: entry.debit,
+        kredit: entry.kredit,
+        source,
+      } as never,
+    });
+
+    createdCashflows.push(cashflow);
+    totalDebit += entry.debit;
+    totalKredit += entry.kredit;
+  }
+
+  return { cashflows: createdCashflows, summary: { totalDebit, totalKredit } };
+}
+
+
 
 async function handler(
   req: AuthenticatedRequest,
@@ -31,7 +136,7 @@ async function handler(
   try {
     switch (req.method) {
       case 'GET': {
-        const { page = '1', limit = '10', startDate, endDate, kodeAkun, type, search } = req.query;
+        const { page = '1', limit = '10', startDate, endDate, kodeAkun, type, search, transactionType } = req.query;
         const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
         const where: Record<string, unknown> = {};
@@ -45,7 +150,12 @@ async function handler(
           where.kodeAkun = kodeAkun;
         }
         
-        // Filter by transaction type
+        // Filter by transaction type (kategori)
+        if (transactionType) {
+          where.kategori = transactionType;
+        }
+        
+        // Legacy filters
         if (type === 'income') {
           where.debit = { gt: 0 };
         } else if (type === 'expense') {
@@ -60,7 +170,7 @@ async function handler(
           ];
         }
 
-        const [cashflows, total] = await Promise.all([
+        const [cashflows, total, summaryAgg] = await Promise.all([
           prisma.cashflow.findMany({
             where,
             orderBy: { tanggal: 'desc' },
@@ -68,12 +178,17 @@ async function handler(
             take: parseInt(limit as string),
           }),
           prisma.cashflow.count({ where }),
+          prisma.cashflow.aggregate({
+            where,
+            _sum: {
+              debit: true,
+              kredit: true,
+            },
+          }),
         ]);
 
-        // Calculate summary for filtered data
-        const allFiltered = await prisma.cashflow.findMany({ where });
-        const totalDebit = allFiltered.reduce((sum: number, cf: { debit: number }) => sum + cf.debit, 0);
-        const totalKredit = allFiltered.reduce((sum: number, cf: { kredit: number }) => sum + cf.kredit, 0);
+        const totalDebit = summaryAgg._sum.debit || 0;
+        const totalKredit = summaryAgg._sum.kredit || 0;
 
         return res.status(200).json({
           data: cashflows,
@@ -102,27 +217,132 @@ async function handler(
           });
         }
 
-        // Check for idempotency key in headers
-        const idempotencyKey = getIdempotencyKeyFromRequest(req);
-        if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
-          const cachedResult = getIdempotencyResult(idempotencyKey);
-          if (cachedResult !== null) {
-            return res.status(201).json(cachedResult);
-          }
-        }
-
         // Validate request body
         const validationErrors = validateBody(req.body, createCashflowSchema);
         if (validationErrors) {
           return sendValidationError(res, validationErrors);
         }
 
-        const { tanggal, keterangan, kodeAkun, kategori, debit, kredit } = req.body as z.infer<typeof createCashflowSchema>;
+        const { 
+          tanggal, 
+          keterangan, 
+          kodeAkun, 
+          kategori, 
+          debit, 
+          kredit,
+          source,
+          transactionType,
+          entries,
+          // Asset options
+          namaAset,
+          kategoriAset,
+          lokasiAset,
+          umurTeknis,
+          nilaiResidu,
+          isTanah,
+          // Debt options
+          tenor,
+          dueDate,
+          kreditur,
+          // Equity options
+          // Piutang options
+        } = req.body as z.infer<typeof createCashflowSchema>;
 
+        // Handle double-entry transactions
+        if (transactionType && entries && entries.length > 0) {
+          try {
+            const result = await prisma.$transaction(async (tx) => {
+              // Process double entries
+              const processResult = await processDoubleEntry(
+                tx,
+                entries,
+                transactionType
+              );
+
+              // Create Asset record if this is an asset transaction with penyusutan options
+              if (transactionType === 'aset' && kodeAkun && namaAset) {
+                const amount = entries[0]?.debit || entries[0]?.kredit || 0;
+                await tx.asset.create({
+                  data: {
+                    kodeAkun: kodeAkun,
+                    nama: namaAset,
+                    kategori: kategoriAset || 'Inventaris',
+                    lokasi: lokasiAset || '',
+                    tanggalPerolehan: new Date(tanggal),
+                    hargaPerolehan: typeof amount === 'number' ? amount : parseFloat(String(amount)),
+                    umurTeknis: typeof umurTeknis === 'number' ? umurTeknis : 5,
+                    nilaiResidu: typeof nilaiResidu === 'number' ? nilaiResidu : 0,
+                    isTanah: isTanah || false,
+                    status: 'Active',
+                  },
+                });
+              }
+
+              // Create Debt record if this is a kewajiban (hutang) transaction
+              if (transactionType === 'hutang' && kodeAkun) {
+                const kreditAmount = entries[0]?.kredit || 0;
+                const jumlahAwal = typeof kreditAmount === 'number' ? kreditAmount : parseFloat(String(kreditAmount));
+                const tenorNum = typeof tenor === 'number' ? tenor : parseInt(String(tenor || '12'));
+                await tx.debt.create({
+                  data: {
+                    kodeAkun: kodeAkun,
+                    nama: `${keterangan} - ${kreditur || 'Hutang'}`,
+                    kreditur: kreditur || null,
+                    jumlahAwal: jumlahAwal,
+                    jumlahSisa: -Math.abs(jumlahAwal),
+                    tenor: tenorNum,
+                    tanggalMulai: new Date(tanggal),
+                    tanggalJatuhTempo: dueDate ? new Date(dueDate) : new Date(new Date(tanggal).setMonth(new Date(tanggal).getMonth() + tenorNum)),
+                    cicilanPerBulan: tenorNum ? jumlahAwal / tenorNum : jumlahAwal / 12,
+                    status: 'Aktif',
+                  },
+                });
+              }
+
+              return processResult;
+            });
+
+            return res.status(201).json({
+              success: true,
+              data: result.cashflows,
+              summary: result.summary,
+              message: `Transaksi ${transactionType} berhasil dibuat dengan ${result.cashflows.length} entri`,
+            });
+          } catch (error) {
+            console.error('Double-entry transaction error:', error);
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            return res.status(400).json({ error: message });
+          }
+        }
+
+        // Legacy single entry handling
         const debitAmount = typeof debit === 'string' ? parseFloat(debit) : Number(debit) || 0;
         const kreditAmount = typeof kredit === 'string' ? parseFloat(kredit) : Number(kredit) || 0;
 
         try {
+          // First check if transaction with this hash already exists
+          const existingTransaction = await prisma.cashflow.findFirst({
+            where: {
+              kodeAkun,
+              tanggal: {
+                gte: new Date(new Date(tanggal).setHours(0, 0, 0, 0)),
+                lte: new Date(new Date(tanggal).setHours(23, 59, 59, 999)),
+              },
+              OR: [
+                { debit: debitAmount, kredit: kreditAmount },
+              ],
+              keterangan: { equals: keterangan, mode: 'insensitive' },
+            },
+          });
+
+          if (existingTransaction) {
+            return res.status(200).json({
+              ...existingTransaction,
+              isDuplicate: true,
+              message: 'Transaksi sudah ada, menggunakan data yang sudah ada',
+            });
+          }
+
           const result = await prisma.$transaction(async (tx) => {
             // 1. Get the account to determine type and current balance
             const account = await tx.account.findUnique({
@@ -152,6 +372,9 @@ async function handler(
             });
 
             // 4. Create cashflow record
+            if (!kodeAkun) {
+              throw new Error('Kode akun wajib diisi');
+            }
             const cashflow = await tx.cashflow.create({
               data: {
                 tanggal: new Date(tanggal),
@@ -160,18 +383,21 @@ async function handler(
                 kategori: kategori || null,
                 debit: debitAmount,
                 kredit: kreditAmount,
+                source: source as 'kas' | 'bank' | undefined,
               },
-            });
+            } as never);
 
             return cashflow;
           });
 
-          // Cache result for idempotency
-          if (idempotencyKey) {
-            setIdempotencyResult(idempotencyKey, result);
-          }
+          // Invalidate dashboard cache after successful transaction
+          invalidateDashboardCache();
 
-          return res.status(201).json(result);
+          return res.status(201).json({
+            ...result,
+            isNew: true,
+            message: 'Transaksi berhasil dibuat',
+          });
         } catch (error) {
           console.error('Transaction error:', error);
           const message = error instanceof Error ? error.message : 'Unknown error';

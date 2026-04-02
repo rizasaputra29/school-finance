@@ -1,0 +1,38 @@
+{
+  "id": "school-finance-system",
+  "name": "School Finance System Comprehensive Update",
+  "status": "active",
+  "objective": "Fix bugs, implement RBAC, enhance reports, add new accounting features for school finance system with double-entry bookkeeping",
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "prisma/schema.prisma",
+    "src/pages/api/auth/login.ts",
+    "src/pages/api/dashboard.ts",
+    "src/pages/api/accounts/index.ts",
+    "src/pages/api/cashflow/index.ts",
+    "src/pages/api/students/index.ts",
+    "src/pages/api/billing/index.ts",
+    "src/pages/api/reports/cashbook.ts",
+    "src/pages/api/import.ts",
+    "src/pages/api/export.ts",
+    "src/lib/auth.ts",
+    "src/lib/withAuth.ts"
+  ],
+  "exit_criteria": [
+    "All bug fixes implemented and tested",
+    "RBAC authentication working with Admin/Owner/User roles",
+    "Laba Rugi and Neraca reports calculate correctly",
+    "Dashboard has charts with filters",
+    "Transaction system has separate buttons for each type",
+    "Student payment system handles overdue as Piutang",
+    "Asset depreciation auto-generates entries",
+    "Academic year system archives data on switch"
+  ],
+  "subtask_count": 40,
+  "completed_count": 0,
+  "created_at": "2026-03-31T10:00:00Z",
+  "bounded_context": "finance",
+  "module": "school-finance"
+}

@@ -1,0 +1,30 @@
+{
+  "id": "school-finance-system-14",
+  "seq": "14",
+  "title": "Implement Student Installments: Flexible nominal per installment, due date configuration",
+  "status": "completed",
+  "completion_summary": "Implemented Student Installments with flexible nominal, configurable due dates, payment tracking, overdue detection",
+  "completed_at": "2026-03-31T22:50:00Z"
+  "depends_on": ["01", "02", "09"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/billing/index.ts",
+    "src/pages/api/students/index.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Installment plan allows flexible nominal per installment",
+    "Due date configurable per installment",
+    "Number of installments configurable",
+    "Installment tracking per student",
+    "Reminder for upcoming due dates",
+    "Auto-create billing entries from installment plan"
+  ],
+  "deliverables": [
+    "src/pages/api/installment/index.ts (new)",
+    "src/pages/api/billing/index.ts (updated)"
+  ]
+}

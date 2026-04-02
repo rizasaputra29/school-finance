@@ -1,0 +1,30 @@
+{
+  "id": "school-finance-system-09",
+  "seq": "09",
+  "title": "Implement Student Payment System: Admin manual input, payments to Bank, overdue = Piutang",
+  "status": "completed",
+  "completion_summary": "Implemented student payment system: admin manual input, payments to Bank account, overdue → Piutang tracking",
+  "completed_at": "2026-03-31T22:30:00Z"
+  "depends_on": ["01", "02"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/billing/index.ts",
+    "src/pages/api/students/index.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Admin can manually input student payments",
+    "Payments automatically go to Bank account (not Kas)",
+    "Overdue payments (past due date) automatically marked as Piutang",
+    "Piutang tracking shows all outstanding student debts",
+    "Payment history tracked per student"
+  ],
+  "deliverables": [
+    "src/pages/api/billing/index.ts (updated)",
+    "src/pages/api/students/index.ts (updated)",
+    "src/pages/api/payment/manual.ts (new)"
+  ]
+}

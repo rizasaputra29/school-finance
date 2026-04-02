@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { TransactionButtons } from '@/components/Transaction/TransactionButtons';
 import {
   Table,
   TableBody,
@@ -16,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Search, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Filter, Pencil, Trash2 } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Filter, Pencil, Trash2 } from 'lucide-react';
 import { formatCurrency, formatShortDate, formatNumberInput, parseFormattedNumber } from '@/lib/utils';
 import { useDebounce } from '@/hooks/use-debounce';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -86,7 +87,7 @@ export default function CashflowPage() {
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   
   // Dialog States
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedCashflow, setSelectedCashflow] = useState<Cashflow | null>(null);
@@ -137,36 +138,6 @@ export default function CashflowPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    try {
-      const submitData = {
-        ...formData,
-        debit: parseFormattedNumber(String(formData.debit)),
-        kredit: parseFormattedNumber(String(formData.kredit)),
-      };
-
-      const res = await fetch('/api/cashflow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-      });
-      
-      const data = await res.json();
-
-      if (res.ok) {
-        setIsCreateOpen(false);
-        setFormData(INITIAL_FORM);
-        fetchData(pagination.page);
-      } else {
-        setError(data.error || 'Gagal menyimpan transaksi');
-      }
-    } catch (error) {
-      console.error('Failed to create cashflow:', error);
-      setError('Terjadi kesalahan');
-    }
-  };
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -415,34 +386,10 @@ export default function CashflowPage() {
           </div>
 
           {isAdmin && (
-            <Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <Dialog.Trigger asChild>
-                <Button 
-                  onClick={() => {
-                    setFormData(INITIAL_FORM);
-                    setError('');
-                  }}
-                  size="sm"
-                  className="text-xs md:text-sm"
-                >
-                  <Plus className="h-4 w-4 md:mr-2" />
-                  <span className="hidden md:inline">Tambah Transaksi</span>
-                  <span className="md:hidden">Tambah</span>
-                </Button>
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-                <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-4 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-                  <Dialog.Title className="text-lg font-semibold text-slate-900">
-                    Tambah Transaksi
-                  </Dialog.Title>
-                  <Dialog.Description className="mt-1 text-sm text-slate-500">
-                    Masukkan detail transaksi baru
-                  </Dialog.Description>
-                  {renderForm(handleSubmit, 'Simpan')}
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
+            <TransactionButtons
+              accounts={accounts}
+              onSuccess={() => fetchData(pagination.page)}
+            />
           )}
         </div>
 

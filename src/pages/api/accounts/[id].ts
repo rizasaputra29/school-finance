@@ -15,6 +15,7 @@ interface AccountUpdateBody {
   namaAkun?: string;
   tipeAkun?: string;
   saldo?: string | number;
+  allowNegative?: boolean;
 }
 
 async function handler(
@@ -33,6 +34,19 @@ async function handler(
     
     switch (req.method) {
       case 'PATCH': {
+        // Task 32: System Account Protection - check isSystem before update
+        // First, get the account to check if it's a system account
+        const existingAccount = await prisma.account.findFirst({
+          where: { OR: [{ id }, { kodeAkun: id }] },
+        });
+
+        if (existingAccount?.isSystem) {
+          return res.status(403).json({
+            error: `Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`,
+            code: 'SYSTEM_ACCOUNT_PROTECTED',
+          });
+        }
+
         // Check for idempotency - return cached result if same request
         if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
           const cachedResult = getIdempotencyResult(idempotencyKey);
@@ -45,7 +59,19 @@ async function handler(
 
         const data: Prisma.AccountUpdateInput = {};
         if (namaAkun) data.namaAkun = namaAkun;
-        if (tipeAkun) data.tipeAkun = tipeAkun;
+        
+        // Task 32: Prevent changing account type for system accounts
+        if (tipeAkun) {
+          // Check if trying to change type (not allowed for any account with transactions)
+          if (existingAccount && existingAccount.tipeAkun !== tipeAkun) {
+            return res.status(422).json({
+              error: 'Tidak dapat mengubah tipe akun. Akun dengan transaksi tidak bisa更换类型.',
+              code: 'TYPE_CHANGE_NOT_ALLOWED',
+            });
+          }
+          data.tipeAkun = tipeAkun;
+        }
+        
         if (saldo !== undefined) data.saldo = typeof saldo === 'string' ? parseFloat(saldo) : saldo;
 
         const updatedAccount = await prisma.account.update({
@@ -65,6 +91,18 @@ async function handler(
       }
 
       case 'DELETE': {
+        // Task 32: System Account Protection - check isSystem before delete
+        const accountToDelete = await prisma.account.findFirst({
+          where: { OR: [{ id }, { kodeAkun: id }] },
+        });
+
+        if (accountToDelete?.isSystem) {
+          return res.status(403).json({
+            error: `Akun ${accountToDelete.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat menghapus akun ini.`,
+            code: 'SYSTEM_ACCOUNT_PROTECTED',
+          });
+        }
+
         // Check for idempotency
         if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
           const cachedResult = getIdempotencyResult(idempotencyKey);

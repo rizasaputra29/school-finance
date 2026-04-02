@@ -1,0 +1,31 @@
+{
+  "id": "school-finance-system-02",
+  "seq": "02",
+  "title": "Implement RBAC Authentication: Add role-based access control with Admin, Owner, User roles",
+  "status": "completed",
+  "completion_summary": "Implemented RBAC with owner, admin, user roles. Token-based session, auto-logout on refresh, role-protected routes",
+  "completed_at": "2026-03-31T21:55:00Z"
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/lib/auth.ts",
+    "src/lib/withAuth.ts",
+    "src/pages/api/auth/login.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "User model extended with role field (Admin, Owner, User)",
+    "Token-based session validation implemented",
+    "Auto-logout on token refresh implemented",
+    "Role-based route protection in withAuth middleware",
+    "Owner has full access, Admin has limited access, User has read-only access"
+  ],
+  "deliverables": [
+    "src/lib/auth.ts (updated)",
+    "src/lib/withAuth.ts (updated)",
+    "src/pages/api/auth/login.ts (updated)"
+  ]
+}

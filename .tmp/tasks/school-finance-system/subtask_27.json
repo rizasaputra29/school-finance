@@ -1,0 +1,27 @@
+{
+  "id": "school-finance-system-27",
+  "seq": "27",
+  "title": "Opening Balance & Historical Balance",
+  "status": "completed",
+  "completion_summary": "Implemented Opening Balance API with Debit Aset, Kredit Ekuitas Saldo Awal (3201), one-time per period validation",
+  "completed_at": "2026-03-31T23:28:00Z"
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "prisma/schema.prisma",
+    "src/pages/api/journal/index.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Support initial balance from old system",
+    "Use journal: Debit Aset, Kredit Ekuitas Saldo Awal",
+    "Only once per period/year allowed",
+    "Opening balance entry visible in reports"
+  ],
+  "deliverables": [
+    "src/pages/api/opening-balance/index.ts"
+  ]
+}

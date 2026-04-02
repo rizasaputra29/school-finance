@@ -1,0 +1,31 @@
+{
+  "id": "school-finance-system-23",
+  "seq": "23",
+  "title": "Implement Export Improvements: PDF and Excel for all reports",
+  "status": "completed",
+  "completion_summary": "Implemented Export Improvements with PDF/Excel for Laba Rugi, Neraca, Buku Kas, and Billing",
+  "completed_at": "2026-03-31T23:16:00Z"
+  "depends_on": ["05", "06", "03", "04"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/export.ts",
+    "src/pages/api/export/pdf.ts",
+    "src/pages/api/export/excel.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Laba Rugi report export to PDF and Excel",
+    "Neraca report export to PDF and Excel",
+    "Buku Kas export to PDF and Excel",
+    "Student billing export to PDF and Excel",
+    "Proper formatting and headers"
+  ],
+  "deliverables": [
+    "src/pages/api/export.ts (updated)",
+    "src/pages/api/export/pdf.ts (updated)",
+    "src/pages/api/export/excel.ts (updated)"
+  ]
+}

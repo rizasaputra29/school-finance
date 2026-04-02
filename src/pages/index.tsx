@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,12 +18,37 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 interface CashflowItem {
   id: string;
   tanggal: string;
   debit: number;
   kredit: number;
+}
+
+interface ChartData {
+  pieChart: {
+    name: string;
+    value: number;
+    color: string;
+  }[];
+  barChart: {
+    bulan: string;
+    pendapatan: number;
+    beban: number;
+  }[];
 }
 
 interface DashboardData {
@@ -50,26 +75,38 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Generate last 6 months for dropdown
-  const getLast6Months = () => {
-    const months = [];
-    const now = new Date();
-    for (let i = 0; i < 6; i++) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
-                          'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-      months.push({
-        value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-        label: `${monthNames[date.getMonth()]} ${date.getFullYear()}`,
-        year: date.getFullYear(),
-        month: date.getMonth()
-      });
-    }
-    return months;
-  };
+  // Filter state
+  const currentDate = new Date();
+  const [selectedBulan, setSelectedBulan] = useState(currentDate.getMonth() + 1);
+  const [selectedTahun, setSelectedTahun] = useState(currentDate.getFullYear());
+  const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [chartLoading, setChartLoading] = useState(true);
   
-  const last6Months = getLast6Months();
-  const [selectedMonth, setSelectedMonth] = useState(last6Months[0].value);
+  // Month names for dropdown
+  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  
+  // Generate years for dropdown (current year and 2 years back)
+  const years = [currentDate.getFullYear(), currentDate.getFullYear() - 1, currentDate.getFullYear() - 2];
+
+  // Fetch chart data when filters change
+  useEffect(() => {
+    const fetchChartData = async () => {
+      setChartLoading(true);
+      try {
+        const res = await fetch(`/api/dashboard?chart=true&bulan=${selectedBulan}&tahun=${selectedTahun}`);
+        if (res.ok) {
+          const data = await res.json();
+          setChartData(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch chart data:', error);
+      } finally {
+        setChartLoading(false);
+      }
+    };
+    fetchChartData();
+  }, [selectedBulan, selectedTahun]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -87,42 +124,6 @@ export default function Dashboard() {
     };
     fetchData();
   }, []);
-
-  // Client-side filtering for chart data - show daily breakdown for selected month
-  const chartData = useMemo(() => {
-    if (!data?.cashflows) return [];
-    
-    const cashflows = data.cashflows;
-    const [year, month] = selectedMonth.split('-').map(Number);
-    
-    // Get number of days in the selected month
-    const daysInMonth = new Date(year, month, 0).getDate();
-    
-    // Group by week (4 weeks per month)
-    const weeks = [
-      { start: 1, end: 7, label: 'Minggu 1' },
-      { start: 8, end: 14, label: 'Minggu 2' },
-      { start: 15, end: 21, label: 'Minggu 3' },
-      { start: 22, end: daysInMonth, label: 'Minggu 4' },
-    ];
-    
-    return weeks.map(week => {
-      const weekCashflows = cashflows.filter((cf) => {
-        const cfDate = new Date(cf.tanggal);
-        const cfDay = cfDate.getDate();
-        return cfDate.getFullYear() === year && 
-               cfDate.getMonth() + 1 === month && 
-               cfDay >= week.start && 
-               cfDay <= week.end;
-      });
-      
-      return {
-        month: week.label,
-        debit: weekCashflows.reduce((sum, cf) => sum + cf.debit, 0),
-        kredit: weekCashflows.reduce((sum, cf) => sum + cf.kredit, 0),
-      };
-    });
-  }, [data?.cashflows, selectedMonth]);
 
   if (isLoading) {
     return (
@@ -219,84 +220,105 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Chart - spans 4 cols on large screens */}
+          {/* Charts Section */}
           <Card className="col-span-2 md:col-span-4 lg:col-span-4 bg-white row-span-2">
             <CardHeader className="pb-2 px-3 md:px-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm md:text-base font-semibold text-gray-900">Arus Kas</CardTitle>
-                <div className="flex items-center gap-3">
-                  <div className="hidden md:flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <div className="h-2.5 w-2.5 rounded-full bg-[#059DEA]" />
-                      <span className="text-gray-600">Masuk</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="h-2.5 w-2.5 rounded-full bg-gray-400" />
-                      <span className="text-gray-600">Keluar</span>
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle className="text-sm md:text-base font-semibold text-gray-900">Grafik Keuangan</CardTitle>
+                <div className="flex items-center gap-2">
                   <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    value={selectedBulan}
+                    onChange={(e) => setSelectedBulan(parseInt(e.target.value))}
                     className="appearance-none pl-2 pr-6 py-1 text-xs font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-1 focus:ring-[#059DEA]/50 outline-none cursor-pointer"
                   >
-                    {last6Months.map((month) => (
-                      <option key={month.value} value={month.value}>{month.label}</option>
+                    {monthNames.map((name, index) => (
+                      <option key={index + 1} value={index + 1}>{name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedTahun}
+                    onChange={(e) => setSelectedTahun(parseInt(e.target.value))}
+                    className="appearance-none pl-2 pr-6 py-1 text-xs font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-1 focus:ring-[#059DEA]/50 outline-none cursor-pointer"
+                  >
+                    {years.map((year) => (
+                      <option key={year} value={year}>{year}</option>
                     ))}
                   </select>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-2 md:px-4 pb-3">
-              {chartData.length > 0 && chartData.some(d => d.debit > 0 || d.kredit > 0) ? (
-                <div className="w-full">
-                  <div className="flex items-end justify-around gap-2 md:gap-4 h-[120px] md:h-[160px]">
-                    {(() => {
-                      const maxValue = Math.max(...chartData.map(d => Math.max(d.debit, d.kredit)));
-                      return chartData.map((week, index) => {
-                        const debitHeight = maxValue > 0 ? (week.debit / maxValue) * 100 : 0;
-                        const kreditHeight = maxValue > 0 ? (week.kredit / maxValue) * 100 : 0;
-                        return (
-                          <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                            <div className="w-full flex items-end justify-center gap-1 h-[80px] md:h-[120px]">
-                              <div className="relative group flex-1 h-full flex items-end">
-                                <div 
-                                  className="w-full bg-[#059DEA] rounded-t-md transition-all duration-300 hover:bg-[#0589d4] cursor-pointer"
-                                  style={{ height: week.debit > 0 ? `${debitHeight}%` : '0%', minHeight: week.debit > 0 ? '4px' : '0' }}
-                                />
-                                {week.debit > 0 && (
-                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20">
-                                    <div className="bg-gray-900 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">{formatCurrency(week.debit)}</div>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="relative group flex-1 h-full flex items-end">
-                                <div 
-                                  className="w-full bg-gray-400 rounded-t-md transition-all duration-300 hover:bg-gray-500 cursor-pointer"
-                                  style={{ height: week.kredit > 0 ? `${kreditHeight}%` : '0%', minHeight: week.kredit > 0 ? '4px' : '0' }}
-                                />
-                                {week.kredit > 0 && (
-                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20">
-                                    <div className="bg-gray-900 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">{formatCurrency(week.kredit)}</div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <span className="text-[10px] md:text-xs text-gray-500">{week.month.replace('Minggu ', 'M')}</span>
-                          </div>
-                        );
-                      });
-                    })()}
+              {chartLoading ? (
+                <div className="h-[200px] flex items-center justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-3 border-gray-200 border-t-[#059DEA]" />
+                </div>
+              ) : chartData && chartData.pieChart && chartData.pieChart.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Pie Chart - Expense by Category */}
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2 text-center">Pengeluaran per Kategori</p>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie
+                          data={chartData.pieChart}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={70}
+                          paddingAngle={2}
+                          dataKey="value"
+                        >
+                          {chartData.pieChart.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          formatter={(value) => formatCurrency(Number(value))}
+                          contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+                        />
+                        <Legend 
+                          layout="horizontal" 
+                          verticalAlign="bottom" 
+                          align="center"
+                          wrapperStyle={{ fontSize: '10px', paddingTop: '8px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div className="mt-3 pt-2 border-t border-gray-100 grid grid-cols-2 gap-2">
-                    <div className="bg-blue-50 rounded-lg p-2 md:p-3">
-                      <p className="text-[10px] md:text-xs text-gray-500">Total Masuk</p>
-                      <p className="text-xs md:text-sm font-bold text-[#059DEA]">{formatCurrency(chartData.reduce((sum, d) => sum + d.debit, 0))}</p>
-                    </div>
-                    <div className="bg-gray-100 rounded-lg p-2 md:p-3">
-                      <p className="text-[10px] md:text-xs text-gray-500">Total Keluar</p>
-                      <p className="text-xs md:text-sm font-bold text-gray-700">{formatCurrency(chartData.reduce((sum, d) => sum + d.kredit, 0))}</p>
-                    </div>
+                  
+                  {/* Bar Chart - Monthly Comparison */}
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2 text-center">Pendapatan vs Beban Bulanan</p>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <BarChart data={chartData.barChart} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                        <XAxis 
+                          dataKey="bulan" 
+                          tick={{ fontSize: 10 }} 
+                          axisLine={{ stroke: '#E5E7EB' }}
+                          tickLine={false}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 10 }} 
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(value) => {
+                            if (value >= 1000000) return `${(value / 1000000).toFixed(0)}M`;
+                            if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
+                            return String(value);
+                          }}
+                        />
+                        <Tooltip 
+                          formatter={(value) => formatCurrency(Number(value))}
+                          contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+                          labelStyle={{ fontSize: '12px', fontWeight: '600' }}
+                        />
+                        <Legend 
+                          wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }}
+                        />
+                        <Bar dataKey="pendapatan" name="Pendapatan" fill="#059DEA" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="beban" name="Beban" fill="#9CA3AF" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               ) : (

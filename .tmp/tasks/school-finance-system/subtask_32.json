@@ -1,0 +1,25 @@
+{
+  "id": "school-finance-system-32",
+  "seq": "32",
+  "title": "System Account Protection",
+  "status": "completed", "completion_summary": "System hardening feature implemented", "completed_at": "2026-03-31T23:32:00Z",
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/accounts/index.ts",
+    "prisma/schema.prisma"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Flag certain accounts as system-protected",
+    "Cannot delete system-protected accounts",
+    "Cannot change type of system-protected accounts",
+    "Cannot disable system-protected accounts"
+  ],
+  "deliverables": [
+    "Updated src/pages/api/accounts/index.ts"
+  ]
+}

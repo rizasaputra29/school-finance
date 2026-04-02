@@ -1,0 +1,29 @@
+{
+  "id": "school-finance-system-22",
+  "seq": "22",
+  "title": "Implement Dashboard Summary API: Enhanced data for charts and filters",
+  "status": "completed",
+  "completion_summary": "Enhanced Dashboard API with chart data structure, caching with TTL, filter support (bulan/tahun/date range)",
+  "completed_at": "2026-03-31T23:14:00Z"
+  "depends_on": ["07"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/dashboard.ts",
+    "src/lib/cache.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Dashboard API returns data structured for pie/bar charts",
+    "Monthly data aggregation for bar chart",
+    "Category breakdown for pie chart",
+    "Date range filtering returns correct data",
+    "Cached data refreshes on new transactions"
+  ],
+  "deliverables": [
+    "src/pages/api/dashboard.ts (updated)",
+    "src/lib/cache.ts (updated)"
+  ]
+}

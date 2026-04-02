@@ -1,0 +1,31 @@
+{
+  "id": "school-finance-system-05",
+  "seq": "05",
+  "title": "Fix Buku Kas: Import/Export, pagination, duplicate prevention, report sync",
+  "status": "completed",
+  "completion_summary": "Fixed Buku Kas with server-side pagination, duplicate detection, and Excel export",
+  "completed_at": "2026-03-31T22:10:00Z"
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/cashflow/index.ts",
+    "src/pages/api/import.ts",
+    "src/pages/api/export.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Buku Kas Import handles CSV format with proper validation",
+    "Buku Kas Export generates valid CSV with all columns",
+    "Pagination implemented with page/pageSize parameters",
+    "Duplicate detection based on tanggal, kodeAkun, jumlah, keterangan",
+    "Data syncs correctly with cashbook report"
+  ],
+  "deliverables": [
+    "src/pages/api/cashflow/index.ts (updated)",
+    "src/pages/api/import.ts (updated)",
+    "src/pages/api/export.ts (updated)"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "school-finance-system-37",
+  "seq": "37",
+  "title": "Data Freeze & Snapshot",
+  "status": "completed", "completion_summary": "System hardening feature implemented", "completed_at": "2026-03-31T23:32:00Z",
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/academic-year/index.ts",
+    "prisma/schema.prisma"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Snapshot reports at closing",
+    "Cannot change closed period data",
+    "Only regenerate via reopen",
+    "Audit trail for snapshots"
+  ],
+  "deliverables": [
+    "src/pages/api/reports/snapshot.ts"
+  ]
+}

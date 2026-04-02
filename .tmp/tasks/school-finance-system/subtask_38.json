@@ -1,0 +1,25 @@
+{
+  "id": "school-finance-system-38",
+  "seq": "38",
+  "title": "Negative Balance Control",
+  "status": "completed", "completion_summary": "System hardening feature implemented", "completed_at": "2026-03-31T23:32:00Z",
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/journal/index.ts",
+    "src/lib/validation.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Default: prevent negative balances",
+    "Owner can override negative balance",
+    "Configurable per account type",
+    "Warning for abnormal negative balances"
+  ],
+  "deliverables": [
+    "Updated transaction validation"
+  ]
+}

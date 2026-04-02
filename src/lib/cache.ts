@@ -108,3 +108,143 @@ export function revalidateCache(tag: string): void {
 export function invalidateAccountsCache(): void {
   revalidateTag('accounts', 'max');
 }
+
+/**
+ * Revalidates reports cache
+ */
+export function invalidateReportsCache(): void {
+  revalidateTag('reports', 'max');
+  revalidateTag('neraca', 'max');
+  revalidateTag('labarugi', 'max');
+  revalidateTag('cashflow', 'max');
+}
+
+/**
+ * Revalidates dashboard cache
+ */
+export function invalidateDashboardCache(): void {
+  revalidateTag('dashboard', 'max');
+  revalidateTag('dashboard-filtered', 'max');
+}
+
+/**
+ * Creates a filtered dashboard cache key
+ */
+function getFilteredDashboardKey(params: {
+  bulan?: number;
+  tahun?: number;
+  startDate?: string;
+  endDate?: string;
+}): string[] {
+  const { bulan, tahun, startDate, endDate } = params;
+  if (startDate && endDate) {
+    return ['dashboard-filtered', 'date', startDate, endDate];
+  }
+  if (bulan && tahun) {
+    return ['dashboard-filtered', 'bulan', String(bulan), String(tahun)];
+  }
+  if (tahun) {
+    return ['dashboard-filtered', 'tahun', String(tahun)];
+  }
+  return DASHBOARD_KEY;
+}
+
+/**
+ * Creates a cached dashboard data query with filters
+ * Returns dashboard data including summary, pie chart, and bar chart
+ */
+export function getFilteredDashboardCache(bulan?: number, tahun?: number, startDate?: string, endDate?: string) {
+  const key = getFilteredDashboardKey({ bulan, tahun, startDate, endDate });
+  
+  return unstable_cache(
+    async () => {
+      let start: Date;
+      let end: Date;
+      
+      if (startDate && endDate) {
+        start = new Date(startDate);
+        end = new Date(endDate);
+      } else if (bulan && tahun) {
+        start = new Date(tahun, bulan - 1, 1);
+        end = new Date(tahun, bulan, 0);
+      } else if (tahun) {
+        start = new Date(tahun, 0, 1);
+        end = new Date(tahun, 11, 31);
+      } else {
+        end = new Date();
+        start = new Date();
+        start.setFullYear(start.getFullYear() - 1);
+      }
+      
+      const [
+        cashflows,
+        accounts,
+      ] = await Promise.all([
+        prisma.cashflow.findMany({
+          where: { tanggal: { gte: start, lte: end } },
+          orderBy: { tanggal: 'asc' },
+        }),
+        prisma.account.findMany(),
+      ]);
+      
+      // Calculate summary totals
+      const totalDebit = cashflows.reduce((sum, cf) => sum + cf.debit, 0);
+      const totalKredit = cashflows.reduce((sum, cf) => sum + cf.kredit, 0);
+      const totalPendapatan = totalDebit;
+      const totalBeban = totalKredit;
+      const saldo = totalPendapatan - totalBeban;
+      
+      // Build pie chart data - expense by category (kredit = expense/ beban)
+      const expenseByCategory: Record<string, number> = {};
+      cashflows.forEach((cf) => {
+        if (cf.kredit > 0) {
+          const account = accounts.find(a => a.kodeAkun === cf.kodeAkun);
+          const categoryName = account?.namaAkun || cf.kodeAkun;
+          expenseByCategory[categoryName] = (expenseByCategory[categoryName] || 0) + cf.kredit;
+        }
+      });
+      
+      const pieChart = Object.entries(expenseByCategory)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+      
+      // Build bar chart data - monthly income vs expense
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const barChart: Array<{ bulan: string; pendapatan: number; beban: number }> = [];
+      
+      // Determine year from filter or use current year
+      const year = tahun || new Date().getFullYear();
+      
+      for (let m = 1; m <= 12; m++) {
+        const mStart = new Date(year, m - 1, 1);
+        const mEnd = new Date(year, m, 0);
+        
+        // Filter cashflows for this month
+        const monthlyCashflows = cashflows.filter(cf => {
+          const cfDate = new Date(cf.tanggal);
+          return cfDate >= mStart && cfDate <= mEnd;
+        });
+        
+        const pendapatan = monthlyCashflows.reduce((sum, cf) => sum + cf.debit, 0);
+        const beban = monthlyCashflows.reduce((sum, cf) => sum + cf.kredit, 0);
+        
+        barChart.push({
+          bulan: monthNames[m - 1],
+          pendapatan,
+          beban,
+        });
+      }
+      
+      return {
+        summary: {
+          totalPendapatan,
+          totalBeban,
+          saldo,
+        },
+        pieChart,
+        barChart,
+      };
+    },
+    key
+  );
+}

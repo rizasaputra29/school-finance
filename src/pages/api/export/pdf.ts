@@ -4,13 +4,21 @@ import autoTable from 'jspdf-autotable';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
-// Define types inline for Prisma v7 compatibility
+// Types for Prisma v7
 interface AccountRecord {
   id: string;
   kodeAkun: string;
   namaAkun: string;
   tipeAkun: string;
   saldo: number;
+}
+
+interface CashflowRecord {
+  id: string;
+  tanggal: Date;
+  kodeAkun: string;
+  debit: number;
+  kredit: number;
 }
 
 // Proper type for jsPDF with autotable plugin
@@ -41,11 +49,6 @@ async function handler(
       month: 'long', 
       year: 'numeric' 
     });
-
-    // Get all data
-    const accounts = await prisma.account.findMany({
-      orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
-    }) as AccountRecord[];
 
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -131,13 +134,62 @@ async function handler(
     };
 
     if (type === 'laba-rugi') {
-      const startY = addHeader('LAPORAN LABA RUGI');
+      // Get query params for period filtering
+      const { bulan, tahun } = req.query;
+
+      // Build date filter
+      const cashflowWhere: Record<string, unknown> = {};
+      if (bulan && tahun) {
+        const month = parseInt(bulan as string, 10);
+        const year = parseInt(tahun as string, 10);
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 0, 23, 59, 59);
+        cashflowWhere.tanggal = { gte: startDate, lte: endDate };
+      } else if (tahun) {
+        const year = parseInt(tahun as string, 10);
+        const startDate = new Date(year, 0, 1);
+        const endDate = new Date(year, 11, 31, 23, 59, 59);
+        cashflowWhere.tanggal = { gte: startDate, lte: endDate };
+      }
+
+      // Get cashflows for period
+      const cashflows = await prisma.cashflow.findMany({
+        where: cashflowWhere,
+        orderBy: [{ tanggal: 'asc' }, { createdAt: 'asc' }],
+      }) as CashflowRecord[];
+
+      // Get Revenue and Expense accounts
+      const accounts = await prisma.account.findMany({
+        where: { tipeAkun: { in: ['Revenue', 'Expense'] } },
+        orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
+      }) as AccountRecord[];
 
       const revenues = accounts.filter((a) => a.tipeAkun === 'Revenue');
       const expenses = accounts.filter((a) => a.tipeAkun === 'Expense');
-      const totalRevenue = revenues.reduce((sum: number, a) => sum + a.saldo, 0);
-      const totalExpense = expenses.reduce((sum: number, a) => sum + a.saldo, 0);
+
+      // Calculate revenue amounts from cashflows
+      const revenueItems = revenues.map((account) => {
+        const accountCashflows = cashflows.filter((cf) => cf.kodeAkun === account.kodeAkun);
+        const totalDebit = accountCashflows.reduce((sum, cf) => sum + cf.debit, 0);
+        const totalKredit = accountCashflows.reduce((sum, cf) => sum + cf.kredit, 0);
+        const jumlah = Math.max(0, totalKredit - totalDebit);
+        return { ...account, saldo: jumlah };
+      });
+
+      // Calculate expense amounts from cashflows
+      const expenseItems = expenses.map((account) => {
+        const accountCashflows = cashflows.filter((cf) => cf.kodeAkun === account.kodeAkun);
+        const totalDebit = accountCashflows.reduce((sum, cf) => sum + cf.debit, 0);
+        const totalKredit = accountCashflows.reduce((sum, cf) => sum + cf.kredit, 0);
+        const jumlah = Math.max(0, totalDebit - totalKredit);
+        return { ...account, saldo: jumlah };
+      });
+
+      const totalRevenue = revenueItems.reduce((sum: number, a) => sum + a.saldo, 0);
+      const totalExpense = expenseItems.reduce((sum: number, a) => sum + a.saldo, 0);
       const labaRugi = totalRevenue - totalExpense;
+
+      const startY = addHeader('LAPORAN LABA RUGI');
 
       // Pendapatan section
       doc.setFontSize(11);
@@ -148,7 +200,7 @@ async function handler(
       autoTable(doc, {
         startY: startY + 5,
         head: [['No', 'Kode Akun', 'Nama Akun', 'Jumlah (Rp)']],
-        body: revenues.map((a, i) => [
+        body: revenueItems.map((a, i) => [
           (i + 1).toString(), 
           a.kodeAkun, 
           a.namaAkun, 
@@ -173,7 +225,7 @@ async function handler(
       autoTable(doc, {
         startY: finalY1 + 5,
         head: [['No', 'Kode Akun', 'Nama Akun', 'Jumlah (Rp)']],
-        body: expenses.map((a, i) => [
+        body: expenseItems.map((a, i) => [
           (i + 1).toString(), 
           a.kodeAkun, 
           a.namaAkun, 
@@ -205,6 +257,11 @@ async function handler(
     }
 
     if (type === 'neraca') {
+      // Get all accounts for neraca
+      const accounts = await prisma.account.findMany({
+        orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
+      }) as AccountRecord[];
+
       const startY = addHeader('NERACA');
 
       const assets = accounts.filter((a) => a.tipeAkun === 'Asset');

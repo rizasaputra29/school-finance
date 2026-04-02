@@ -1,0 +1,26 @@
+{
+  "id": "school-finance-system-40",
+  "seq": "40",
+  "title": "Auto Numbering & Consistency Check",
+  "status": "completed", "completion_summary": "System hardening feature implemented", "completed_at": "2026-03-31T23:32:00Z",
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/journal/index.ts",
+    "prisma/schema.prisma"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Format: JNL-YYYY-XXXX unique sequential",
+    "Consistency Check Engine: Jurnal=Ledger",
+    "Ledger=Laporan, Kas=Arus Kas",
+    "Automated reconciliation reports"
+  ],
+  "deliverables": [
+    "src/lib/auto-number.ts",
+    "Consistency check endpoint"
+  ]
+}

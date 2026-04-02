@@ -1,0 +1,30 @@
+{
+  "id": "school-finance-system-08",
+  "seq": "08",
+  "title": "Implement Transaction System: Separate buttons for Pemasukan, Pengeluaran, Aset, Hutang, Piutang",
+  "status": "completed",
+  "completion_summary": "Implemented 5 separate transaction buttons (Pemasukan, Pengeluaran, Aset, Hutang, Piutang) with double-entry accounting",
+  "completed_at": "2026-03-31T22:25:00Z"
+  "depends_on": ["01", "02"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/cashflow/index.ts",
+    "src/pages/api/accounts/index.ts"
+  ],
+  "suggested_agent": "OpenFrontendSpecialist",
+  "acceptance_criteria": [
+    "UI has 5 separate buttons: Pemasukan, Pengeluaran, Aset, Hutang, Piutang",
+    "Pemasukan (Income) creates cashflow with debit to Asset account",
+    "Pengeluaran (Expense) creates cashflow with credit from Asset account",
+    "Aset (Asset) shows asset accounts for selection",
+    "Hutang (Debt/Liability) creates negative balance entries",
+    "Piutang (Receivable) tracks student debt"
+  ],
+  "deliverables": [
+    "src/components/Transaction/TransactionButtons.tsx (new)",
+    "src/pages/api/cashflow/index.ts (updated)"
+  ]
+}

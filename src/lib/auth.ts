@@ -13,9 +13,47 @@ const secret = new TextEncoder().encode(
     : 'dev-only-secret-not-for-production')
 );
 
+// Session expiry hours (configurable via env)
+const SESSION_EXPIRY_HOURS = parseInt(process.env.SESSION_EXPIRY_HOURS || '4', 10);
+
+export type UserRole = 'owner' | 'admin' | 'user';
+
+/**
+ * Get secure cookie options based on environment
+ */
+export function getCookieOptions() {
+  const maxAge = SESSION_EXPIRY_HOURS * 60 * 60;
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    maxAge,
+    path: '/',
+  };
+}
+
+/**
+ * Get cookie options for clearing (logout)
+ */
+export function getClearCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    expires: new Date(0),
+    path: '/',
+  };
+}
+
 export interface AuthUser {
+  id?: string;
   email: string;
-  role: 'admin' | 'guest';
+  role: UserRole;
+  tokenVersion?: number;
+}
+
+export interface TokenPayload extends AuthUser {
+  tokenVersion?: number;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -30,7 +68,18 @@ export async function createToken(user: AuthUser): Promise<string> {
   return new SignJWT({ ...user })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('4h') // Reduced from 24h to 4 hours for better security
+    .setExpirationTime(`${SESSION_EXPIRY_HOURS}h`)
+    .sign(secret);
+}
+
+/**
+ * Create token with version embedded (for session tracking)
+ */
+export async function createTokenWithVersion(user: AuthUser, tokenVersion: number): Promise<string> {
+  return new SignJWT({ ...user, tokenVersion })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(`${SESSION_EXPIRY_HOURS}h`)
     .sign(secret);
 }
 
@@ -42,15 +91,17 @@ export async function verifyToken(token: string): Promise<AuthUser | null> {
     // jose returns JWTPayload which extends Record<string, unknown>
     const email = payload.email;
     const role = payload.role;
+    const tokenVersion = payload.tokenVersion;
     
     if (
       typeof email === 'string' &&
       typeof role === 'string' &&
-      (role === 'admin' || role === 'guest')
+      (role === 'owner' || role === 'admin' || role === 'user')
     ) {
       return {
         email,
         role,
+        tokenVersion: typeof tokenVersion === 'number' ? tokenVersion : undefined,
       };
     }
     return null;
@@ -62,6 +113,46 @@ export async function verifyToken(token: string): Promise<AuthUser | null> {
 // SECURITY: Use hashed password comparison
 // In production, ADMIN_PASSWORD_HASH should be a bcrypt hash
 // Generate with: await bcrypt.hash('yourpassword', 12)
+
+/**
+ * Validate owner credentials from environment
+ */
+export async function validateOwnerCredentials(email: string, password: string): Promise<boolean> {
+  const ownerEmail = process.env.OWNER_EMAIL;
+  const ownerPasswordHash = process.env.OWNER_PASSWORD_HASH;
+  const ownerPasswordPlain = process.env.OWNER_PASSWORD;
+
+  // Require proper configuration
+  if (!ownerEmail) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return false;
+  }
+
+  // Check email first
+  if (email !== ownerEmail) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return false;
+  }
+
+  // Prefer hashed password if available
+  if (ownerPasswordHash) {
+    return bcrypt.compare(password, ownerPasswordHash);
+  }
+
+  // Fallback to plain password comparison (dev mode only)
+  if (ownerPasswordPlain) {
+    const isValid = password === ownerPasswordPlain;
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return isValid;
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return false;
+}
+
+/**
+ * Validate admin credentials from environment
+ */
 export async function validateAdminCredentials(email: string, password: string): Promise<boolean> {
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
@@ -114,4 +205,27 @@ export async function validateAdminCredentials(email: string, password: string):
   await new Promise(resolve => setTimeout(resolve, 100));
   return false;
 }
+
+/**
+ * Check if user has permission to perform an action
+ * Owner: full access
+ * Admin: can create/update, cannot delete critical data
+ * User: read-only
+ */
+export function hasPermission(user: AuthUser | null, action: PermissionAction): boolean {
+  if (!user) return false;
+
+  switch (user.role) {
+    case 'owner':
+      return true; // Full access
+    case 'admin':
+      return action !== 'delete_critical'; // Can do everything except delete critical
+    case 'user':
+      return action === 'read'; // Read-only
+    default:
+      return false;
+  }
+}
+
+export type PermissionAction = 'read' | 'create' | 'update' | 'delete' | 'delete_critical' | 'approve';
 

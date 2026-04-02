@@ -36,12 +36,28 @@ interface CashbookEntry {
   saldo: number;
 }
 
+interface RawCashflow {
+  id: string;
+  tanggal: string;
+  keterangan: string;
+  kodeAkun: string;
+  debit: number;
+  kredit: number;
+}
+
 interface Summary {
   saldoAwal: number;
   totalPemasukan: number;
   totalPengeluaran: number;
   saldoAkhir: number;
   transactionCount: number;
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 const ITEMS_PER_PAGE = 15;
@@ -55,51 +71,97 @@ export default function CashbookPage() {
     saldoAkhir: 0,
     transactionCount: 0,
   });
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    page: 1,
+    limit: ITEMS_PER_PAGE,
+    total: 0,
+    totalPages: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Data fetching - using useCallback to fix exhaustive-deps warning
+  // Clear message after 5 seconds
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => setMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
+
+  // Data fetching - server-side pagination
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/reports/cashbook`;
       const params = new URLSearchParams();
+      params.append('page', currentPage.toString());
+      params.append('limit', ITEMS_PER_PAGE.toString());
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
-      if (params.toString()) url += `?${params.toString()}`;
       
-      const res = await fetch(url);
+      const res = await fetch(`/api/cashflow?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setEntries(data.data);
-        setSummary(data.summary);
-        setCurrentPage(1); // Reset to first page on new fetch
+        // Transform cashflow data to cashbook format with running balance
+        const cashflows: RawCashflow[] = data.data || [];
+        const transformedData = transformToCashbook(cashflows);
+        setEntries(transformedData);
+        setSummary({
+          saldoAwal: data.summary?.saldo || 0,
+          totalPemasukan: data.summary?.totalDebit || 0,
+          totalPengeluaran: data.summary?.totalKredit || 0,
+          saldoAkhir: (data.summary?.totalDebit || 0) - (data.summary?.totalKredit || 0),
+          transactionCount: data.pagination?.total || 0,
+        });
+        setPagination({
+          page: data.pagination?.page || 1,
+          limit: data.pagination?.limit || ITEMS_PER_PAGE,
+          total: data.pagination?.total || 0,
+          totalPages: data.pagination?.totalPages || 0,
+        });
       }
     } catch (error) {
       console.error('Failed to fetch cashbook:', error);
+      setMessage({ type: 'error', text: 'Gagal memuat data buku kas' });
     } finally {
       setIsLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [currentPage, startDate, endDate]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const handleExport = async (format: 'excel' | 'pdf') => {
-    window.open(
-      `/api/export/${format}?type=cashbook&startDate=${startDate}&endDate=${endDate}`,
-      '_blank'
-    );
+  // Transform cashflow data to cashbook format with running balance
+  const transformToCashbook = (cashflows: RawCashflow[]): CashbookEntry[] => {
+    let runningBalance = 0;
+    return cashflows.map((cf) => {
+      runningBalance = runningBalance + cf.debit - cf.kredit;
+      return {
+        id: cf.id,
+        tanggal: cf.tanggal,
+        keterangan: cf.keterangan,
+        kodeAkun: cf.kodeAkun,
+        debit: cf.debit,
+        kredit: cf.kredit,
+        saldo: runningBalance,
+      };
+    });
   };
 
-  // Pagination calculations
-  const totalPages = Math.ceil(entries.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentEntries = entries.slice(startIndex, endIndex);
+  const handleExport = async (format: 'excel' | 'pdf') => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    params.append('format', format);
+    
+    const url = `/api/export/cashflow?${params.toString()}`;
+    window.open(url, '_blank');
+  };
+
+
 
   return (
     <>
@@ -290,10 +352,10 @@ export default function CashbookPage() {
                         </TableRow>
                       )}
                       
-                      {currentEntries.map((entry, idx) => (
+                      {entries.map((entry: CashbookEntry, idx: number) => (
                         <TableRow key={entry.id} className="hover:bg-slate-50">
                           <TableCell className="text-gray-500">
-                            {startIndex + idx + 1}
+                            {(pagination.page - 1) * pagination.limit + idx + 1}
                           </TableCell>
                           <TableCell>{formatShortDate(entry.tanggal)}</TableCell>
                           <TableCell>{entry.keterangan}</TableCell>
@@ -313,7 +375,7 @@ export default function CashbookPage() {
                       ))}
 
                       {/* Closing Balance Row - only on last page */}
-                      {currentPage === totalPages && (
+                      {currentPage === pagination.totalPages && (
                         <TableRow className="bg-[#059DEA]/30 font-bold">
                           <TableCell>-</TableCell>
                           <TableCell>{endDate ? formatShortDate(endDate) : '-'}</TableCell>
@@ -335,10 +397,10 @@ export default function CashbookPage() {
                 </div>
 
                 {/* Pagination */}
-                {totalPages > 1 && (
+                {pagination.totalPages > 1 && (
                   <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4 border-t pt-4">
                     <p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
-                      Menampilkan {startIndex + 1} - {Math.min(endIndex, entries.length)} dari {entries.length} transaksi
+                      Menampilkan {(pagination.page - 1) * pagination.limit + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} dari {pagination.total} transaksi
                     </p>
                     <div className="flex justify-center gap-2">
                        <Button
@@ -352,11 +414,11 @@ export default function CashbookPage() {
                         <span className="hidden sm:inline">Prev</span>
                       </Button>
                       <div className="flex items-center gap-1">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                           let pageNum = i + 1;
-                          if (totalPages > 5 && currentPage > 3) {
+                          if (pagination.totalPages > 5 && currentPage > 3) {
                             pageNum = currentPage - 2 + i;
-                            if (pageNum > totalPages) pageNum = totalPages - (4 - i);
+                            if (pageNum > pagination.totalPages) pageNum = pagination.totalPages - (4 - i);
                           }
                           
                           return (
@@ -375,8 +437,8 @@ export default function CashbookPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                        disabled={currentPage === pagination.totalPages}
                         className="w-10 px-0 sm:w-auto sm:px-3"
                       >
                          <span className="hidden sm:inline">Next</span>

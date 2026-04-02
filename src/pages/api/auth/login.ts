@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createToken, validateAdminCredentials, AuthUser } from '@/lib/auth';
+import { createTokenWithVersion, validateOwnerCredentials, validateAdminCredentials, AuthUser, getCookieOptions } from '@/lib/auth';
+import { createSession, SESSION_EXPIRY_MS } from '@/lib/session';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { serialize } from 'cookie';
 
@@ -31,34 +32,57 @@ export default async function handler(
       return res.status(400).json({ error: 'Email dan password diperlukan' });
     }
 
-    // 2. Validate Credentials (async now for bcrypt)
-    const isValid = await validateAdminCredentials(email, password);
-    
-    if (!isValid) {
-      // Intentionally generic error properly handled on client
-      return res.status(401).json({ error: 'Email atau password salah' });
+    // 2. Check credentials - try owner first, then admin
+    // Owner has highest priority
+    const isOwnerValid = await validateOwnerCredentials(email, password);
+    if (isOwnerValid) {
+      const user: AuthUser = { email, role: 'owner' };
+      
+      // Create session
+      const tokenVersion = createSession(user);
+      
+      // Create token with version
+      const token = await createTokenWithVersion(user, tokenVersion);
+
+      // Set HttpOnly Cookie with secure options
+      const cookieOptions = getCookieOptions();
+      const cookie = serialize('auth_token', token, cookieOptions);
+
+      res.setHeader('Set-Cookie', cookie);
+
+      return res.status(200).json({ 
+        user,
+        tokenExpiresIn: SESSION_EXPIRY_MS / 1000,
+        tokenVersion,
+      });
     }
 
-    const user: AuthUser = { email, role: 'admin' };
-    const token = await createToken(user);
+    // Then check admin credentials
+    const isAdminValid = await validateAdminCredentials(email, password);
+    if (isAdminValid) {
+      const user: AuthUser = { email, role: 'admin' };
+      
+      // Create session
+      const tokenVersion = createSession(user);
+      
+      // Create token with version
+      const token = await createTokenWithVersion(user, tokenVersion);
 
-    // 3. Set HttpOnly Cookie
-    const cookie = serialize('auth_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 24, // 24 hours
-      path: '/',
-    });
+      // Set HttpOnly Cookie with secure options
+      const cookieOptions = getCookieOptions();
+      const cookie = serialize('auth_token', token, cookieOptions);
 
-    res.setHeader('Set-Cookie', cookie);
+      res.setHeader('Set-Cookie', cookie);
 
-    // Return user info but NOT the token in body
-    // Also return token expiry info for client-side tracking
-    return res.status(200).json({ 
-      user,
-      tokenExpiresIn: 4 * 60 * 60, // 4 hours in seconds
-    });
+      return res.status(200).json({ 
+        user,
+        tokenExpiresIn: SESSION_EXPIRY_MS / 1000,
+        tokenVersion,
+      });
+    }
+
+    // Invalid credentials
+    return res.status(401).json({ error: 'Email atau password salah' });
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Internal server error' });

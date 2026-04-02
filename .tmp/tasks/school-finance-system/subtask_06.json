@@ -1,0 +1,32 @@
+{
+  "id": "school-finance-system-06",
+  "seq": "06",
+  "title": "Fix General Data: Import/Export with duplicate validation",
+  "status": "completed",
+  "completion_summary": "Fixed General Data Import/Export with duplicate validation for accounts and students. Added update/skip logic.",
+  "completed_at": "2026-03-31T22:15:00Z"
+  "depends_on": ["01"],
+  "parallel": true,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/accounts/index.ts",
+    "src/pages/api/students/index.ts",
+    "src/pages/api/import.ts",
+    "src/pages/api/export.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Account Import/Export with duplicate kodeAkun validation",
+    "Student Import/Export with duplicate nis validation",
+    "Proper error messages for duplicates",
+    "Bulk import skips valid rows and reports errors"
+  ],
+  "deliverables": [
+    "src/pages/api/accounts/index.ts (updated)",
+    "src/pages/api/students/index.ts (updated)",
+    "src/pages/api/import.ts (updated)",
+    "src/pages/api/export.ts (updated)"
+  ]
+}

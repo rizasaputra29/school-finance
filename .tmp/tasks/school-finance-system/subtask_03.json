@@ -1,0 +1,27 @@
+{
+  "id": "school-finance-system-03",
+  "seq": "03",
+  "title": "Fix Laba Rugi Report: Correct profit/loss calculation (Laba Bersih = Total Pendapatan - Total Beban)",
+  "status": "completed",
+  "completion_summary": "Fixed Laba Rugi report with correct calculation: Total Pendapatan - Total Beban = Laba/Rugi. Period filters added.",
+  "completed_at": "2026-03-31T22:00:00Z"
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/reports/cashbook.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Laba Rugi report calculates Total Pendapatan from all Revenue-type accounts",
+    "Laba Rugi report calculates Total Beban from all Expense-type accounts",
+    "Laba Bersih = Total Pendapatan - Total Beban displays correctly",
+    "Negative result shows as Rugi (loss), positive as Laba (profit)",
+    "Report displays period filter (per bulan, per tahun)"
+  ],
+  "deliverables": [
+    "src/pages/api/reports/laba-rugi.ts (new)"
+  ]
+}

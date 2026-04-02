@@ -1,0 +1,29 @@
+{
+  "id": "school-finance-system-19",
+  "seq": "19",
+  "title": "Implement Jurnal Umum: Double-entry journal entry system",
+  "status": "completed",
+  "completion_summary": "Implemented Jurnal Umum with multiple debit/credit lines, balance validation, draft→approved→posted flow",
+  "completed_at": "2026-03-31T23:08:00Z"
+  "depends_on": ["01", "17"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "src/pages/api/cashflow/index.ts",
+    "src/pages/api/accounts/index.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Journal entries with multiple debit/credit lines",
+    "Total Debit must equal Total Credit (validation)",
+    "Reference to source document (billing, cashflow, etc.)",
+    "Journal report with date filtering",
+    "Automatic posting to ledger accounts"
+  ],
+  "deliverables": [
+    "src/pages/api/jurnal/index.ts (new)",
+    "src/pages/api/reports/jurnal.ts (new)"
+  ]
+}

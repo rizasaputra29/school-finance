@@ -19,8 +19,41 @@ const createAccountSchema = z.object({
   tipeAkun: z.enum(['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'], {
     errorMap: () => ({ message: 'Tipe akun tidak valid' }),
   }),
+  kategori: z.string().optional(),
   saldo: z.union([z.number(), z.string()]).optional().default(0),
 });
+
+// Bank account validation - only one bank account allowed
+async function validateBankAccount(kodeAkun: string, kategori?: string): Promise<{ valid: boolean; error?: string }> {
+  // Check if this is a Bank account (kode 1110 or 102, or kategori = 'Bank')
+  const isBankAccount = 
+    kodeAkun === '1110' || 
+    kodeAkun === '102' || 
+    kategori === 'Bank' ||
+    kodeAkun.startsWith('111') ||
+    kodeAkun.startsWith('102');
+
+  if (isBankAccount) {
+    // Check if a bank account already exists
+    const existingBank = await prisma.account.findFirst({
+      where: {
+        OR: [
+          { kodeAkun: '1110' },
+          { kodeAkun: '102' },
+        ],
+      },
+    });
+
+    if (existingBank) {
+      return {
+        valid: false,
+        error: 'Hanya satu akun Bank yang diperbolehkan. Akun Bank sudah ada.',
+      };
+    }
+  }
+
+  return { valid: true };
+}
 
 async function handler(
   req: AuthenticatedRequest,
@@ -64,7 +97,13 @@ async function handler(
           return sendValidationError(res, validationErrors);
         }
 
-        const { kodeAkun, namaAkun, tipeAkun, saldo } = req.body as z.infer<typeof createAccountSchema>;
+        const { kodeAkun, namaAkun, tipeAkun, kategori, saldo } = req.body as z.infer<typeof createAccountSchema>;
+
+        // Validate bank account (only one allowed)
+        const bankValidation = await validateBankAccount(kodeAkun, kategori);
+        if (!bankValidation.valid) {
+          return res.status(400).json({ error: bankValidation.error });
+        }
 
         // Check for duplicate kodeAkun
         const existing = await prisma.account.findUnique({
@@ -79,8 +118,9 @@ async function handler(
             kodeAkun,
             namaAkun,
             tipeAkun,
+            kategori: kategori || null,
             saldo: typeof saldo === 'string' ? parseFloat(saldo) || 0 : saldo || 0,
-          },
+          } as never,
         });
 
         // Cache the result for idempotency

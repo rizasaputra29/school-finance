@@ -3,6 +3,16 @@ import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import {
+  validateDataset,
+  SHEET_CONFIGS,
+  processInBatches,
+  findDuplicateCashflow,
+  buildErrorResponse,
+  BatchProgress,
+  ValidatedRow,
+  ImportResult,
+} from '@/lib/import/validator';
 
 export const config = {
   api: {
@@ -11,6 +21,10 @@ export const config = {
     },
   },
 };
+
+// ============================================
+// Type Definitions
+// ============================================
 
 interface CashflowRow {
   Tanggal?: string | number;
@@ -37,9 +51,245 @@ interface AccountRow {
   Saldo?: number;
 }
 
+// ============================================
+// Pure Helper Functions
+// ============================================
+
 function excelDateToJSDate(excelDate: number): Date {
   return new Date((excelDate - 25569) * 86400 * 1000);
 }
+
+function createImportResult(): ImportResult {
+  return {
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0,
+    details: [],
+  };
+}
+
+function parseCashflowDate(value: string | number | undefined): Date | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'number') return excelDateToJSDate(value);
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? null : date;
+}
+
+// ============================================
+// Batch Processors
+// ============================================
+
+async function processAccountBatch(
+  rows: ValidatedRow[]
+): Promise<{ row: number; success: boolean; error?: string; updated?: boolean }[]> {
+  const results: { row: number; success: boolean; error?: string; updated?: boolean }[] = [];
+
+  for (const validatedRow of rows) {
+    const rowNum = validatedRow.row;
+    const data = validatedRow.data;
+
+    try {
+      const kodeAkun = String(data.kodeAkun || '');
+
+      if (!kodeAkun) {
+        results.push({ row: rowNum, success: false, error: 'Kode Akun wajib diisi' });
+        continue;
+      }
+
+      const existingAccount = await prisma.account.findUnique({
+        where: { kodeAkun },
+      });
+
+      if (existingAccount) {
+        await prisma.account.update({
+          where: { kodeAkun },
+          data: {
+            namaAkun: String(data.namaAkun || ''),
+            tipeAkun: String(data.tipeAkun || 'Other'),
+            saldo: Number(data.saldo) || 0,
+          },
+        });
+        results.push({ row: rowNum, success: true, updated: true });
+      } else {
+        await prisma.account.create({
+          data: {
+            kodeAkun,
+            namaAkun: String(data.namaAkun || ''),
+            tipeAkun: String(data.tipeAkun || 'Other'),
+            saldo: Number(data.saldo) || 0,
+          },
+        });
+        results.push({ row: rowNum, success: true, updated: false });
+      }
+    } catch (error) {
+      results.push({
+        row: rowNum,
+        success: false,
+        error: `Gagal import: ${(error as Error).message}`,
+      });
+    }
+  }
+
+  return results;
+}
+
+async function processStudentBatch(
+  rows: ValidatedRow[]
+): Promise<{ row: number; success: boolean; error?: string; updated?: boolean }[]> {
+  const results: { row: number; success: boolean; error?: string; updated?: boolean }[] = [];
+
+  for (const validatedRow of rows) {
+    const rowNum = validatedRow.row;
+    const data = validatedRow.data;
+
+    try {
+      const nis = String(data.nis || '');
+
+      if (!nis) {
+        results.push({ row: rowNum, success: false, error: 'NIS wajib diisi' });
+        continue;
+      }
+
+      const existingStudent = await prisma.student.findUnique({
+        where: { nis },
+      });
+
+      if (existingStudent) {
+        await prisma.student.update({
+          where: { nis },
+          data: {
+            nama: String(data.nama || ''),
+            kelas: String(data.kelas || ''),
+            tahunMasuk: Number(data.tahunMasuk) || new Date().getFullYear(),
+            statusBayar: String(data.statusBayar || 'Belum Lunas'),
+            totalTagihan: Number(data.totalTagihan) || 0,
+            totalBayar: Number(data.totalBayar) || 0,
+          },
+        });
+        results.push({ row: rowNum, success: true, updated: true });
+      } else {
+        await prisma.student.create({
+          data: {
+            nis,
+            nama: String(data.nama || ''),
+            kelas: String(data.kelas || ''),
+            tahunMasuk: Number(data.tahunMasuk) || new Date().getFullYear(),
+            statusBayar: String(data.statusBayar || 'Belum Lunas'),
+            totalTagihan: Number(data.totalTagihan) || 0,
+            totalBayar: Number(data.totalBayar) || 0,
+            status: 'Active',
+          },
+        });
+        results.push({ row: rowNum, success: true, updated: false });
+      }
+    } catch (error) {
+      results.push({
+        row: rowNum,
+        success: false,
+        error: `Gagal import: ${(error as Error).message}`,
+      });
+    }
+  }
+
+  return results;
+}
+
+
+async function processCashflowBatch(
+  rows: ValidatedRow[],
+  importTotals: { debit: number; kredit: number; count: number }
+): Promise<{ row: number; success: boolean; error?: string; skipped?: boolean }[]> {
+  const results: { row: number; success: boolean; error?: string; skipped?: boolean }[] = [];
+
+  for (const validatedRow of rows) {
+    const rowNum = validatedRow.row;
+    const data = validatedRow.data;
+
+    try {
+      const tanggal = parseCashflowDate(data.tanggal as string | number | undefined);
+      if (!tanggal) {
+        results.push({ row: rowNum, success: false, error: 'Tanggal tidak valid' });
+        continue;
+      }
+
+      const kodeAkun = String(data.kodeAkun || '');
+      if (!kodeAkun) {
+        results.push({ row: rowNum, success: false, error: 'Kode Akun wajib diisi' });
+        continue;
+      }
+
+      const debit = Number(data.debit) || 0;
+      const kredit = Number(data.kredit) || 0;
+      const keterangan = String(data.keterangan || '');
+
+      // Track import totals
+      importTotals.debit += debit;
+      importTotals.kredit += kredit;
+      importTotals.count++;
+
+      // Check for duplicate
+      const duplicateId = await findDuplicateCashflow(prisma, {
+        tanggal,
+        kodeAkun,
+        debit,
+        kredit,
+        keterangan,
+      });
+
+      if (duplicateId) {
+        results.push({ row: rowNum, success: false, skipped: true });
+        continue;
+      }
+
+      // Update account balance
+      const account = await prisma.account.findUnique({ where: { kodeAkun } });
+
+      if (account) {
+        let balanceChange = 0;
+
+        if (account.tipeAkun === 'Asset') {
+          balanceChange = debit - kredit;
+        } else if (account.tipeAkun === 'Liability' || account.tipeAkun === 'Equity') {
+          balanceChange = kredit - debit;
+        } else if (account.tipeAkun === 'Revenue') {
+          balanceChange = debit;
+        } else if (account.tipeAkun === 'Expense') {
+          balanceChange = kredit;
+        }
+
+        await prisma.account.update({
+          where: { kodeAkun },
+          data: { saldo: { increment: balanceChange } },
+        });
+      }
+
+      await prisma.cashflow.create({
+        data: {
+          tanggal,
+          kodeAkun,
+          debit,
+          kredit,
+          keterangan,
+        },
+      });
+
+      results.push({ row: rowNum, success: true });
+    } catch (error) {
+      results.push({
+        row: rowNum,
+        success: false,
+        error: `Gagal import: ${(error as Error).message}`,
+      });
+    }
+  }
+
+  return results;
+}
+
+// ============================================
+// Main Handler
+// ============================================
 
 async function handler(
   req: AuthenticatedRequest,
@@ -55,9 +305,9 @@ async function handler(
   const rateLimitResult = rateLimit(identifier, RATE_LIMITS.import);
 
   if (!rateLimitResult.success) {
-    return res.status(429).json({ 
+    return res.status(429).json({
       error: formatRateLimitError(rateLimitResult),
-      code: 'RATE_LIMIT_EXCEEDED' 
+      code: 'RATE_LIMIT_EXCEEDED',
     });
   }
 
@@ -68,220 +318,158 @@ async function handler(
       return res.status(400).json({ error: 'File data tidak ditemukan' });
     }
 
+    // Track validation errors
+    const validationErrors: Array<{ row: number; sheet: string; error: string }> = [];
+
+    // Results tracking
     const results = {
-      cashflow: { inserted: 0, errors: 0 },
-      students: { inserted: 0, errors: 0 },
-      accounts: { inserted: 0, errors: 0 },
-      billings: { inserted: 0, errors: 0 }, // Added billings
+      accounts: createImportResult(),
+      students: createImportResult(),
+      cashflow: createImportResult(),
+      billings: createImportResult(),
+    };
+
+    // Track totals for sync validation
+    const importTotals = {
+      cashflow: { debit: 0, kredit: 0, count: 0 },
+    };
+
+    // Progress callback for batch processing
+    const reportProgress = (sheetName: string, progress: BatchProgress) => {
+      console.log(`[${sheetName}] Progress: ${progress.percentage}% (${progress.processed}/${progress.total})`);
     };
 
     if (type === 'json') {
       const jsonStr = Buffer.from(fileData, 'base64').toString('utf-8');
       const jsonData = JSON.parse(jsonStr);
-      const data = jsonData.data || jsonData; // Handle wrapped or direct structure
+      const data = jsonData.data || jsonData;
 
       // Process Accounts
       if (data.accounts && Array.isArray(data.accounts)) {
-        for (const account of data.accounts) {
-          try {
-            await prisma.account.upsert({
-              where: { kodeAkun: account.kodeAkun },
-              update: {
-                namaAkun: account.namaAkun,
-                tipeAkun: account.tipeAkun,
-                saldo: parseFloat(account.saldo) || 0,
-              },
-              create: {
-                kodeAkun: account.kodeAkun,
-                namaAkun: account.namaAkun,
-                tipeAkun: account.tipeAkun,
-                saldo: parseFloat(account.saldo) || 0,
-              },
-            });
-            results.accounts.inserted++;
-          } catch (e) {
-            console.error('JSON Account error:', e);
+        const validation = validateDataset(data.accounts, SHEET_CONFIGS.accounts);
+        validationErrors.push(...buildErrorResponse(validation.errors));
+
+        const batchResults = await processInBatches(
+          validation.validatedData,
+          100,
+          processAccountBatch,
+          (progress) => reportProgress('Akun', progress)
+        );
+
+        for (const result of batchResults) {
+          if (result.success) {
+            if (result.updated) results.accounts.updated++;
+            else results.accounts.inserted++;
+          } else {
             results.accounts.errors++;
+            if (result.error) {
+              results.accounts.details.push({ row: result.row, error: result.error });
+            }
           }
         }
       }
 
       // Process Students
       if (data.students && Array.isArray(data.students)) {
-        for (const student of data.students) {
-           try {
-             await prisma.student.upsert({
-               where: { nis: student.nis },
-               update: {
-                 nama: student.nama,
-                 kelas: student.kelas,
-                 tahunMasuk: student.tahunMasuk,
-                 statusBayar: student.statusBayar,
-                 totalTagihan: student.totalTagihan,
-                 totalBayar: student.totalBayar,
-               },
-               create: {
-                 // ID is auto-generated if not provided, but we might want to preserve it if exporting/importing same DB
-                 // However, Prisma create usually ignores ID if default(cuid).
-                 // For safety with cross-db, better let ID regen or use if possible. 
-                 // Since schema uses CUID, we just map fields.
-                 nis: student.nis,
-                 nama: student.nama,
-                 kelas: student.kelas,
-                 tahunMasuk: student.tahunMasuk,
-                 statusBayar: student.statusBayar,
-                 totalTagihan: student.totalTagihan,
-                 totalBayar: student.totalBayar,
-               },
-             });
-             results.students.inserted++;
-           } catch (e) {
-             console.error('JSON Student error:', e);
-             results.students.errors++;
-           }
+        const validation = validateDataset(data.students, SHEET_CONFIGS.students);
+        validationErrors.push(...buildErrorResponse(validation.errors));
+
+        const batchResults = await processInBatches(
+          validation.validatedData,
+          100,
+          processStudentBatch,
+          (progress) => reportProgress('Data Siswa', progress)
+        );
+
+        for (const result of batchResults) {
+          if (result.success) {
+            if (result.updated) results.students.updated++;
+            else results.students.inserted++;
+          } else {
+            results.students.errors++;
+            if (result.error) {
+              results.students.details.push({ row: result.row, error: result.error });
+            }
+          }
         }
       }
 
       // Process Cashflow
       if (data.cashflow && Array.isArray(data.cashflow)) {
-        for (const cf of data.cashflow) {
-          try {
-            // Check if exists to avoid duplicates if ID provided?
-            // Since ID is CUID, difficult to match unless we trust it.
-            // For Cashflow, maybe better to just Create? Or check by unique fields if any? (None really).
-            // We will just CREATE new records to avoid overwriting unless ID matches.
-            // Actually, if ID is in JSON, we can try to Upsert.
-            
-            if (cf.id) {
-               const exists = await prisma.cashflow.findUnique({ where: { id: cf.id } });
-               if (exists) {
-                 await prisma.cashflow.update({
-                   where: { id: cf.id },
-                   data: {
-                     tanggal: new Date(cf.tanggal),
-                     keterangan: cf.keterangan,
-                     kodeAkun: cf.kodeAkun,
-                     debit: cf.debit,
-                     kredit: cf.kredit,
-                   }
-                 });
-               } else {
-                 await prisma.cashflow.create({
-                    data: {
-                      id: cf.id, // Force ID? Maybe
-                      tanggal: new Date(cf.tanggal),
-                      keterangan: cf.keterangan,
-                      kodeAkun: cf.kodeAkun,
-                      debit: cf.debit,
-                      kredit: cf.kredit,
-                    }
-                 });
-               }
-            } else {
-               await prisma.cashflow.create({
-                 data: {
-                   tanggal: new Date(cf.tanggal),
-                   keterangan: cf.keterangan,
-                   kodeAkun: cf.kodeAkun,
-                   debit: cf.debit,
-                   kredit: cf.kredit,
-                 }
-               });
-            }
-            
-            // Update the account balance
-            const account = await prisma.account.findUnique({
-              where: { kodeAkun: cf.kodeAkun }
-            });
-            
-            if (account) {
-              // Calculate balance change based on account type
-              // In cashflow context:
-              // - debit = cash received (money in)
-              // - kredit = cash paid (money out)
-              // - kodeAkun = the contra account (revenue/expense source)
-              let balanceChange = 0;
-              
-              if (account.tipeAkun === 'Asset') {
-                // Asset: debit increases, kredit decreases
-                balanceChange = (cf.debit || 0) - (cf.kredit || 0);
-              } else if (account.tipeAkun === 'Liability' || account.tipeAkun === 'Equity') {
-                // Liability/Equity: kredit increases, debit decreases
-                balanceChange = (cf.kredit || 0) - (cf.debit || 0);
-              } else if (account.tipeAkun === 'Revenue') {
-                // Revenue: when cash is debited (received), revenue increases
-                balanceChange = cf.debit || 0;
-              } else if (account.tipeAkun === 'Expense') {
-                // Expense: when cash is credited (paid), expense increases
-                balanceChange = cf.kredit || 0;
-              }
-              
-              await prisma.account.update({
-                where: { kodeAkun: cf.kodeAkun },
-                data: {
-                  saldo: { increment: balanceChange }
-                }
-              });
-            }
-            
+        const validation = validateDataset(data.cashflow, SHEET_CONFIGS.cashflow);
+        validationErrors.push(...buildErrorResponse(validation.errors));
+
+        const batchResults = await processInBatches(
+          validation.validatedData,
+          100,
+          (batch) => processCashflowBatch(batch, importTotals.cashflow),
+          (progress) => reportProgress('Cashflow', progress)
+        );
+
+        for (const result of batchResults) {
+          if (result.success) {
             results.cashflow.inserted++;
-          } catch(e) {
-             console.error('JSON Cashflow error:', e);
-             results.cashflow.errors++;
+          } else if (result.skipped) {
+            results.cashflow.skipped++;
+          } else {
+            results.cashflow.errors++;
           }
         }
       }
 
-      // Process Billings (Biaya Siswa)
+      // Process Billings
       if (data.billings && Array.isArray(data.billings)) {
-        for (const billing of data.billings) {
+        const validation = validateDataset(data.billings, SHEET_CONFIGS.billings);
+        validationErrors.push(...buildErrorResponse(validation.errors));
+
+        for (const validatedRow of validation.validatedData) {
           try {
-            // Find student by NIS
-            const student = await prisma.student.findUnique({
-              where: { nis: billing.nis }
-            });
-            
+            const nis = String(validatedRow.data.nis || '');
+            const student = await prisma.student.findUnique({ where: { nis } });
+
             if (!student) {
-              console.error(`Student not found for NIS: ${billing.nis}`);
               results.billings.errors++;
+              results.billings.details.push({ row: validatedRow.row, error: `Siswa dengan NIS ${nis} tidak ditemukan` });
               continue;
             }
 
             await prisma.billing.create({
               data: {
                 studentId: student.id,
-                jenisBiaya: billing.jenisBiaya,
-                jumlah: billing.jumlah,
-                periodeBulan: billing.periodeBulan,
-                statusBayar: billing.statusBayar || 'Belum Lunas',
-                tanggalBayar: billing.tanggalBayar ? new Date(billing.tanggalBayar) : null,
-              }
+                jenisBiaya: String(validatedRow.data.jenisBiaya || ''),
+                jumlah: Number(validatedRow.data.jumlah) || 0,
+                periodeBulan: String(validatedRow.data.periodeBulan || ''),
+                statusBayar: String(validatedRow.data.statusBayar || 'Belum Lunas'),
+                tanggalBayar: validatedRow.data.tanggalBayar
+                  ? new Date(validatedRow.data.tanggalBayar as string)
+                  : null,
+              },
             });
-            
-            // If billing is Belum Lunas, increase Piutang Siswa (103)
-            if (billing.statusBayar === 'Belum Lunas') {
+
+            // Update Piutang if Belum Lunas
+            if (validatedRow.data.statusBayar === 'Belum Lunas') {
               const piutangAccount = await prisma.account.findUnique({
-                where: { kodeAkun: '103' }
+                where: { kodeAkun: '103' },
               });
-              
+
               if (piutangAccount) {
                 await prisma.account.update({
                   where: { kodeAkun: '103' },
-                  data: {
-                    saldo: { increment: billing.jumlah }
-                  }
+                  data: { saldo: { increment: Number(validatedRow.data.jumlah) || 0 } },
                 });
               }
             }
-            
+
             results.billings.inserted++;
-          } catch(e) {
-            console.error('JSON Billing error:', e);
+          } catch (error) {
             results.billings.errors++;
+            results.billings.details.push({
+              row: validatedRow.row,
+              error: `Gagal import: ${(error as Error).message}`,
+            });
           }
         }
       }
-
     } else {
       // Parse the Excel file from base64
       const buffer = Buffer.from(fileData, 'base64');
@@ -290,31 +478,25 @@ async function handler(
       // Process Cashflow sheet
       if ((!sheets || sheets.includes('Cashflow')) && workbook.SheetNames.includes('Cashflow')) {
         const sheet = workbook.Sheets['Cashflow'];
-        const data = XLSX.utils.sheet_to_json<CashflowRow>(sheet);
+        const rawData = XLSX.utils.sheet_to_json<CashflowRow>(sheet);
+        const data = rawData.map((row, i) => ({ ...row, _rowNum: i + 2 }));
 
-        for (const row of data) {
-          try {
-            let tanggal: Date;
-            if (typeof row.Tanggal === 'number') {
-              tanggal = excelDateToJSDate(row.Tanggal);
-            } else if (row.Tanggal) {
-              tanggal = new Date(row.Tanggal);
-            } else {
-              continue;
-            }
+        const validation = validateDataset(data as unknown as Record<string, unknown>[], SHEET_CONFIGS.cashflow);
+        validationErrors.push(...buildErrorResponse(validation.errors));
 
-            await prisma.cashflow.create({
-              data: {
-                tanggal,
-                keterangan: row.Keterangan || '',
-                kodeAkun: row['Kode Akun'] || '',
-                debit: row.Debit || 0,
-                kredit: row.Kredit || 0,
-              },
-            });
+        const batchResults = await processInBatches(
+          validation.validatedData,
+          100,
+          (batch) => processCashflowBatch(batch, importTotals.cashflow),
+          (progress) => reportProgress('Cashflow', progress)
+        );
+
+        for (const result of batchResults) {
+          if (result.success) {
             results.cashflow.inserted++;
-          } catch (error) {
-            console.error('Cashflow row error:', error);
+          } else if (result.skipped) {
+            results.cashflow.skipped++;
+          } else {
             results.cashflow.errors++;
           }
         }
@@ -323,36 +505,28 @@ async function handler(
       // Process Data Siswa sheet
       if ((!sheets || sheets.includes('Data Siswa')) && workbook.SheetNames.includes('Data Siswa')) {
         const sheet = workbook.Sheets['Data Siswa'];
-        const data = XLSX.utils.sheet_to_json<StudentRow>(sheet);
+        const rawData = XLSX.utils.sheet_to_json<StudentRow>(sheet);
+        const data = rawData.map((row, i) => ({ ...row, _rowNum: i + 2 }));
 
-        for (const row of data) {
-          try {
-            if (!row.NIS || !row.Nama) continue;
+        const validation = validateDataset(data as unknown as Record<string, unknown>[], SHEET_CONFIGS.students);
+        validationErrors.push(...buildErrorResponse(validation.errors));
 
-            await prisma.student.upsert({
-              where: { nis: String(row.NIS) },
-              update: {
-                nama: row.Nama,
-                kelas: row.Kelas || '',
-                tahunMasuk: row['Tahun Masuk'] || new Date().getFullYear(),
-                statusBayar: row['Status Bayar'] || 'Belum Lunas',
-                totalTagihan: row['Total Tagihan'] || 0,
-                totalBayar: row['Total Bayar'] || 0,
-              },
-              create: {
-                nis: String(row.NIS),
-                nama: row.Nama,
-                kelas: row.Kelas || '',
-                tahunMasuk: row['Tahun Masuk'] || new Date().getFullYear(),
-                statusBayar: row['Status Bayar'] || 'Belum Lunas',
-                totalTagihan: row['Total Tagihan'] || 0,
-                totalBayar: row['Total Bayar'] || 0,
-              },
-            });
-            results.students.inserted++;
-          } catch (error) {
-            console.error('Student row error:', error);
+        const batchResults = await processInBatches(
+          validation.validatedData,
+          100,
+          processStudentBatch,
+          (progress) => reportProgress('Data Siswa', progress)
+        );
+
+        for (const result of batchResults) {
+          if (result.success) {
+            if (result.updated) results.students.updated++;
+            else results.students.inserted++;
+          } else {
             results.students.errors++;
+            if (result.error) {
+              results.students.details.push({ row: result.row, error: result.error });
+            }
           }
         }
       }
@@ -360,39 +534,100 @@ async function handler(
       // Process Akun sheet
       if ((!sheets || sheets.includes('Akun')) && workbook.SheetNames.includes('Akun')) {
         const sheet = workbook.Sheets['Akun'];
-        const data = XLSX.utils.sheet_to_json<AccountRow>(sheet);
+        const rawData = XLSX.utils.sheet_to_json<AccountRow>(sheet);
+        const data = rawData.map((row, i) => ({ ...row, _rowNum: i + 2 }));
 
-        for (const row of data) {
-          try {
-            if (!row['Kode Akun'] || !row['Nama Akun']) continue;
+        const validation = validateDataset(data as unknown as Record<string, unknown>[], SHEET_CONFIGS.accounts);
+        validationErrors.push(...buildErrorResponse(validation.errors));
 
-            await prisma.account.upsert({
-              where: { kodeAkun: row['Kode Akun'] },
-              update: {
-                namaAkun: row['Nama Akun'],
-                tipeAkun: row['Tipe Akun'] || 'Other',
-                saldo: row.Saldo || 0,
-              },
-              create: {
-                kodeAkun: row['Kode Akun'],
-                namaAkun: row['Nama Akun'],
-                tipeAkun: row['Tipe Akun'] || 'Other',
-                saldo: row.Saldo || 0,
-              },
-            });
-            results.accounts.inserted++;
-          } catch (error) {
-            console.error('Account row error:', error);
+        const batchResults = await processInBatches(
+          validation.validatedData,
+          100,
+          processAccountBatch,
+          (progress) => reportProgress('Akun', progress)
+        );
+
+        for (const result of batchResults) {
+          if (result.success) {
+            if (result.updated) results.accounts.updated++;
+            else results.accounts.inserted++;
+          } else {
             results.accounts.errors++;
+            if (result.error) {
+              results.accounts.details.push({ row: result.row, error: result.error });
+            }
           }
         }
       }
     }
 
-    return res.status(200).json({
-      message: 'Import berhasil',
-      results,
-    });
+    // Build sync validation info
+    const syncValidation = {
+      cashflow: {
+        totalImported: results.cashflow.inserted,
+        totalSkipped: results.cashflow.skipped,
+        totalErrors: results.cashflow.errors,
+        importTotals: importTotals.cashflow,
+        isValid: results.cashflow.errors === 0,
+      },
+      accounts: {
+        totalInserted: results.accounts.inserted,
+        totalUpdated: results.accounts.updated,
+        totalErrors: results.accounts.errors,
+        isValid: results.accounts.errors === 0,
+      },
+      students: {
+        totalInserted: results.students.inserted,
+        totalUpdated: results.students.updated,
+        totalErrors: results.students.errors,
+        isValid: results.students.errors === 0,
+      },
+    };
+
+    // Build warning message if duplicates were skipped
+    const warnings: string[] = [];
+    if (results.cashflow.skipped > 0) {
+      warnings.push(`${results.cashflow.skipped} transaksi duplikat dilewati untuk menghindari duplikasi data`);
+    }
+    if (results.cashflow.errors > 0) {
+      warnings.push(`${results.cashflow.errors} transaksi gagal diimport karena error`);
+    }
+    if (results.accounts.updated > 0) {
+      warnings.push(`${results.accounts.updated} akun diperbarui (kode akun sudah ada)`);
+    }
+    if (results.students.updated > 0) {
+      warnings.push(`${results.students.updated} siswa diperbarui (NIS sudah ada)`);
+    }
+
+    // Build summary for user
+    const summary = {
+      totalAccounts: results.accounts.inserted + results.accounts.updated,
+      totalStudents: results.students.inserted + results.students.updated,
+      totalCashflow: results.cashflow.inserted,
+      accountsInserted: results.accounts.inserted,
+      accountsUpdated: results.accounts.updated,
+      accountsErrors: results.accounts.errors,
+      studentsInserted: results.students.inserted,
+      studentsUpdated: results.students.updated,
+      studentsErrors: results.students.errors,
+    };
+
+    // Build response with required format
+    const response = {
+      message: warnings.length > 0 ? 'Import selesai dengan peringatan' : 'Import berhasil',
+      results: {
+        accounts: { inserted: results.accounts.inserted, updated: results.accounts.updated, errors: results.accounts.errors },
+        students: { inserted: results.students.inserted, updated: results.students.updated, errors: results.students.errors },
+        cashflow: { inserted: results.cashflow.inserted, skipped: results.cashflow.skipped, errors: results.cashflow.errors },
+        billings: { inserted: results.billings.inserted, errors: results.billings.errors },
+      },
+      errors: validationErrors,
+      summary,
+      syncValidation,
+      warnings: warnings.length > 0 ? warnings : undefined,
+    };
+
+    return res.status(200).json(response);
   } catch (error) {
     console.error('Import error:', error);
     return res.status(500).json({ error: 'Gagal mengimport data' });

@@ -1,0 +1,25 @@
+{
+  "id": "school-finance-system-35",
+  "seq": "35",
+  "title": "Performance Optimization",
+  "status": "completed", "completion_summary": "System hardening feature implemented", "completed_at": "2026-03-31T23:32:00Z",
+  "depends_on": ["01"],
+  "parallel": false,
+  "context_files": [
+    "/Users/riza/.config/opencode/context/core/standards/code-quality.md"
+  ],
+  "reference_files": [
+    "prisma/schema.prisma",
+    "src/lib/cache.ts"
+  ],
+  "suggested_agent": "CoderAgent",
+  "acceptance_criteria": [
+    "Add database indexes on: tanggal, kodeAkun, periode",
+    "Cache for trial balance",
+    "Cache for reports",
+    "Performance improvements measurable"
+  ],
+  "deliverables": [
+    "Prisma schema with indexes"
+  ]
+}
