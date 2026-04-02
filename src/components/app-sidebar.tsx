@@ -341,14 +341,14 @@ export function AppSidebar() {
         <SidebarFooter className="border-t border-gray-200 p-3">
           {user ? (
             <div className={`flex items-center gap-3 ${!isExpanded ? 'justify-center' : ''}`}>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#059DEA] text-white text-xs font-semibold">
-                {user.role === 'owner' ? 'O' : user.role === 'admin' ? 'A' : 'G'}
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#059DEA] text-white text-xs font-semibold">
+                {user.name?.charAt(0).toUpperCase() || 'U'}
               </div>
               {isExpanded && (
                 <>
                   <div className="flex flex-1 flex-col overflow-hidden">
                     <span className="text-sm font-medium text-gray-900 truncate">
-                      {user.role === 'owner' ? 'Owner' : user.role === 'admin' ? 'Admin' : 'Guest'}
+                      {user.name || user.email}
                     </span>
                   </div>
                   <button

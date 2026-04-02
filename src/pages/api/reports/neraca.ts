@@ -69,8 +69,8 @@ async function handler(
       const movements = accountMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
       const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
       
-      let netMovement = isDebitNormal ? (movements.debit - movements.kredit) : (movements.kredit - movements.debit);
-      let totalBalance = account.saldo + netMovement;
+      const netMovement = isDebitNormal ? (movements.debit - movements.kredit) : (movements.kredit - movements.debit);
+      const totalBalance = account.saldo + netMovement;
       
       netBalances.set(account.kodeAkun, totalBalance);
 

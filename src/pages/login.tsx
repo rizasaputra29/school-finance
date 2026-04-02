@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import { signIn } from '@/lib/auth-client';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Eye, EyeOff, User, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,8 +17,24 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, continueAsGuest } = useAuth();
   const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (!isAuthLoading && user) {
+      router.push('/dashboard');
+    }
+  }, [user, isAuthLoading, router]);
+
+  // Show loading state while checking auth
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#059DEA] border-t-transparent" />
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,28 +42,27 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
-        router.push('/');
-      } else {
-        setError('Email atau password salah');
+      const result = await signIn.email({
+        email,
+        password,
+        callbackURL: '/',
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message || 'Login gagal');
       }
-    } catch {
-      setError('Terjadi kesalahan. Silakan coba lagi.');
+
+      // Better Auth handles redirect via callbackURL
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Email atau password salah';
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleGuestAccess = () => {
-    continueAsGuest();
-    router.push('/');
-  };
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      
-
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#059DEA]/20 blur-3xl" />
@@ -61,7 +77,8 @@ export default function LoginPage() {
         >
           <ArrowLeft className="h-5 w-5" />
           <span className="text-sm font-medium">Kembali</span>
-      </button>
+        </button>
+        
         <CardHeader className="space-y-4 text-center pb-2">
           <div className="mx-auto flex h-20 w-20 items-center justify-center">
             <Image 
@@ -89,7 +106,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@school.com"
+                placeholder="owner@school.finance"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -141,27 +158,8 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-3 text-gray-400">atau</span>
-            </div>
-          </div>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full h-11 rounded-xl"
-            onClick={handleGuestAccess}
-          >
-            <User className="mr-2 h-4 w-4" />
-            Lanjut sebagai Tamu
-          </Button>
-
           <p className="text-center text-xs text-gray-400">
-            Tamu dapat melihat data, tapi tidak dapat mengedit atau import
+            Masuk dengan akun owner yang telah dibuat
           </p>
         </CardContent>
       </Card>

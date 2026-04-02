@@ -324,3 +324,80 @@ model AuditTrail {
   @@index([entity, entityId])
   @@index([createdAt])
 }
+
+// ============================================================================
+// BETTER AUTH MODELS
+// ============================================================================
+
+model User {
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  name                  String?
+  emailVerified         Boolean   @default(false)
+  image                 String?
+  
+  // RBAC Fields
+  role                  String    @default("user") // owner | admin | user
+  department            String?
+  
+  // Relations
+  sessions              Session[]
+  accounts              AuthAccount[]
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([email])
+  @@index([role])
+}
+
+model Session {
+  id                    String    @id
+  userId                String
+  token                 String    @unique
+  expiresAt             DateTime
+  ipAddress             String?
+  userAgent             String?
+  
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([token])
+}
+
+model AuthAccount {
+  id                    String    @id
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id                    String    @id
+  identifier            String
+  value                 String
+  expiresAt             DateTime
+  
+  createdAt             DateTime  @default(now())
+  
+  @@index([identifier])
+  @@index([expiresAt])
+}
