@@ -49,18 +49,16 @@ export default function ReportsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const year = new Date(reportDate).getFullYear();
-        const month = new Date(reportDate).getMonth() + 1;
-
-        // Fetch neraca data dynamically
-        const neracaRes = await fetch(`/api/reports/neraca?tahun=${year}&bulan=${month}`);
+        // Fetch neraca data - always shows current state (no date filter needed)
+        const neracaRes = await fetch('/api/reports/neraca');
         if (neracaRes.ok) {
           const neracaJson = await neracaRes.json();
           setNeracaData(neracaJson);
         }
 
-        // Fetch laba rugi data dynamically
-        const labaRugiRes = await fetch(`/api/reports/laba-rugi?tahun=${year}&bulan=${month}`);
+        // Fetch laba rugi data - shows ALL historical data by default (no date filter)
+        // This allows seeing complete revenue/expense breakdown from all periods
+        const labaRugiRes = await fetch('/api/reports/laba-rugi');
         if (labaRugiRes.ok) {
           const labaRugiJson = await labaRugiRes.json();
           setLabaRugiData(labaRugiJson);
