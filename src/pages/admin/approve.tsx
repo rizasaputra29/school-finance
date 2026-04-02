@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -126,6 +126,13 @@ export default function ApprovePage() {
     setIsViewOpen(true);
   };
 
+  // Compute derived values before conditional returns
+  const { totalPending, totalDebit, totalKredit } = useMemo(() => ({
+    totalPending: cashflows.reduce((sum, cf) => sum + cf.debit + cf.kredit, 0),
+    totalDebit: cashflows.reduce((sum, cf) => sum + cf.debit, 0),
+    totalKredit: cashflows.reduce((sum, cf) => sum + cf.kredit, 0),
+  }), [cashflows]);
+
   if (!isAdmin) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -136,8 +143,6 @@ export default function ApprovePage() {
       </div>
     );
   }
-
-  const totalPending = cashflows.reduce((sum, cf) => sum + cf.debit + cf.kredit, 0);
 
   return (
     <>
@@ -176,7 +181,7 @@ export default function ApprovePage() {
                 <div>
                   <p className="text-sm text-emerald-600 font-medium">Total Pemasukan</p>
                   <p className="text-2xl font-bold text-emerald-900">
-                    {formatCurrency(cashflows.reduce((sum, cf) => sum + cf.debit, 0))}
+                    {formatCurrency(totalDebit)}
                   </p>
                 </div>
               </div>
@@ -192,7 +197,7 @@ export default function ApprovePage() {
                 <div>
                   <p className="text-sm text-red-600 font-medium">Total Pengeluaran</p>
                   <p className="text-2xl font-bold text-red-900">
-                    {formatCurrency(cashflows.reduce((sum, cf) => sum + cf.kredit, 0))}
+                    {formatCurrency(totalKredit)}
                   </p>
                 </div>
               </div>

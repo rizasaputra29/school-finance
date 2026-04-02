@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
@@ -99,20 +99,24 @@ export default function ReportsPage() {
     window.print();
   };
 
-  // Use dynamic Laba Rugi data from API
-  const revenues = labaRugiData?.data?.filter((a: AccountReportItem) => a.kategori === 'PENDAPATAN') || [];
-  const expenses = labaRugiData?.data?.filter((a: AccountReportItem) => a.kategori === 'BEBAN') || [];
-  const totalRevenue = labaRugiData?.summary?.totalPendapatan || 0;
-  const totalExpense = labaRugiData?.summary?.totalBeban || 0;
-  const labaRugi = (labaRugiData?.summary?.isPositive ? 1 : -1) * (labaRugiData?.summary?.labaRugi || 0);
+  // Use dynamic Laba Rugi data from API - memoized for performance
+  const { revenues, expenses, totalRevenue, totalExpense, labaRugi } = useMemo(() => ({
+    revenues: labaRugiData?.data?.filter((a: AccountReportItem) => a.kategori === 'PENDAPATAN') || [],
+    expenses: labaRugiData?.data?.filter((a: AccountReportItem) => a.kategori === 'BEBAN') || [],
+    totalRevenue: labaRugiData?.summary?.totalPendapatan || 0,
+    totalExpense: labaRugiData?.summary?.totalBeban || 0,
+    labaRugi: (labaRugiData?.summary?.isPositive ? 1 : -1) * (labaRugiData?.summary?.labaRugi || 0),
+  }), [labaRugiData]);
 
-  // Use dynamic neraca data from API
-  const assets = neracaData?.data?.aset || [];
-  const liabilities = neracaData?.data?.kewajiban || [];
-  const equity = neracaData?.data?.ekuitas || [];
-  const totalAssets = neracaData?.summary?.totalAset || 0;
-  const totalLiabilities = neracaData?.summary?.totalKewajiban || 0;
-  const totalEquity = neracaData?.summary?.totalEkuitas || 0;
+  // Use dynamic neraca data from API - memoized for performance
+  const { assets, liabilities, equity, totalAssets, totalLiabilities, totalEquity } = useMemo(() => ({
+    assets: neracaData?.data?.aset || [],
+    liabilities: neracaData?.data?.kewajiban || [],
+    equity: neracaData?.data?.ekuitas || [],
+    totalAssets: neracaData?.summary?.totalAset || 0,
+    totalLiabilities: neracaData?.summary?.totalKewajiban || 0,
+    totalEquity: neracaData?.summary?.totalEkuitas || 0,
+  }), [neracaData]);
 
   const formatReportDate = (dateStr: string) => {
     const date = new Date(dateStr);

@@ -52,8 +52,14 @@ interface ReportData {
 export default function BukuBesarPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [kodeAkun, setKodeAkun] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(() => {
+    const year = new Date().getFullYear();
+    return `${year}-01-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const year = new Date().getFullYear();
+    return `${year}-12-31`;
+  });
   const [reportParam, setReportParam] = useState<{ start: string; end: string } | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -73,15 +79,7 @@ export default function BukuBesarPage() {
       .catch(e => console.error('Error fetching accounts:', e));
   }, []);
 
-  // Auto-fetch default data on page load - show all transactions for current year
-  useEffect(() => {
-    const year = new Date().getFullYear();
-    const defaultStartDate = `${year}-01-01`;
-    const defaultEndDate = `${year}-12-31`;
-    
-    setStartDate(defaultStartDate);
-    setEndDate(defaultEndDate);
-  }, []);
+
 
   // Auto-fetch initially without forcing the first account to be selected
   // this achieves the "show all accounts by default" behavior
