@@ -1,7 +1,12 @@
 import { createAuthClient } from "better-auth/client";
+import { customSessionClient } from "better-auth/client/plugins";
+import type { auth } from "./auth";
 
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+  plugins: [
+    customSessionClient<typeof auth>(),
+  ],
 });
 
 export const { 
@@ -17,7 +22,7 @@ export type Session = {
     id: string;
     email: string;
     name: string | null;
-    role: string;
+    role: "owner" | "admin" | "user";
     emailVerified: boolean;
     image: string | null;
     createdAt: Date;

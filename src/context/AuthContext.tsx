@@ -64,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: data.user.id,
               email: data.user.email,
               name: data.user.name || '',
+              // Role is now properly included via customSession plugin
               role: (data.user.role as Role) || 'user',
             });
           }
@@ -183,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
 }
