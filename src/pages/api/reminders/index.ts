@@ -23,7 +23,6 @@ async function handler(
     const reminders: Reminder[] = [];
     const today = new Date();
     const in7Days = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const in14Days = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
     const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     // 1. Get debts due within 30 days

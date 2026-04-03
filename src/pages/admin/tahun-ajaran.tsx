@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
-import { Calendar, Plus, Pencil, Trash2, Check, X, Archive } from 'lucide-react';
+import { Plus, Pencil, Check, Archive } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 
 interface AcademicYear {

@@ -2,15 +2,6 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
-interface Billing {
-  statusBayar: string;
-}
-
-interface StudentWithBillings {
-  id: string;
-  billings: Billing[];
-}
-
 interface DashboardFilterParams {
   bulan?: number;
   tahun?: number;

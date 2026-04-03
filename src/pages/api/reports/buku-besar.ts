@@ -1,7 +1,19 @@
 import type { NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
-import { Account } from '@prisma/client';
+import { Account, Prisma } from '@prisma/client';
+
+type JournalEntryLineWithJournal = Prisma.JournalEntryLineGetPayload<{
+  include: {
+    journalEntry: {
+      select: {
+        tanggal: true;
+        keterangan: true;
+        reference: true;
+      };
+    };
+  };
+}>;
 
 interface ReportWhere {
   kodeAkun?: string | { in: string[] };
@@ -29,7 +41,7 @@ async function getLedgerForAccount(
   account: Account, 
   params: ReturnType<typeof parseQueryParams>,
   priorBalances: Map<string, number>,
-  periodLines: Map<string, Array<any>>
+  periodLines: Map<string, JournalEntryLineWithJournal[]>
 ) {
   const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
 
@@ -122,7 +134,7 @@ async function handler(
     const kodeAkuns = targetAccounts.map(a => a.kodeAkun);
 
     // Batch fetch 1: Get all opening balance aggregates in one query
-    let priorBalances = new Map<string, number>();
+    const priorBalances = new Map<string, number>();
     if (params.startDate) {
       const priorLinesByAccount = await prisma.journalEntryLine.groupBy({
         by: ['kodeAkun'],
@@ -172,7 +184,7 @@ async function handler(
     });
 
     // Group lines by account
-    const periodLinesByAccount = new Map<string, Array<any>>();
+    const periodLinesByAccount = new Map<string, JournalEntryLineWithJournal[]>();
     for (const line of allPeriodLines) {
       const existing = periodLinesByAccount.get(line.kodeAkun) || [];
       existing.push(line);
