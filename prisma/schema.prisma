@@ -32,8 +32,6 @@ model Account {
   @@index([kategori])
   @@index([isSystem])
   @@index([normalBalance])
-  @@index([createdAt])
-  @@index([updatedAt])
 }
 
 model Student {
@@ -54,6 +52,12 @@ model Student {
   updatedAt    DateTime      @updatedAt
   billings     Billing[]
   installments Installment[]
+
+  @@index([kelas])
+  @@index([statusBayar])
+  @@index([status])
+  @@index([kelas, statusBayar])
+  @@index([status, statusBayar])
 }
 
 model Billing {
@@ -75,6 +79,14 @@ model Billing {
   installments   Installment[]
 
   @@unique([studentId, jenisBiaya, periodeBulan])
+  @@index([studentId])
+  @@index([academicYearId])
+  @@index([statusBayar])
+  @@index([jenisBiaya])
+  @@index([periodeBulan])
+  @@index([studentId, statusBayar])
+  @@index([studentId, jenisBiaya])
+  @@index([academicYearId, statusBayar])
 }
 
 model Cashflow {
@@ -100,6 +112,9 @@ model Cashflow {
   @@index([kodeAkun])
   @@index([periode])
   @@index([status])
+  @@index([kodeAkun, tanggal])
+  @@index([tanggal, status])
+  @@index([periode, status])
 }
 
 // Asset Model - For fixed assets tracking
@@ -118,6 +133,10 @@ model Asset {
   status           String   @default("Active")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([kodeAkun])
+  @@index([kategori])
+  @@index([status])
 }
 
 // Debt (Hutang) Model - For tracking liabilities/debts
@@ -136,6 +155,10 @@ model Debt {
   status            String   @default("Aktif") // Aktif, Lunas
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  @@index([kodeAkun])
+  @@index([status])
+  @@index([tanggalJatuhTempo])
 }
 
 // Installment (Cicilan) Model - For student payment installments
@@ -152,6 +175,14 @@ model Installment {
   status            String    @default("Belum Bayar") // Belum Bayar, Bayar, Jatuh Tempo
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  @@index([studentId])
+  @@index([billingId])
+  @@index([status])
+  @@index([tanggalJatuhTempo])
+  @@index([studentId, status])
+  @@index([billingId, status])
+  @@index([tanggalJatuhTempo, status])
 }
 
 // AcademicYear (Tahun Ajaran) Model
@@ -232,7 +263,6 @@ model Period {
   @@index([tahun])
   @@index([bulan])
   @@index([status])
-  @@index([kode])
   @@index([tanggalMulai])
   @@index([tanggalAkhir])
 }

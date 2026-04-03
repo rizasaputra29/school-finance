@@ -59,27 +59,59 @@ async function handler(
           ];
         }
 
-        // Get students with billing aggregations
+        // Get students first (without billings to avoid loading all billing data)
         const students = await prisma.student.findMany({
           where,
           orderBy: { nama: 'asc' },
           skip,
           take: parseInt(limit as string),
-          include: {
-            billings: true,
-          },
         });
 
-        // Compute totalTagihan and totalBayar from billing data
+        // Get all billing aggregates for these students in one query
+        const studentIds = students.map(s => s.id);
+        
+        const [billingAggregates, billingStatusCounts] = await Promise.all([
+          // Aggregate total amounts per student
+          prisma.billing.groupBy({
+            by: ['studentId'],
+            where: { studentId: { in: studentIds } },
+            _sum: { jumlah: true },
+          }),
+          // Aggregate paid amounts per student (Lunas only)
+          prisma.billing.groupBy({
+            by: ['studentId', 'statusBayar'],
+            where: { studentId: { in: studentIds } },
+            _sum: { jumlah: true },
+            _count: { _all: true },
+          }),
+        ]);
+
+        // Build lookup maps for quick access
+        const totalByStudent = new Map(billingAggregates.map(g => [g.studentId, g._sum.jumlah || 0]));
+        const paidByStudent = new Map<string, number>();
+        const lunasCountByStudent = new Map<string, number>();
+        const totalCountByStudent = new Map<string, number>();
+        
+        for (const group of billingStatusCounts) {
+          const currentTotal = totalCountByStudent.get(group.studentId) || 0;
+          totalCountByStudent.set(group.studentId, currentTotal + group._count._all);
+          
+          if (group.statusBayar === 'Lunas') {
+            paidByStudent.set(group.studentId, group._sum.jumlah || 0);
+            lunasCountByStudent.set(group.studentId, group._count._all);
+          }
+        }
+
+        // Compute totals and status for each student
         const studentsWithTotals = students.map(student => {
-          const totalTagihan = student.billings.reduce((sum, b) => sum + b.jumlah, 0);
-          const totalBayar = student.billings
-            .filter(b => b.statusBayar === 'Lunas')
-            .reduce((sum, b) => sum + b.jumlah, 0);
+          const totalTagihan = totalByStudent.get(student.id) || 0;
+          const totalBayar = paidByStudent.get(student.id) || 0;
+          const totalBills = totalCountByStudent.get(student.id) || 0;
+          const lunasBills = lunasCountByStudent.get(student.id) || 0;
           
           // Determine statusBayar based on actual billing status
-          const allLunas = student.billings.length > 0 && student.billings.every(b => b.statusBayar === 'Lunas');
-          const anyLunas = student.billings.some(b => b.statusBayar === 'Lunas');
+          const allLunas = totalBills > 0 && lunasBills === totalBills;
+          const anyLunas = lunasBills > 0;
           const computedStatusBayar = allLunas ? 'Lunas' : (anyLunas ? 'Belum Lunas' : (student.statusBayar || 'Belum Lunas'));
           
           return {
