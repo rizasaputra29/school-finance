@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -102,43 +102,40 @@ export default function BillingPage() {
     catatan: '',
   });
 
-  const fetchStudents = useCallback(async () => {
-    try {
-      const res = await fetch('/api/students?limit=1000&status=Active');
-      if (res.ok) {
-        const data = await res.json();
-        setStudents(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch students:', error);
-    }
-  }, []);
-
   const fetchData = useCallback(async (page = 1) => {
     setIsLoading(true);
     try {
-      let url = `/api/billing?page=${page}&limit=10`;
-      if (statusFilter) url += `&statusBayar=${statusFilter}`;
-      if (debouncedSearchTerm) url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
+      // Fetch students and billings in parallel
+      const studentsRes = fetch('/api/students?limit=1000&status=Active');
+      
+      let billingsUrl = `/api/billing?page=${page}&limit=10`;
+      if (statusFilter) billingsUrl += `&statusBayar=${statusFilter}`;
+      if (debouncedSearchTerm) billingsUrl += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
+      const billingsRes = fetch(billingsUrl);
 
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setBillings(data.data);
-        setPagination(data.pagination);
-        setSummary(data.summary);
+      const [studentsResponse, billingsResponse] = await Promise.all([studentsRes, billingsRes]);
+
+      if (studentsResponse.ok) {
+        const studentsData = await studentsResponse.json();
+        setStudents(studentsData.data);
+      }
+
+      if (billingsResponse.ok) {
+        const billingsData = await billingsResponse.json();
+        setBillings(billingsData.data);
+        setPagination(billingsData.pagination);
+        setSummary(billingsData.summary);
       }
     } catch (error) {
-      console.error('Failed to fetch billings:', error);
+      console.error('Failed to fetch data:', error);
     } finally {
       setIsLoading(false);
     }
   }, [statusFilter, debouncedSearchTerm]);
 
   useEffect(() => {
-    fetchStudents();
     fetchData();
-  }, [fetchStudents, fetchData]);
+  }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,11 +196,14 @@ export default function BillingPage() {
 
   const selectedStudent = students.find((s) => s.id === formData.studentId);
 
-  const filteredBillings = billings.filter(
-    (b) =>
-      b.student.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.student.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.jenisBiaya.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredBillings = useMemo(() =>
+    billings.filter(
+      (b) =>
+        b.student.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.student.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.jenisBiaya.toLowerCase().includes(searchTerm.toLowerCase())
+    ),
+    [billings, searchTerm]
   );
 
   return (

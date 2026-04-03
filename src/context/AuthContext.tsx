@@ -1,13 +1,15 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { ROLES, type Role } from '@/lib/permissions';
 
-export type UserRole = 'owner' | 'admin' | 'user';
+export type UserRole = Role;
 
 export interface AuthUser {
+  id: string;
   email: string;
-  role: UserRole;
-  tokenVersion?: number;
+  name: string;
+  role: Role;
 }
 
 interface AuthContextType {
@@ -21,8 +23,6 @@ interface AuthContextType {
   canDelete: boolean;
   canApprove: boolean;
   isLoading: boolean;
-  sessionExpiresAt: number | null;
-  sessionCountdown: number | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   continueAsGuest: () => void;
@@ -32,9 +32,8 @@ interface AuthContextType {
 
 export type PermissionAction = 'read' | 'create' | 'update' | 'delete' | 'delete_critical' | 'approve';
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | null>(null);
 
-// Permission mapping based on role
 const ROLE_PERMISSIONS: Record<UserRole, PermissionAction[]> = {
   owner: ['read', 'create', 'update', 'delete', 'delete_critical', 'approve'],
   admin: ['read', 'create', 'update', 'delete', 'approve'],
@@ -49,59 +48,29 @@ function checkPermission(role: UserRole | null, action: PermissionAction): boole
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null);
-  const [sessionCountdown, setSessionCountdown] = useState<number | null>(null);
 
-  // Update countdown every second
-  useEffect(() => {
-    if (!sessionExpiresAt) return;
-
-    const updateCountdown = () => {
-      const remaining = Math.max(0, sessionExpiresAt - Date.now());
-      setSessionCountdown(Math.floor(remaining / 1000));
-    };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-
-    return () => clearInterval(interval);
-  }, [sessionExpiresAt]);
-
-  // Show warning when session is about to expire (within 5 minutes)
-  useEffect(() => {
-    if (sessionCountdown !== null && sessionCountdown <= 300 && sessionCountdown > 0) {
-      // Dispatch event for components to show warning
-      window.dispatchEvent(new CustomEvent('session-warning', { 
-        detail: { secondsRemaining: sessionCountdown } 
-      }));
-    }
-  }, [sessionCountdown]);
-
-  // Session validation on mount
+  // Check session on mount
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/auth/verify', {
-          credentials: 'include', // Include cookies
+        const res = await fetch('/api/auth/get-session', {
+          credentials: 'include',
         });
         
         if (res.ok) {
           const data = await res.json();
-          setUser(data.user);
-          // Set session expiry if provided
-          if (data.sessionExpiresAt) {
-            setSessionExpiresAt(data.sessionExpiresAt);
-          } else if (data.tokenExpiresIn) {
-            setSessionExpiresAt(Date.now() + data.tokenExpiresIn * 1000);
+          if (data && data.user) {
+            setUser({
+              id: data.user.id,
+              email: data.user.email,
+              name: data.user.name || '',
+              // Role is now properly included via customSession plugin
+              role: (data.user.role as Role) || 'user',
+            });
           }
-        } else {
-          // Token invalid or expired - auto logout
-          setUser(null);
         }
       } catch (error) {
         console.error('Auth check failed:', error);
-        // Network error - treat as not authenticated
-        setUser(null);
       } finally {
         setIsLoading(false);
       }
@@ -110,88 +79,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
-  // Auto-refresh token before expiry (at 5 minutes remaining)
-  useEffect(() => {
-    if (!sessionCountdown || sessionCountdown > 300) return;
-
-    const refreshTimer = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          setSessionExpiresAt(data.sessionExpiresAt);
-          setUser(data.user);
-        } else {
-          // Refresh failed - logout
-          setUser(null);
-          setSessionExpiresAt(null);
-        }
-      } catch (error) {
-        console.error('Auto-refresh failed:', error);
-      }
-    }, (sessionCountdown - 300) * 1000);
-
-    return () => clearTimeout(refreshTimer);
-  }, [sessionCountdown]);
-
-  // Auto-logout on token expiry via visibility change
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        // Re-verify token when tab becomes visible (handles refresh)
-        try {
-          const res = await fetch('/api/auth/verify', {
-            credentials: 'include',
-          });
-          
-          if (!res.ok) {
-            // Token invalid/expired - clear session
-            setUser(null);
-            setSessionExpiresAt(null);
-          }
-        } catch (error) {
-          console.error('Session validation failed:', error);
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/sign-in/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Include cookies
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
       
       const data = await res.json();
 
-      if (res.ok) {
-        // Token is set in HttpOnly cookie by server
-        setUser(data.user);
-        // Set session expiry
-        if (data.tokenExpiresIn) {
-          setSessionExpiresAt(Date.now() + data.tokenExpiresIn * 1000);
-        }
+      if (res.ok && data.user) {
+        setUser({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name || '',
+          role: (data.user.role as Role) || 'user',
+        });
         return true;
       }
       
-      // Handle rate limit or auth error
-      if (res.status === 429) {
-        console.error('Rate limit exceeded:', data.error);
-        throw new Error(data.error);
-      }
-
       return false;
     } catch (error) {
       console.error('Login failed:', error);
@@ -199,50 +107,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refreshSession = useCallback(async (): Promise<boolean> => {
+  const logout = async () => {
     try {
-      const res = await fetch('/api/auth/refresh', {
+      await fetch('/api/auth/sign-out', {
         method: 'POST',
         credentials: 'include',
       });
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+    setUser(null);
+    window.location.href = '/login';
+  };
 
+  const refreshSession = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auth/get-session', {
+        credentials: 'include',
+      });
+      
       if (res.ok) {
         const data = await res.json();
-        setUser(data.user);
-        setSessionExpiresAt(data.sessionExpiresAt);
-        return true;
+        if (data && data.user) {
+          setUser({
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.name || '',
+            role: (data.user.role as Role) || 'user',
+          });
+          return true;
+        }
       }
-
-      // Refresh failed
-      setUser(null);
-      setSessionExpiresAt(null);
       return false;
     } catch (error) {
       console.error('Session refresh failed:', error);
       return false;
     }
-  }, []);
-
-  const logout = async () => {
-    try {
-      await fetch('/api/auth/logout', { 
-        method: 'POST',
-        credentials: 'include',
-      });
-      setUser(null);
-      setSessionExpiresAt(null);
-      setSessionCountdown(null);
-    } catch (error) {
-      console.error('Logout failed:', error);
-      // Still clear local state even if server call fails
-      setUser(null);
-      setSessionExpiresAt(null);
-      setSessionCountdown(null);
-    }
   };
 
   const continueAsGuest = () => {
-    setUser({ email: 'guest', role: 'user' });
+    // Guest mode not supported with Better Auth
+    console.warn('Guest mode not supported');
   };
 
   const hasPermission = (action: PermissionAction): boolean => {
@@ -264,8 +169,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         canDelete: hasPermission('delete'),
         canApprove: hasPermission('approve'),
         isLoading,
-        sessionExpiresAt,
-        sessionCountdown,
         login,
         logout,
         continueAsGuest,
@@ -280,8 +183,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
 }

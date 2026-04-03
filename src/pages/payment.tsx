@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -199,6 +199,14 @@ export default function PaymentPage() {
     setIsPaymentOpen(true);
   };
 
+  // Calculate average billing amount - memoized for performance
+  const averageBilling = useMemo(() => 
+    billings.length > 0 
+      ? billings.reduce((sum, b) => sum + b.jumlah, 0) / billings.length 
+      : 0,
+    [billings]
+  );
+
   // Get status badge color
   const getStatusBadge = (billing: Billing) => {
     if (billing.statusBayar === 'Lunas') {
@@ -251,9 +259,7 @@ export default function PaymentPage() {
             <CardContent className="pt-4">
               <div className="text-sm text-gray-500">Rata-rata per Tagihan</div>
               <div className="text-2xl font-bold">
-                {billings.length > 0 
-                  ? formatCurrency(billings.reduce((sum, b) => sum + b.jumlah, 0) / billings.length) 
-                  : '-'}
+                {billings.length > 0 ? formatCurrency(averageBilling) : '-'}
               </div>
             </CardContent>
           </Card>

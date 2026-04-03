@@ -73,45 +73,67 @@ export default function PayrollPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const fetchPayrolls = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch payrolls and employees in parallel
       const params = new URLSearchParams({
         page: String(pagination.page),
         limit: '10',
         ...(periodeFilter && { periode: periodeFilter }),
       });
-      const res = await fetch(`/api/karyawan/payroll?${params}`);
-      const json = await res.json();
-      if (res.ok) {
-        setPayrolls(json.data);
-        setSummary(json.summary);
-        setPagination(json.pagination);
+      
+      const [payrollRes, employeesRes] = await Promise.all([
+        fetch(`/api/karyawan/payroll?${params}`),
+        fetch('/api/karyawan?limit=100&status=Active')
+      ]);
+
+      if (payrollRes.ok) {
+        const payrollJson = await payrollRes.json();
+        setPayrolls(payrollJson.data);
+        setSummary(payrollJson.summary);
+        setPagination(payrollJson.pagination);
+      }
+
+      if (employeesRes.ok) {
+        const employeesJson = await employeesRes.json();
+        setEmployees(employeesJson.data);
       }
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }, [pagination.page, periodeFilter]);
 
-  const fetchEmployees = useCallback(async () => {
-    try {
-      const res = await fetch('/api/karyawan?limit=100&status=Active');
-      const json = await res.json();
-      if (res.ok) setEmployees(json.data);
-    } catch { /* ignore */ }
-  }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  useEffect(() => { fetchPayrolls(); }, [fetchPayrolls]);
-  useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
-
-  // Auto-fill jumlah when employee selected for Gaji
-  useEffect(() => {
-    if (form.jenisPembayaran === 'Gaji' && form.employeeId) {
-      const emp = employees.find(e => e.id === form.employeeId);
+  // Helper to get default jumlah based on employee and payment type
+  const getDefaultJumlah = useCallback((employeeId: string, jenisPembayaran: string) => {
+    if (jenisPembayaran === 'Gaji' && employeeId) {
+      const emp = employees.find(e => e.id === employeeId);
       if (emp && emp.gajiPokok > 0) {
-        setForm(f => ({ ...f, jumlah: String(emp.gajiPokok) }));
+        return String(emp.gajiPokok);
       }
     }
-  }, [form.employeeId, form.jenisPembayaran, employees]);
+    return '';
+  }, [employees]);
+
+  // Auto-fill jumlah when employee selected for Gaji - using derived state pattern
+  const handleEmployeeChange = (employeeId: string) => {
+    const defaultJumlah = getDefaultJumlah(employeeId, form.jenisPembayaran);
+    setForm(f => ({ 
+      ...f, 
+      employeeId,
+      jumlah: defaultJumlah || f.jumlah 
+    }));
+  };
+
+  const handleJenisPembayaranChange = (jenisPembayaran: string) => {
+    const defaultJumlah = getDefaultJumlah(form.employeeId, jenisPembayaran);
+    setForm(f => ({ 
+      ...f, 
+      jenisPembayaran,
+      jumlah: defaultJumlah || f.jumlah 
+    }));
+  };
 
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,7 +153,7 @@ export default function PayrollPage() {
       setSuccess(json.message || 'Pembayaran berhasil');
       setIsCreateOpen(false);
       setForm(f => ({ ...f, employeeId: '', jumlah: '', keterangan: '' }));
-      fetchPayrolls();
+      fetchData();
     } catch { setError('Terjadi kesalahan'); }
   };
 
@@ -170,7 +192,7 @@ export default function PayrollPage() {
                     {error && <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{error}</div>}
                     <div>
                       <label className="text-sm font-medium text-gray-700 mb-1 block">Karyawan *</label>
-                      <select className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} required>
+                      <select className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm" value={form.employeeId} onChange={(e) => handleEmployeeChange(e.target.value)} required>
                         <option value="">Pilih Karyawan</option>
                         {employees.map(emp => (
                           <option key={emp.id} value={emp.id}>{emp.nama} ({emp.nip}) - {emp.jabatan}</option>
@@ -184,7 +206,7 @@ export default function PayrollPage() {
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-700 mb-1 block">Jenis *</label>
-                        <select className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm" value={form.jenisPembayaran} onChange={(e) => setForm({ ...form, jenisPembayaran: e.target.value })}>
+                        <select className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm" value={form.jenisPembayaran} onChange={(e) => handleJenisPembayaranChange(e.target.value)}>
                           {JENIS_OPTIONS.map(j => <option key={j} value={j}>{j}</option>)}
                         </select>
                       </div>

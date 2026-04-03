@@ -1,10 +1,20 @@
 import type { NextApiRequest, NextApiResponse, NextApiHandler } from 'next';
-import { verifyToken, AuthUser, hasPermission, PermissionAction } from './auth';
-import { validateSession } from './session';
+import { auth } from './auth';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  emailVerified: boolean;
+  image: string | null;
+}
 
 export interface AuthenticatedRequest extends NextApiRequest {
   user: AuthUser;
 }
+
+export type PermissionAction = 'read' | 'create' | 'update' | 'delete' | 'delete_critical' | 'approve';
 
 type AuthHandler = (
   req: AuthenticatedRequest,
@@ -12,81 +22,56 @@ type AuthHandler = (
 ) => Promise<void> | void;
 
 export interface WithAuthOptions {
-  /** Require specific role(s) to access */
   requireRole?: ('owner' | 'admin' | 'user')[];
-  /** Require owner role (shorthand for requireRole: ['owner']) */
   requireOwner?: boolean;
-  /** Require admin role (shorthand for requireRole: ['owner', 'admin']) */
   requireAdmin?: boolean;
-  /** Permission action to check */
   permission?: PermissionAction;
 }
 
-/**
- * Middleware to protect API routes with authentication and role-based access control
- * 
- * Usage:
- * ```ts
- * // Require specific role
- * export default withAuth(async (req, res) => {
- *   // req.user is available here
- * }, { requireRole: ['owner', 'admin'] });
- * 
- * // Require owner only
- * export default withAuth(handler, { requireOwner: true });
- * 
- * // Require admin or owner
- * export default withAuth(handler, { requireAdmin: true });
- * 
- * // Check permission action
- * export default withAuth(handler, { permission: 'create' });
- * ```
- */
+export function hasPermission(user: AuthUser | null, action: PermissionAction): boolean {
+  if (!user) return false;
+
+  switch (user.role) {
+    case 'owner':
+      return true;
+    case 'admin':
+      return action !== 'delete_critical';
+    case 'user':
+      return action === 'read';
+    default:
+      return false;
+  }
+}
+
 export function withAuth(
   handler: AuthHandler,
   options: WithAuthOptions = {}
 ): NextApiHandler {
   return async (req: NextApiRequest, res: NextApiResponse) => {
     try {
-      // Get token from Authorization header or cookie
-      let token: string | undefined;
+      // Convert headers to Headers object
+      const headers = new Headers();
+      Object.entries(req.headers).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          headers.set(key, value);
+        } else if (Array.isArray(value)) {
+          value.forEach(v => headers.append(key, v));
+        }
+      });
 
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      }
+      const session = await auth.api.getSession({
+        headers,
+      });
 
-      // Also check cookie
-      if (!token && req.cookies.auth_token) {
-        token = req.cookies.auth_token;
-      }
-
-      if (!token) {
+      if (!session) {
         return res.status(401).json({ 
           error: 'Autentikasi diperlukan',
           code: 'UNAUTHORIZED'
         });
       }
 
-      // Verify the token
-      const user = await verifyToken(token);
-      if (!user) {
-        return res.status(401).json({ 
-          error: 'Token tidak valid atau sudah kadaluarsa',
-          code: 'INVALID_TOKEN'
-        });
-      }
+      const user = session.user as unknown as AuthUser;
 
-      // Validate session
-      const isValidSession = validateSession(user.email, user.tokenVersion || 1);
-      if (!isValidSession) {
-        return res.status(401).json({ 
-          error: 'Sesi telah berakhir. Silakan login ulang.',
-          code: 'SESSION_INVALIDATED'
-        });
-      }
-
-      // Check owner requirement
       if (options.requireOwner && user.role !== 'owner') {
         return res.status(403).json({ 
           error: 'Akses ditolak. Hanya owner yang diizinkan.',
@@ -94,7 +79,6 @@ export function withAuth(
         });
       }
 
-      // Check admin requirement (owner and admin)
       if (options.requireAdmin && user.role !== 'owner' && user.role !== 'admin') {
         return res.status(403).json({ 
           error: 'Akses ditolak. Hanya admin dan owner yang diizinkan.',
@@ -102,7 +86,6 @@ export function withAuth(
         });
       }
 
-      // Check specific role requirement
       if (options.requireRole && options.requireRole.length > 0) {
         if (!options.requireRole.includes(user.role as 'owner' | 'admin' | 'user')) {
           return res.status(403).json({ 
@@ -112,7 +95,6 @@ export function withAuth(
         }
       }
 
-      // Check permission action
       if (options.permission) {
         if (!hasPermission(user, options.permission)) {
           return res.status(403).json({ 
@@ -122,10 +104,8 @@ export function withAuth(
         }
       }
 
-      // Attach user to request
       (req as AuthenticatedRequest).user = user;
 
-      // Call the handler
       return handler(req as AuthenticatedRequest, res);
     } catch (error) {
       console.error('Auth middleware error:', error);
@@ -139,27 +119,22 @@ export function withAuth(
   };
 }
 
-/**
- * Helper to check if request is authenticated (for optional auth)
- */
 export async function getAuthUser(req: NextApiRequest): Promise<AuthUser | null> {
   try {
-    let token: string | undefined;
+    const headers = new Headers();
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        headers.set(key, value);
+      } else if (Array.isArray(value)) {
+        value.forEach(v => headers.append(key, v));
+      }
+    });
 
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
-    }
+    const session = await auth.api.getSession({
+      headers,
+    });
 
-    if (!token && req.cookies.auth_token) {
-      token = req.cookies.auth_token;
-    }
-
-    if (!token) {
-      return null;
-    }
-
-    return await verifyToken(token);
+    return session ? (session.user as unknown as AuthUser) : null;
   } catch {
     return null;
   }

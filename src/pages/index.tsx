@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -125,17 +125,7 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
-          <p className="text-sm text-gray-500">Memuat dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Compute summary and derived values before conditional returns
   const summary = data?.summary || {
     totalDebit: 0,
     totalKredit: 0,
@@ -147,9 +137,23 @@ export default function Dashboard() {
 
   const recentTransactions = data?.recentTransactions || [];
 
-  const lunasPercentage = summary.totalStudents > 0 
-    ? Math.round((summary.lunasCount / summary.totalStudents) * 100) 
-    : 0;
+  const lunasPercentage = useMemo(() =>
+    summary.totalStudents > 0 
+      ? Math.round((summary.lunasCount / summary.totalStudents) * 100) 
+      : 0,
+    [summary.totalStudents, summary.lunasCount]
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
+          <p className="text-sm text-gray-500">Memuat dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

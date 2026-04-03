@@ -35,8 +35,14 @@ interface JurnalLine {
 export default function JurnalPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [kodeAkun, setKodeAkun] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(() => {
+    const year = new Date().getFullYear();
+    return `${year}-01-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const year = new Date().getFullYear();
+    return `${year}-12-31`;
+  });
   const [keterangan, setKeterangan] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -56,59 +62,7 @@ export default function JurnalPage() {
       .catch(e => console.error(e));
   }, []);
 
-  // Auto-fetch data on page load with default current year range
-  useEffect(() => {
-    const year = new Date().getFullYear();
-    const defaultStartDate = `${year}-01-01`;
-    const defaultEndDate = `${year}-12-31`;
-    
-    setStartDate(defaultStartDate);
-    setEndDate(defaultEndDate);
-    
-    // Auto-fetch data
-    const fetchData = async () => {
-      setIsLoading(true);
-      setHasSearched(true);
-      try {
-        const params = new URLSearchParams({
-          startDate: defaultStartDate,
-          endDate: defaultEndDate,
-          limit: '500',
-        });
 
-        const res = await fetch(`/api/reports/jurnal?${params.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          const journals = data.data || [];
-          
-          const flattenedLines: JurnalLine[] = [];
-          for (const j of journals) {
-            for (const e of j.entries) {
-              flattenedLines.push({
-                id: `${j.id}-${e.kodeAkun}`,
-                tanggal: j.tanggal,
-                kodeAkun: e.kodeAkun,
-                namaAkun: e.namaAkun,
-                debit: e.debit,
-                kredit: e.kredit,
-                keterangan: j.keterangan,
-                reference: j.reference
-              });
-            }
-          }
-
-          flattenedLines.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime());
-          setLines(flattenedLines);
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchData();
-  }, []);
 
   const handleTampilkanData = async () => {
     setIsLoading(true);

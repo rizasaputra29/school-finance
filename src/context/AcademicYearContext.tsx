@@ -28,21 +28,46 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
   const refreshYears = async () => {
     try {
       const res = await fetch('/api/academic-year');
-      if (res.ok) {
-        const data = await res.json();
-        setAcademicYears(data);
-        
-        // Check localStorage for saved selection
-        const savedId = localStorage.getItem('selectedAcademicYearId');
-        if (savedId) {
-          const saved = data.find((y: AcademicYear) => y.id === savedId);
-          if (saved) {
-            setSelectedYearState(saved);
-            return;
-          }
+      
+      // Handle error responses (e.g., 401 Unauthorized)
+      if (!res.ok) {
+        if (res.status === 401) {
+          console.log('User not authenticated, skipping academic years fetch');
+          return;
         }
-        
-        // Otherwise, select active year
+        console.error('Failed to fetch academic years:', res.status, res.statusText);
+        return;
+      }
+      
+      const response = await res.json();
+      
+      // Handle wrapped response format: { data: [...], activeYear: {...} }
+      const data = response.data || response;
+      const activeYearFromAPI = response.activeYear;
+      
+      // Validate data is an array before processing
+      if (!Array.isArray(data)) {
+        console.error('Expected array but got:', typeof data, data);
+        return;
+      }
+      
+      setAcademicYears(data);
+      
+      // Check localStorage for saved selection
+      const savedId = localStorage.getItem('selectedAcademicYearId');
+      if (savedId) {
+        const saved = data.find((y: AcademicYear) => y.id === savedId);
+        if (saved) {
+          setSelectedYearState(saved);
+          return;
+        }
+      }
+      
+      // Use activeYear from API if available, otherwise find it manually
+      if (activeYearFromAPI) {
+        setSelectedYearState(activeYearFromAPI);
+      } else {
+        // Otherwise, find active year manually
         const active = data.find((y: AcademicYear) => y.isActive);
         if (active) {
           setSelectedYearState(active);

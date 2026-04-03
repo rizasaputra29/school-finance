@@ -203,7 +203,24 @@ async function main() {
   await prisma.snapshot.deleteMany();
   console.log('   ✅ Data cleaned\n');
 
-  // 2. CREATE ACCOUNTS
+  // 2. CREATE OWNER USER (for Better Auth)
+  // NOTE: Make sure to run `bunx prisma generate` after schema changes
+  console.log('2. Creating owner user...');
+  await (prisma as any).user.create({
+    data: {
+      email: 'owner@school.finance',
+      name: 'School Owner',
+      role: 'owner',
+      emailVerified: true,
+    },
+  });
+  console.log('   ✅ Owner user created: owner@school.finance\n');
+  console.log('   ⚠️  NOTE: Password must be set via /api/auth/sign-up/email endpoint');
+  console.log('   Or run: curl -X POST http://localhost:3000/api/auth/sign-up/email \\\n');
+  console.log('     -H "Content-Type: application/json" \\\n');
+  console.log('     -d \'{"email":"owner@school.finance","password":"ownerpass","name":"School Owner"}\'\n');
+
+  // 3. CREATE ACCOUNTS
   console.log('2. Creating accounts...');
   await prisma.account.createMany({ data: ACCOUNTS });
   console.log(`   ✅ Created ${ACCOUNTS.length} accounts\n`);
