@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Head from 'next/head';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -229,163 +228,157 @@ export default function AcademicYearPage() {
   );
 
   return (
-    <>
-      <Head>
-        <title>Kelola Tahun Ajaran - Keuangan Sekolah</title>
-      </Head>
-
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-2 pb-6">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Kelola Tahun Ajaran</h1>
-            <p className="text-xs md:text-sm text-gray-500">Kelola tahun ajaran untuk laporan keuangan</p>
-          </div>
-
-          <Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <Dialog.Trigger asChild>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Tambah Tahun Ajaran
-              </Button>
-            </Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-              <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
-                <Dialog.Title className="text-lg font-semibold text-slate-900">
-                  Tambah Tahun Ajaran Baru
-                </Dialog.Title>
-                {renderForm(handleSubmit, 'Simpan')}
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-2 pb-6">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Kelola Tahun Ajaran</h1>
+          <p className="text-xs md:text-sm text-gray-500">Kelola tahun ajaran untuk laporan keuangan</p>
         </div>
 
-        {/* Active Years */}
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle className="text-lg">Tahun Ajaran Aktif</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
-              </div>
-            ) : activeYears.length === 0 ? (
-              <div className="flex h-24 items-center justify-center text-gray-500">
-                Belum ada tahun ajaran
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-gray-50/50 border-b">
-                      <th className="text-left px-4 py-3 font-semibold text-sm">Tahun Ajaran</th>
-                      <th className="text-left px-4 py-3 font-semibold text-sm">Periode</th>
-                      <th className="text-left px-4 py-3 font-semibold text-sm">Status</th>
-                      <th className="text-right px-4 py-3 font-semibold text-sm">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeYears.map((year) => (
-                      <tr key={year.id} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium">{year.tahunAjaran}</td>
-                        <td className="px-4 py-3 text-gray-600">
-                          {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {year.isActive ? (
-                            <Badge className="bg-green-100 text-green-700">Aktif</Badge>
-                          ) : (
-                            <Badge variant="secondary">Nonaktif</Badge>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-2">
-                            {!year.isActive && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleSetActive(year.id)}
-                                title="Jadikan Aktif"
-                              >
-                                <Check className="h-4 w-4 text-green-600" />
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => openEditDialog(year)}
-                              title="Edit"
-                            >
-                              <Pencil className="h-4 w-4 text-gray-500" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleArchive(year.id)}
-                              title="Arsipkan"
-                            >
-                              <Archive className="h-4 w-4 text-gray-500" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Archived Years */}
-        {archivedYears.length > 0 && (
-          <Card>
-            <CardHeader className="border-b bg-gray-50">
-              <CardTitle className="text-lg text-gray-600">Tahun Ajaran Diarsipkan</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-gray-50/50 border-b">
-                      <th className="text-left px-4 py-3 font-semibold text-sm">Tahun Ajaran</th>
-                      <th className="text-left px-4 py-3 font-semibold text-sm">Periode</th>
-                      <th className="text-left px-4 py-3 font-semibold text-sm">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {archivedYears.map((year) => (
-                      <tr key={year.id} className="border-b bg-gray-50/30">
-                        <td className="px-4 py-3 font-medium text-gray-600">{year.tahunAjaran}</td>
-                        <td className="px-4 py-3 text-gray-500">
-                          {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant="outline" className="text-gray-500">Diarsipkan</Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Edit Dialog */}
-        <Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <Dialog.Trigger asChild>
+            <Button size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Tambah Tahun Ajaran
+            </Button>
+          </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
             <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
               <Dialog.Title className="text-lg font-semibold text-slate-900">
-                Edit Tahun Ajaran
+                Tambah Tahun Ajaran Baru
               </Dialog.Title>
-              {renderForm(handleEdit, 'Update', true)}
+              {renderForm(handleSubmit, 'Simpan')}
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
       </div>
-    </>
+
+      {/* Active Years */}
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle className="text-lg">Tahun Ajaran Aktif</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="flex h-48 items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[#059DEA]" />
+            </div>
+          ) : activeYears.length === 0 ? (
+            <div className="flex h-24 items-center justify-center text-gray-500">
+              Belum ada tahun ajaran
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50/50 border-b">
+                    <th className="text-left px-4 py-3 font-semibold text-sm">Tahun Ajaran</th>
+                    <th className="text-left px-4 py-3 font-semibold text-sm">Periode</th>
+                    <th className="text-left px-4 py-3 font-semibold text-sm">Status</th>
+                    <th className="text-right px-4 py-3 font-semibold text-sm">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeYears.map((year) => (
+                    <tr key={year.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium">{year.tahunAjaran}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {year.isActive ? (
+                          <Badge className="bg-green-100 text-green-700">Aktif</Badge>
+                        ) : (
+                          <Badge variant="secondary">Nonaktif</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          {!year.isActive && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleSetActive(year.id)}
+                              title="Jadikan Aktif"
+                            >
+                              <Check className="h-4 w-4 text-green-600" />
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditDialog(year)}
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4 text-gray-500" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleArchive(year.id)}
+                            title="Arsipkan"
+                          >
+                            <Archive className="h-4 w-4 text-gray-500" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Archived Years */}
+      {archivedYears.length > 0 && (
+        <Card>
+          <CardHeader className="border-b bg-gray-50">
+            <CardTitle className="text-lg text-gray-600">Tahun Ajaran Diarsipkan</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50/50 border-b">
+                    <th className="text-left px-4 py-3 font-semibold text-sm">Tahun Ajaran</th>
+                    <th className="text-left px-4 py-3 font-semibold text-sm">Periode</th>
+                    <th className="text-left px-4 py-3 font-semibold text-sm">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedYears.map((year) => (
+                    <tr key={year.id} className="border-b bg-gray-50/30">
+                      <td className="px-4 py-3 font-medium text-gray-600">{year.tahunAjaran}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline" className="text-gray-500">Diarsipkan</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Edit Dialog */}
+      <Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
+            <Dialog.Title className="text-lg font-semibold text-slate-900">
+              Edit Tahun Ajaran
+            </Dialog.Title>
+            {renderForm(handleEdit, 'Update', true)}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </div>
   );
 }

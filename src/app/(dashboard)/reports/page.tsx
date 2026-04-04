@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import Head from 'next/head';
 import Image from 'next/image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -140,10 +139,6 @@ export default function ReportsPage() {
 
   return (
     <>
-      <Head>
-        <title>Laporan Keuangan - Keuangan Sekolah</title>
-      </Head>
-
       <style jsx global>{`
         @media print {
           body * {

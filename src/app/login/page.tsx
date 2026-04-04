@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { signIn } from '@/lib/auth-client';
 import { useAuth } from '@/context/AuthContext';
@@ -23,7 +23,7 @@ export default function LoginPage() {
   // Redirect to dashboard if already logged in
   useEffect(() => {
     if (!isAuthLoading && user) {
-      router.push('/dashboard');
+      router.push('/');
     }
   }, [user, isAuthLoading, router]);
 

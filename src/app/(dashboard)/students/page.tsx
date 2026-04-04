@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import Head from "next/head";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -223,287 +222,281 @@ export default function StudentsPage() {
 	}, [students]);
 
 	return (
-		<>
-			<Head>
-				<title>Data Siswa - Keuangan Sekolah</title>
-			</Head>
-
-			<div className="space-y-6">
-				{/* Header */}
-				<div className="flex items-center justify-between gap-2">
-					<div>
-						<h1 className="text-xl md:text-2xl font-bold text-gray-900">
-							Data Siswa
-						</h1>
-						<p className="text-xs md:text-sm text-gray-500">
-							Kelola data siswa dan status pembayaran
-						</p>
-					</div>
-
-					{isAdmin && (
-						<Button
-							onClick={() => setIsCreateOpen(true)}
-							size="sm"
-							className="text-xs md:text-sm"
-						>
-							<Plus className="h-4 w-4 md:mr-2" />
-							<span className="hidden md:inline">Tambah Siswa</span>
-							<span className="md:hidden">Tambah</span>
-						</Button>
-					)}
+		<div className="space-y-6">
+			{/* Header */}
+			<div className="flex items-center justify-between gap-2">
+				<div>
+					<h1 className="text-xl md:text-2xl font-bold text-gray-900">
+						Data Siswa
+					</h1>
+					<p className="text-xs md:text-sm text-gray-500">
+						Kelola data siswa dan status pembayaran
+					</p>
 				</div>
 
-				{/* Stats */}
-				<div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
-					<Card className="bg-[#059DEA] shadow-sm col-span-2 md:col-span-1">
-						<CardContent className="flex items-center gap-3 p-3 md:p-5">
-							<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
-								<Users className="h-5 w-5 md:h-6 md:w-6 text-white" />
-							</div>
-							<div className="min-w-0">
-								<p className="text-[10px] md:text-xs font-medium text-white/80 truncate">
-									Total Siswa
-								</p>
-								<p className="text-sm md:text-xl font-bold text-white truncate">
-									{pagination.total}
-								</p>
-							</div>
-						</CardContent>
-					</Card>
+				{isAdmin && (
+					<Button
+						onClick={() => setIsCreateOpen(true)}
+						size="sm"
+						className="text-xs md:text-sm"
+					>
+						<Plus className="h-4 w-4 md:mr-2" />
+						<span className="hidden md:inline">Tambah Siswa</span>
+						<span className="md:hidden">Tambah</span>
+					</Button>
+				)}
+			</div>
 
-					<Card className="bg-white shadow-sm">
-						<CardContent className="flex items-center gap-3 p-3 md:p-5">
-							<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
-								<span className="text-sm md:text-lg font-bold text-gray-700">
-									✓
-								</span>
-							</div>
-							<div className="min-w-0">
-								<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
-									Lunas
-								</p>
-								<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-									{lunasCount}
-								</p>
-							</div>
-						</CardContent>
-					</Card>
-
-					<Card className="bg-white shadow-sm">
-						<CardContent className="flex items-center gap-3 p-3 md:p-5">
-							<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-amber-50 shrink-0">
-								<span className="text-sm md:text-lg font-bold text-amber-600">
-									!
-								</span>
-							</div>
-							<div className="min-w-0">
-								<p className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
-									Belum Lunas
-								</p>
-								<p className="text-sm md:text-xl font-bold text-slate-900 font-mono truncate">
-									{belumLunasCount}
-								</p>
-							</div>
-						</CardContent>
-					</Card>
-				</div>
-
-				{/* Search & Filters */}
-				<Card>
-					<CardContent className="p-4">
-						<div className="flex flex-col gap-3">
-							<div className="relative w-full">
-								<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-								<Input
-									type="text"
-									placeholder="Cari nama, NIS, atau kelas..."
-									value={searchTerm}
-									onChange={(e) => setSearchTerm(e.target.value)}
-									className="pl-10 w-full"
-								/>
-							</div>
-							<div className="flex items-center justify-between gap-4">
-								<div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 hide-scrollbar flex-1">
-									<Button
-										variant={statusFilter === "" ? "default" : "outline"}
-										size="sm"
-										onClick={() => setStatusFilter("")}
-										className="whitespace-nowrap"
-									>
-										Semua
-									</Button>
-									<Button
-										variant={statusFilter === "Lunas" ? "default" : "outline"}
-										size="sm"
-										onClick={() => setStatusFilter("Lunas")}
-										className="whitespace-nowrap"
-									>
-										Lunas
-									</Button>
-									<Button
-										variant={
-											statusFilter === "Belum Lunas" ? "default" : "outline"
-										}
-										size="sm"
-										onClick={() => setStatusFilter("Belum Lunas")}
-										className="whitespace-nowrap"
-									>
-										Belum Lunas
-									</Button>
-								</div>
-								<label className="flex items-center gap-2 text-xs md:text-sm text-gray-600 whitespace-nowrap">
-									<input
-										type="checkbox"
-										checked={showInactive}
-										onChange={(e) => setShowInactive(e.target.checked)}
-										className="rounded border-gray-300"
-									/>
-									Tampilkan non-aktif
-								</label>
-							</div>
+			{/* Stats */}
+			<div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+				<Card className="bg-[#059DEA] shadow-sm col-span-2 md:col-span-1">
+					<CardContent className="flex items-center gap-3 p-3 md:p-5">
+						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
+							<Users className="h-5 w-5 md:h-6 md:w-6 text-white" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-[10px] md:text-xs font-medium text-white/80 truncate">
+								Total Siswa
+							</p>
+							<p className="text-sm md:text-xl font-bold text-white truncate">
+								{pagination.total}
+							</p>
 						</div>
 					</CardContent>
 				</Card>
 
-				{/* Table */}
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-lg">
-							Daftar Siswa
-							{statusFilter && (
-								<Badge variant="secondary" className="ml-2">
-									{statusFilter}
-								</Badge>
-							)}
-						</CardTitle>
-					</CardHeader>
-					<CardContent>
-						{isLoading ? (
-							<div className="flex h-48 items-center justify-center">
-								<div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-							</div>
-						) : filteredStudents.length > 0 ? (
-							<div className="overflow-x-auto -mx-4 px-4">
-								<Table className="min-w-225">
-									<TableHeader>
-										<TableRow>
-											<TableHead>NIS</TableHead>
-											<TableHead>Nama</TableHead>
-											<TableHead>Kelas</TableHead>
-											<TableHead>Tahun Masuk</TableHead>
-											<TableHead className="text-right">Tagihan</TableHead>
-											<TableHead className="text-right">Dibayar</TableHead>
-											<TableHead>Status</TableHead>
-											{isAdmin && <TableHead>Aksi</TableHead>}
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{filteredStudents.map((s) => (
-											<TableRow
-												key={s.id}
-												className={s.status === "Inactive" ? "opacity-50" : ""}
-											>
-												<TableCell className="font-mono font-medium">
-													{s.nis}
-												</TableCell>
-												<TableCell className="font-medium">
-													{s.nama}
-													{s.status === "Inactive" && (
-														<Badge variant="secondary" className="ml-2 text-xs">
-															Tidak Aktif
-														</Badge>
-													)}
-												</TableCell>
-												<TableCell>
-													<Badge variant="secondary">{s.kelas}</Badge>
-												</TableCell>
-												<TableCell>{s.tahunMasuk}</TableCell>
-												<TableCell className="text-right">
-													{formatCurrency(s.totalTagihan)}
-												</TableCell>
-												<TableCell className="text-right font-semibold text-emerald-600">
-													{formatCurrency(s.totalBayar)}
-												</TableCell>
-												<TableCell>
-													<Badge
-														variant={
-															s.statusBayar === "Lunas" ? "success" : "warning"
-														}
-													>
-														{s.statusBayar}
-													</Badge>
-												</TableCell>
-												{isAdmin && (
-													<TableCell>
-														<div className="flex gap-1">
-															<Button
-																size="sm"
-																variant="ghost"
-																onClick={() => openEditDialog(s)}
-															>
-																<Pencil className="h-4 w-4" />
-															</Button>
-															{s.status === "Active" && (
-																<Button
-																	size="sm"
-																	variant="ghost"
-																	className="text-red-600 hover:text-red-700"
-																	onClick={() => {
-																		setSelectedStudent(s);
-																		setIsDeleteOpen(true);
-																	}}
-																>
-																	<Trash2 className="h-4 w-4" />
-																</Button>
-															)}
-														</div>
-													</TableCell>
-												)}
-											</TableRow>
-										))}
-									</TableBody>
-								</Table>
-							</div>
-						) : (
-							<div className="flex h-48 items-center justify-center text-slate-400">
-								Tidak ada data siswa
-							</div>
-						)}
+				<Card className="bg-white shadow-sm">
+					<CardContent className="flex items-center gap-3 p-3 md:p-5">
+						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
+							<span className="text-sm md:text-lg font-bold text-gray-700">
+								✓
+							</span>
+						</div>
+						<div className="min-w-0">
+							<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
+								Lunas
+							</p>
+							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
+								{lunasCount}
+							</p>
+						</div>
+					</CardContent>
+				</Card>
 
-						{/* Pagination */}
-						{pagination.totalPages > 1 && (
-							<div className="mt-4 flex items-center justify-between">
-								<p className="text-sm text-slate-500">
-									Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
-									{Math.min(
-										pagination.page * pagination.limit,
-										pagination.total,
-									)}{" "}
-									dari {pagination.total} siswa
-								</p>
-								<div className="flex gap-2">
-									<Button
-										variant="outline"
-										size="sm"
-										disabled={pagination.page === 1}
-										onClick={() => fetchData(pagination.page - 1)}
-									>
-										<ChevronLeft className="h-4 w-4" />
-									</Button>
-									<Button
-										variant="outline"
-										size="sm"
-										disabled={pagination.page === pagination.totalPages}
-										onClick={() => fetchData(pagination.page + 1)}
-									>
-										<ChevronRight className="h-4 w-4" />
-									</Button>
-								</div>
-							</div>
-						)}
+				<Card className="bg-white shadow-sm">
+					<CardContent className="flex items-center gap-3 p-3 md:p-5">
+						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-amber-50 shrink-0">
+							<span className="text-sm md:text-lg font-bold text-amber-600">
+								!
+							</span>
+						</div>
+						<div className="min-w-0">
+							<p className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
+								Belum Lunas
+							</p>
+							<p className="text-sm md:text-xl font-bold text-slate-900 font-mono truncate">
+								{belumLunasCount}
+							</p>
+						</div>
 					</CardContent>
 				</Card>
 			</div>
+
+			{/* Search & Filters */}
+			<Card>
+				<CardContent className="p-4">
+					<div className="flex flex-col gap-3">
+						<div className="relative w-full">
+							<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+							<Input
+								type="text"
+								placeholder="Cari nama, NIS, atau kelas..."
+								value={searchTerm}
+								onChange={(e) => setSearchTerm(e.target.value)}
+								className="pl-10 w-full"
+							/>
+						</div>
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 hide-scrollbar flex-1">
+								<Button
+									variant={statusFilter === "" ? "default" : "outline"}
+									size="sm"
+									onClick={() => setStatusFilter("")}
+									className="whitespace-nowrap"
+								>
+									Semua
+								</Button>
+								<Button
+									variant={statusFilter === "Lunas" ? "default" : "outline"}
+									size="sm"
+									onClick={() => setStatusFilter("Lunas")}
+									className="whitespace-nowrap"
+								>
+									Lunas
+								</Button>
+								<Button
+									variant={
+										statusFilter === "Belum Lunas" ? "default" : "outline"
+									}
+									size="sm"
+									onClick={() => setStatusFilter("Belum Lunas")}
+									className="whitespace-nowrap"
+								>
+									Belum Lunas
+								</Button>
+								</div>
+							<label className="flex items-center gap-2 text-xs md:text-sm text-gray-600 whitespace-nowrap">
+								<input
+									type="checkbox"
+									checked={showInactive}
+									onChange={(e) => setShowInactive(e.target.checked)}
+									className="rounded border-gray-300"
+								/>
+								Tampilkan non-aktif
+							</label>
+						</div>
+					</div>
+				</CardContent>
+			</Card>
+
+			{/* Table */}
+			<Card>
+				<CardHeader>
+					<CardTitle className="text-lg">
+						Daftar Siswa
+						{statusFilter && (
+							<Badge variant="secondary" className="ml-2">
+								{statusFilter}
+							</Badge>
+						)}
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					{isLoading ? (
+						<div className="flex h-48 items-center justify-center">
+							<div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+						</div>
+					) : filteredStudents.length > 0 ? (
+						<div className="overflow-x-auto -mx-4 px-4">
+							<Table className="min-w-225">
+								<TableHeader>
+									<TableRow>
+										<TableHead>NIS</TableHead>
+										<TableHead>Nama</TableHead>
+										<TableHead>Kelas</TableHead>
+										<TableHead>Tahun Masuk</TableHead>
+										<TableHead className="text-right">Tagihan</TableHead>
+										<TableHead className="text-right">Dibayar</TableHead>
+										<TableHead>Status</TableHead>
+										{isAdmin && <TableHead>Aksi</TableHead>}
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{filteredStudents.map((s) => (
+										<TableRow
+											key={s.id}
+											className={s.status === "Inactive" ? "opacity-50" : ""}
+										>
+											<TableCell className="font-mono font-medium">
+												{s.nis}
+											</TableCell>
+											<TableCell className="font-medium">
+												{s.nama}
+												{s.status === "Inactive" && (
+													<Badge variant="secondary" className="ml-2 text-xs">
+														Tidak Aktif
+													</Badge>
+												)}
+											</TableCell>
+											<TableCell>
+												<Badge variant="secondary">{s.kelas}</Badge>
+											</TableCell>
+											<TableCell>{s.tahunMasuk}</TableCell>
+											<TableCell className="text-right">
+												{formatCurrency(s.totalTagihan)}
+											</TableCell>
+											<TableCell className="text-right font-semibold text-emerald-600">
+												{formatCurrency(s.totalBayar)}
+											</TableCell>
+											<TableCell>
+												<Badge
+													variant={
+														s.statusBayar === "Lunas" ? "success" : "warning"
+													}
+												>
+													{s.statusBayar}
+												</Badge>
+											</TableCell>
+											{isAdmin && (
+												<TableCell>
+													<div className="flex gap-1">
+														<Button
+															size="sm"
+															variant="ghost"
+															onClick={() => openEditDialog(s)}
+														>
+															<Pencil className="h-4 w-4" />
+														</Button>
+														{s.status === "Active" && (
+															<Button
+																size="sm"
+																variant="ghost"
+																className="text-red-600 hover:text-red-700"
+																onClick={() => {
+																	setSelectedStudent(s);
+																	setIsDeleteOpen(true);
+																}}
+															>
+																<Trash2 className="h-4 w-4" />
+															</Button>
+														)}
+													</div>
+												</TableCell>
+											)}
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					) : (
+						<div className="flex h-48 items-center justify-center text-slate-400">
+							Tidak ada data siswa
+						</div>
+					)}
+
+					{/* Pagination */}
+					{pagination.totalPages > 1 && (
+						<div className="mt-4 flex items-center justify-between">
+							<p className="text-sm text-slate-500">
+								Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
+								{Math.min(
+									pagination.page * pagination.limit,
+									pagination.total,
+								)}{" "}
+								dari {pagination.total} siswa
+							</p>
+							<div className="flex gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={pagination.page === 1}
+									onClick={() => fetchData(pagination.page - 1)}
+								>
+									<ChevronLeft className="h-4 w-4" />
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={pagination.page === pagination.totalPages}
+									onClick={() => fetchData(pagination.page + 1)}
+								>
+									<ChevronRight className="h-4 w-4" />
+								</Button>
+							</div>
+						</div>
+					)}
+				</CardContent>
+			</Card>
 
 			{/* Create Dialog */}
 			<Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -803,6 +796,6 @@ export default function StudentsPage() {
 					</Dialog.Content>
 				</Dialog.Portal>
 			</Dialog.Root>
-		</>
+		</div>
 	);
 }

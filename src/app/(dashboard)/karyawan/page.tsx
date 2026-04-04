@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Head from 'next/head';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -231,122 +230,119 @@ export default function KaryawanPage() {
   );
 
   return (
-    <>
-      <Head><title>Data Karyawan - School Finance</title></Head>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Data Karyawan</h1>
-            <p className="text-sm text-gray-500 mt-1">Kelola data karyawan sekolah</p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/karyawan/payroll">
-              <Button variant="outline" className="gap-2">
-                <Briefcase className="h-4 w-4" /> Gaji & Tunjangan
-              </Button>
-            </Link>
-            {isAdmin && (
-              <Dialog.Root open={isCreateOpen} onOpenChange={(o) => { setIsCreateOpen(o); if (o) { setForm(INITIAL_FORM); setError(''); } }}>
-                <Dialog.Trigger asChild>
-                  <Button className="bg-[#059DEA] hover:bg-[#0480c4] text-white gap-2">
-                    <Plus className="h-4 w-4" /> Tambah
-                  </Button>
-                </Dialog.Trigger>
-                <Dialog.Portal>
-                  <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-                  <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg z-50 max-h-[90vh] overflow-y-auto">
-                    <Dialog.Title className="text-lg font-semibold mb-4">Tambah Karyawan</Dialog.Title>
-                    {renderForm(handleCreate, 'Simpan')}
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-            )}
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Data Karyawan</h1>
+          <p className="text-sm text-gray-500 mt-1">Kelola data karyawan sekolah</p>
         </div>
-
-        {/* Summary */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card className="border-0 shadow-sm bg-linear-to-br from-blue-50 to-white">
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-600">Total Karyawan</CardTitle></CardHeader>
-            <CardContent><div className="flex items-center gap-2"><Users className="h-5 w-5 text-blue-500" /><span className="text-2xl font-bold text-gray-900">{summary.total}</span></div></CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm bg-linear-to-br from-green-50 to-white">
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-600">Aktif</CardTitle></CardHeader>
-            <CardContent><div className="flex items-center gap-2"><UserCheck className="h-5 w-5 text-green-500" /><span className="text-2xl font-bold text-gray-900">{summary.active}</span></div></CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm bg-linear-to-br from-red-50 to-white">
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-600">Nonaktif</CardTitle></CardHeader>
-            <CardContent><div className="flex items-center gap-2"><UserX className="h-5 w-5 text-red-500" /><span className="text-2xl font-bold text-gray-900">{summary.inactive}</span></div></CardContent>
-          </Card>
+        <div className="flex gap-2">
+          <Link href="/karyawan/payroll">
+            <Button variant="outline" className="gap-2">
+              <Briefcase className="h-4 w-4" /> Gaji & Tunjangan
+            </Button>
+          </Link>
+          {isAdmin && (
+            <Dialog.Root open={isCreateOpen} onOpenChange={(o) => { setIsCreateOpen(o); if (o) { setForm(INITIAL_FORM); setError(''); } }}>
+              <Dialog.Trigger asChild>
+                <Button className="bg-[#059DEA] hover:bg-[#0480c4] text-white gap-2">
+                  <Plus className="h-4 w-4" /> Tambah
+                </Button>
+              </Dialog.Trigger>
+              <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+                <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg z-50 max-h-[90vh] overflow-y-auto">
+                  <Dialog.Title className="text-lg font-semibold mb-4">Tambah Karyawan</Dialog.Title>
+                  {renderForm(handleCreate, 'Simpan')}
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
+          )}
         </div>
+      </div>
 
-        {/* Search */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input placeholder="Cari nama, NIP, jabatan..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
-
-        {/* Table */}
-        <Card className="border-0 shadow-sm">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="font-semibold">NIP</TableHead>
-                    <TableHead className="font-semibold">Nama</TableHead>
-                    <TableHead className="font-semibold">Jabatan</TableHead>
-                    <TableHead className="font-semibold">Gaji Pokok</TableHead>
-                    <TableHead className="font-semibold">Status</TableHead>
-                    {isAdmin && <TableHead className="font-semibold text-right">Aksi</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">Memuat...</TableCell></TableRow>
-                  ) : employees.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">Belum ada data karyawan</TableCell></TableRow>
-                  ) : (
-                    employees.map((emp) => (
-                      <TableRow key={emp.id} className="hover:bg-gray-50">
-                        <TableCell className="font-mono text-sm">{emp.nip}</TableCell>
-                        <TableCell className="font-medium">{emp.nama}</TableCell>
-                        <TableCell>{emp.jabatan}</TableCell>
-                        <TableCell>{formatCurrency(emp.gajiPokok)}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {emp.status === 'Active' ? 'Aktif' : 'Nonaktif'}
-                          </span>
-                        </TableCell>
-                        {isAdmin && (
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <button onClick={() => openEditDialog(emp)} className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"><Pencil className="h-4 w-4" /></button>
-                              <button onClick={() => { setSelectedEmployee(emp); setIsDeleteOpen(true); }} className="h-8 w-8 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t">
-                <span className="text-sm text-gray-500">Halaman {pagination.page} dari {pagination.totalPages} ({pagination.total} data)</span>
-                <div className="flex gap-1">
-                  <button disabled={pagination.page <= 1} onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))} className="h-8 w-8 flex items-center justify-center rounded-lg border disabled:opacity-50"><ChevronLeft className="h-4 w-4" /></button>
-                  <button disabled={pagination.page >= pagination.totalPages} onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))} className="h-8 w-8 flex items-center justify-center rounded-lg border disabled:opacity-50"><ChevronRight className="h-4 w-4" /></button>
-                </div>
-              </div>
-            )}
-          </CardContent>
+      {/* Summary */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="border-0 shadow-sm bg-linear-to-br from-blue-50 to-white">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-600">Total Karyawan</CardTitle></CardHeader>
+          <CardContent><div className="flex items-center gap-2"><Users className="h-5 w-5 text-blue-500" /><span className="text-2xl font-bold text-gray-900">{summary.total}</span></div></CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm bg-linear-to-br from-green-50 to-white">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-600">Aktif</CardTitle></CardHeader>
+          <CardContent><div className="flex items-center gap-2"><UserCheck className="h-5 w-5 text-green-500" /><span className="text-2xl font-bold text-gray-900">{summary.active}</span></div></CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm bg-linear-to-br from-red-50 to-white">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-600">Nonaktif</CardTitle></CardHeader>
+          <CardContent><div className="flex items-center gap-2"><UserX className="h-5 w-5 text-red-500" /><span className="text-2xl font-bold text-gray-900">{summary.inactive}</span></div></CardContent>
         </Card>
       </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input placeholder="Cari nama, NIP, jabatan..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      </div>
+
+      {/* Table */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="font-semibold">NIP</TableHead>
+                  <TableHead className="font-semibold">Nama</TableHead>
+                  <TableHead className="font-semibold">Jabatan</TableHead>
+                  <TableHead className="font-semibold">Gaji Pokok</TableHead>
+                  <TableHead className="font-semibold">Status</TableHead>
+                  {isAdmin && <TableHead className="font-semibold text-right">Aksi</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">Memuat...</TableCell></TableRow>
+                ) : employees.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-gray-500">Belum ada data karyawan</TableCell></TableRow>
+                ) : (
+                  employees.map((emp) => (
+                    <TableRow key={emp.id} className="hover:bg-gray-50">
+                      <TableCell className="font-mono text-sm">{emp.nip}</TableCell>
+                      <TableCell className="font-medium">{emp.nama}</TableCell>
+                      <TableCell>{emp.jabatan}</TableCell>
+                      <TableCell>{formatCurrency(emp.gajiPokok)}</TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${emp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {emp.status === 'Active' ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <button onClick={() => openEditDialog(emp)} className="h-8 w-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"><Pencil className="h-4 w-4" /></button>
+                            <button onClick={() => { setSelectedEmployee(emp); setIsDeleteOpen(true); }} className="h-8 w-8 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <span className="text-sm text-gray-500">Halaman {pagination.page} dari {pagination.totalPages} ({pagination.total} data)</span>
+              <div className="flex gap-1">
+                <button disabled={pagination.page <= 1} onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))} className="h-8 w-8 flex items-center justify-center rounded-lg border disabled:opacity-50"><ChevronLeft className="h-4 w-4" /></button>
+                <button disabled={pagination.page >= pagination.totalPages} onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))} className="h-8 w-8 flex items-center justify-center rounded-lg border disabled:opacity-50"><ChevronRight className="h-4 w-4" /></button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Edit Dialog */}
       <Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -373,6 +369,6 @@ export default function KaryawanPage() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-    </>
+    </div>
   );
 }

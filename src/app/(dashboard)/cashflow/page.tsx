@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Head from 'next/head';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -372,296 +371,290 @@ export default function CashflowPage() {
   );
 
   return (
-    <>
-      <Head>
-        <title>Cashflow - Keuangan Sekolah</title>
-      </Head>
-
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Cashflow</h1>
-            <p className="text-xs md:text-sm text-gray-500">Kelola arus kas masuk dan keluar</p>
-          </div>
-
-          {isAdmin && (
-            <TransactionButtons
-              accounts={accounts}
-              onSuccess={() => fetchData(pagination.page)}
-            />
-          )}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Cashflow</h1>
+          <p className="text-xs md:text-sm text-gray-500">Kelola arus kas masuk dan keluar</p>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
-          <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-3 p-3 md:p-5">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
-                <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-gray-700" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Pendapatan</p>
-                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-                  {formatCurrency(summary.totalDebit)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+        {isAdmin && (
+          <TransactionButtons
+            accounts={accounts}
+            onSuccess={() => fetchData(pagination.page)}
+          />
+        )}
+      </div>
 
-          <Card className="bg-white shadow-sm">
-            <CardContent className="flex items-center gap-3 p-3 md:p-5">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-gray-100 shrink-0">
-                <TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-gray-600" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Pengeluaran</p>
-                <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-                  {formatCurrency(summary.totalKredit)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-[#059DEA] shadow-sm col-span-2 md:col-span-1">
-            <CardContent className="flex items-center gap-3 p-3 md:p-5">
-              <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
-                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] md:text-xs font-medium text-white/80 truncate">Saldo Akhir</p>
-                <p className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? 'text-white' : 'text-white'}`}>
-                  {formatCurrency(summary.saldo)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Search & Filters */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col gap-4">
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  type="text"
-                  placeholder="Cari keterangan, kode akun, atau kategori..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 w-full"
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="space-y-1 min-w-[200px]">
-                  <Label className="text-xs text-gray-500">Tipe Transaksi</Label>
-                  <div className="flex w-full rounded-lg border border-gray-200 p-1">
-                    <button
-                      onClick={() => setTypeFilter('all')}
-                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                        typeFilter === 'all' 
-                          ? 'bg-gray-900 text-white shadow-sm' 
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                    >
-                      Semua
-                    </button>
-                    <button
-                      onClick={() => setTypeFilter('income')}
-                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                        typeFilter === 'income' 
-                          ? 'bg-[#059DEA] text-white shadow-sm' 
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                    >
-                      Masuk
-                    </button>
-                    <button
-                      onClick={() => setTypeFilter('expense')}
-                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                        typeFilter === 'expense' 
-                          ? 'bg-red-100 text-red-700 shadow-sm' 
-                          : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                      }`}
-                    >
-                      Keluar
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <div className="space-y-1 flex-1 sm:flex-none">
-                    <Label className="text-xs text-gray-500">Dari</Label>
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="w-40 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1 flex-1 sm:flex-none">
-                    <Label className="text-xs text-gray-500">Sampai</Label>
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-40 text-xs"
-                    />
-                  </div>
-                </div>
-
-                {(typeFilter !== 'all' || startDate || endDate) && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={clearFilters} 
-                    className="self-end w-full sm:w-auto mt-2 sm:mt-0"
-                  >
-                    <Filter className="mr-1 h-3 w-3" />
-                    Reset
-                  </Button>
-                )}
-              </div>
+      {/* Summary Cards */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
+        <Card className="bg-white shadow-sm">
+          <CardContent className="flex items-center gap-3 p-3 md:p-5">
+            <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
+              <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-gray-700" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Pendapatan</p>
+              <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
+                {formatCurrency(summary.totalDebit)}
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Daftar Transaksi
-              {typeFilter !== 'all' && (
-                <Badge variant={typeFilter === 'income' ? 'income' : 'expense'} className="ml-2">
-                  {typeFilter === 'income' ? 'Pendapatan' : 'Pengeluaran'}
-                </Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-              </div>
-            ) : cashflows.length > 0 ? (
-              <div className="overflow-x-auto -mx-4 px-4">
-              <Table className="min-w-[800px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead>Keterangan</TableHead>
-                    <TableHead>Akun</TableHead>
-                    <TableHead>Kategori</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Kredit</TableHead>
-                    <TableHead>Tipe</TableHead>
-                    {isAdmin && <TableHead>Aksi</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {cashflows.map((cf) => (
-                    <TableRow key={cf.id}>
-                      <TableCell className="font-medium whitespace-nowrap">
-                        {formatShortDate(cf.tanggal)}
-                      </TableCell>
-                      <TableCell>
-                        {cf.keterangan}
-                        {cf.referenceId && (
-                          <Badge variant="secondary" className="ml-2 text-xs">
-                            Auto
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{cf.kodeAkun}</Badge>
-                      </TableCell>
-                      <TableCell className="text-slate-500">
-                        {cf.kategori || '-'}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-emerald-600">
-                        {cf.debit > 0 ? formatCurrency(cf.debit) : '-'}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-red-600">
-                        {cf.kredit > 0 ? formatCurrency(cf.kredit) : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={cf.debit > 0 ? 'income' : 'expense'}>
-                          {cf.debit > 0 ? 'Masuk' : 'Keluar'}
-                        </Badge>
-                      </TableCell>
-                      {isAdmin && (
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => openEditDialog(cf)}
-                              disabled={!!cf.referenceId} // Disable edit for auto-generated transactions
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-red-600 hover:text-red-700"
-                              onClick={() => {
-                                setSelectedCashflow(cf);
-                                setIsDeleteOpen(true);
-                              }}
-                              disabled={!!cf.referenceId} // Disable delete for auto-generated transactions
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              </div>
-            ) : (
-              <div className="flex h-48 items-center justify-center text-slate-400">
-                Tidak ada data transaksi
-              </div>
-            )}
+        <Card className="bg-white shadow-sm">
+          <CardContent className="flex items-center gap-3 p-3 md:p-5">
+            <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-gray-100 shrink-0">
+              <TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-gray-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">Total Pengeluaran</p>
+              <p className="text-sm md:text-xl font-bold text-gray-900 truncate">
+                {formatCurrency(summary.totalKredit)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
-                <p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
-                  Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{' '}
-                  {Math.min(pagination.page * pagination.limit, pagination.total)} dari{' '}
-                  {pagination.total} transaksi
-                </p>
-                <div className="flex justify-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={pagination.page === 1}
-                    onClick={() => fetchData(pagination.page - 1)}
-                    className="w-10 p-0"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="flex items-center px-4 text-sm font-medium border border-gray-200 rounded-md">
-                    {pagination.page} / {pagination.totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={pagination.page === pagination.totalPages}
-                    onClick={() => fetchData(pagination.page + 1)}
-                    className="w-10 p-0"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
+        <Card className="bg-[#059DEA] shadow-sm col-span-2 md:col-span-1">
+          <CardContent className="flex items-center gap-3 p-3 md:p-5">
+            <div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
+              <Wallet className="h-5 w-5 md:h-6 md:w-6 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] md:text-xs font-medium text-white/80 truncate">Saldo Akhir</p>
+              <p className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? 'text-white' : 'text-white'}`}>
+                {formatCurrency(summary.saldo)}
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Search & Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Cari keterangan, kode akun, atau kategori..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 w-full"
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="space-y-1 min-w-[200px]">
+                <Label className="text-xs text-gray-500">Tipe Transaksi</Label>
+                <div className="flex w-full rounded-lg border border-gray-200 p-1">
+                  <button
+                    onClick={() => setTypeFilter('all')}
+                    className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      typeFilter === 'all' 
+                        ? 'bg-gray-900 text-white shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                    }`}
+                  >
+                    Semua
+                  </button>
+                  <button
+                    onClick={() => setTypeFilter('income')}
+                    className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      typeFilter === 'income' 
+                        ? 'bg-[#059DEA] text-white shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                    }`}
+                  >
+                    Masuk
+                  </button>
+                  <button
+                    onClick={() => setTypeFilter('expense')}
+                    className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      typeFilter === 'expense' 
+                        ? 'bg-red-100 text-red-700 shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                    }`}
+                  >
+                    Keluar
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex gap-2 w-full sm:w-auto">
+                <div className="space-y-1 flex-1 sm:flex-none">
+                  <Label className="text-xs text-gray-500">Dari</Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-40 text-xs"
+                  />
+                </div>
+                <div className="space-y-1 flex-1 sm:flex-none">
+                  <Label className="text-xs text-gray-500">Sampai</Label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-40 text-xs"
+                  />
+                </div>
+              </div>
+
+              {(typeFilter !== 'all' || startDate || endDate) && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={clearFilters} 
+                  className="self-end w-full sm:w-auto mt-2 sm:mt-0"
+                >
+                  <Filter className="mr-1 h-3 w-3" />
+                  Reset
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">
+            Daftar Transaksi
+            {typeFilter !== 'all' && (
+              <Badge variant={typeFilter === 'income' ? 'income' : 'expense'} className="ml-2">
+                {typeFilter === 'income' ? 'Pendapatan' : 'Pengeluaran'}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex h-48 items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+            </div>
+          ) : cashflows.length > 0 ? (
+            <div className="overflow-x-auto -mx-4 px-4">
+            <Table className="min-w-[800px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tanggal</TableHead>
+                  <TableHead>Keterangan</TableHead>
+                  <TableHead>Akun</TableHead>
+                  <TableHead>Kategori</TableHead>
+                  <TableHead className="text-right">Debit</TableHead>
+                  <TableHead className="text-right">Kredit</TableHead>
+                  <TableHead>Tipe</TableHead>
+                  {isAdmin && <TableHead>Aksi</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cashflows.map((cf) => (
+                  <TableRow key={cf.id}>
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {formatShortDate(cf.tanggal)}
+                    </TableCell>
+                    <TableCell>
+                      {cf.keterangan}
+                      {cf.referenceId && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          Auto
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{cf.kodeAkun}</Badge>
+                    </TableCell>
+                    <TableCell className="text-slate-500">
+                      {cf.kategori || '-'}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold text-emerald-600">
+                      {cf.debit > 0 ? formatCurrency(cf.debit) : '-'}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold text-red-600">
+                      {cf.kredit > 0 ? formatCurrency(cf.kredit) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={cf.debit > 0 ? 'income' : 'expense'}>
+                        {cf.debit > 0 ? 'Masuk' : 'Keluar'}
+                      </Badge>
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditDialog(cf)}
+                            disabled={!!cf.referenceId} // Disable edit for auto-generated transactions
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => {
+                              setSelectedCashflow(cf);
+                              setIsDeleteOpen(true);
+                            }}
+                            disabled={!!cf.referenceId} // Disable delete for auto-generated transactions
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            </div>
+          ) : (
+            <div className="flex h-48 items-center justify-center text-slate-400">
+              Tidak ada data transaksi
+            </div>
+          )}
+
+          {/* Pagination */}
+          {pagination.totalPages > 1 && (
+            <div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
+              <p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
+                Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{' '}
+                {Math.min(pagination.page * pagination.limit, pagination.total)} dari{' '}
+                {pagination.total} transaksi
+              </p>
+              <div className="flex justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pagination.page === 1}
+                  onClick={() => fetchData(pagination.page - 1)}
+                  className="w-10 p-0"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="flex items-center px-4 text-sm font-medium border border-gray-200 rounded-md">
+                  {pagination.page} / {pagination.totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pagination.page === pagination.totalPages}
+                  onClick={() => fetchData(pagination.page + 1)}
+                  className="w-10 p-0"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Edit Dialog */}
       <Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -699,6 +692,6 @@ export default function CashflowPage() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-    </>
+    </div>
   );
 }
