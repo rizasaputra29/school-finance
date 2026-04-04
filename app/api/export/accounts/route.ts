@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter } from '@/lib/with-auth';
 
 interface AccountRecord {
   id: string;

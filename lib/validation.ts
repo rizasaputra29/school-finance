@@ -1,6 +1,6 @@
 import { z, ZodError } from 'zod';
 import type { NextApiResponse } from 'next';
-import type { AuthenticatedRequest } from './withAuth';
+import type { AuthenticatedRequest } from './with-auth';
 
 /**
  * Validation utility for API routes

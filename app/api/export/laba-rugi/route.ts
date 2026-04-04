@@ -3,7 +3,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter, getQueryParams } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
 
 // Types for Prisma v7
 interface AccountRecord {

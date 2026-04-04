@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter, getQueryParams } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
 import { Account, Prisma } from '@prisma/client';
 
 type JournalEntryLineWithJournal = Prisma.JournalEntryLineGetPayload<{

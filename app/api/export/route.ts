@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter } from '@/lib/with-auth';
 
 export async function GET(request: NextRequest) {
   return withAuthAppRouter(request, async () => {

@@ -2,7 +2,7 @@
 
 import { ReactNode } from 'react';
 import { SidebarProvider } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
+import { AppSidebar } from "@/components/AppSidebar"
 import { BottomNav } from "@/components/BottomNav"
 import { useAuth } from '@/context/AuthContext';
 import { AcademicYearSelector } from './AcademicYearSelector';

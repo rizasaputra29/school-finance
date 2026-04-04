@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter } from '@/lib/with-auth';
 
 // Month names in Indonesian
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];

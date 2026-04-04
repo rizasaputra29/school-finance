@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter } from '@/lib/with-auth';
 
 const createAcademicYearSchema = z.object({
   tahunAjaran: z.string().min(1, 'Tahun ajaran wajib diisi').max(20, 'Tahun ajaran maksimal 20 karakter'),

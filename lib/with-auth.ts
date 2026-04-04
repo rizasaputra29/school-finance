@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { NextApiRequest } from 'next';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 
@@ -9,6 +10,11 @@ export interface AuthUser {
   email: string;
   name?: string;
   role: 'owner' | 'admin' | 'user';
+}
+
+// For backward compatibility with lib/validation.ts (Pages Router type)
+export interface AuthenticatedRequest extends NextApiRequest {
+  user: AuthUser;
 }
 
 // Extend Better Auth user type to include role from additionalFields

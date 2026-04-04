@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
-import { withAuthAppRouter, getQueryParams, AuthUser } from '@/lib/withAuthAppRouter';
+import { withAuthAppRouter, getQueryParams, AuthUser } from '@/lib/with-auth';
 import { roundAmount } from '@/lib/accounting/validation';
 
 // ============================================================================

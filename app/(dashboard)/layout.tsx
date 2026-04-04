@@ -1,7 +1,7 @@
 'use client';
 
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar } from "@/components/AppSidebar";
 import { BottomNav } from "@/components/BottomNav";
 import { AcademicYearSelector } from "@/components/AcademicYearSelector";
 import { ReminderBell } from "@/components/ReminderBell";
