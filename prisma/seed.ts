@@ -3,6 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { auth } from '../lib/auth';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -201,24 +202,59 @@ async function main() {
   await prisma.notification.deleteMany();
   await prisma.auditTrail.deleteMany();
   await prisma.snapshot.deleteMany();
+  // Delete users and auth accounts last (due to foreign key constraints)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (prisma as unknown as any).authAccount.deleteMany();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (prisma as unknown as any).session.deleteMany();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (prisma as unknown as any).user.deleteMany();
   console.log('   ✅ Data cleaned\n');
 
-  // 2. CREATE OWNER USER (for Better Auth)
-  // NOTE: Make sure to run `bunx prisma generate` after schema changes
-  console.log('2. Creating owner user...');
-  await (prisma as any).user.create({
-    data: {
-      email: 'owner@school.finance',
-      name: 'School Owner',
-      role: 'owner',
-      emailVerified: true,
-    },
-  });
-  console.log('   ✅ Owner user created: owner@school.finance\n');
-  console.log('   ⚠️  NOTE: Password must be set via /api/auth/sign-up/email endpoint');
-  console.log('   Or run: curl -X POST http://localhost:3000/api/auth/sign-up/email \\\n');
-  console.log('     -H "Content-Type: application/json" \\\n');
-  console.log('     -d \'{"email":"owner@school.finance","password":"ownerpass","name":"School Owner"}\'\n');
+  // 2. CREATE USERS (for Better Auth) - All roles with passwords
+  console.log('2. Creating users with passwords...');
+
+  const users = [
+    { email: 'owner@school.finance', name: 'School Owner', role: 'owner', password: 'ownerpass' },
+    { email: 'admin@school.finance', name: 'Admin User', role: 'admin', password: 'adminpass' },
+    { email: 'user@school.finance', name: 'Regular User', role: 'user', password: 'userpass' },
+  ];
+
+  for (const userData of users) {
+    try {
+      // Create user via Better Auth API (handles password hashing correctly)
+      await auth.api.signUpEmail({
+        body: {
+          email: userData.email,
+          password: userData.password,
+          name: userData.name,
+        },
+      });
+
+      // Update role (Better Auth creates user with default role, we update it)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (prisma as unknown as any).user.update({
+        where: { email: userData.email },
+        data: { role: userData.role },
+      });
+
+      console.log(`   ✅ ${userData.role}: ${userData.email} / ${userData.password}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      // If user already exists, just update the role
+      if (error.message?.includes('already exists') || error.status === 422) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (prisma as unknown as any).user.update({
+          where: { email: userData.email },
+          data: { role: userData.role },
+        });
+        console.log(`   ✅ ${userData.role}: ${userData.email} (role updated)`);
+      } else {
+        console.log(`   ⚠️  ${userData.email}: ${error.message}`);
+      }
+    }
+  }
+  console.log();
 
   // 3. CREATE ACCOUNTS
   console.log('2. Creating accounts...');
