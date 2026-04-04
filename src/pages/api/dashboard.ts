@@ -2,15 +2,6 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 
-interface Billing {
-  statusBayar: string;
-}
-
-interface StudentWithBillings {
-  id: string;
-  billings: Billing[];
-}
-
 interface DashboardFilterParams {
   bulan?: number;
   tahun?: number;
@@ -54,13 +45,17 @@ async function buildDashboardData(
     start.setMonth(start.getMonth() - 6);
   }
   
-  // Fetch all relevant data in parallel - USE JournalEntryLine for proper accounting
+  const chartYear = params.tahun || end.getFullYear();
+  const yearStart = new Date(chartYear, 0, 1);
+  const yearEnd = new Date(chartYear, 11, 31, 23, 59, 59);
+
+  // Fetch accounts and all lines in a single year query
   const [accounts, allLines] = await Promise.all([
     prisma.account.findMany(),
     prisma.journalEntryLine.findMany({
       where: {
         journalEntry: {
-          tanggal: { lte: end },
+          tanggal: { gte: yearStart, lte: yearEnd },
           status: 'posted'
         }
       },
@@ -72,7 +67,7 @@ async function buildDashboardData(
   
   const accountMap = new Map(accounts.map(a => [a.kodeAkun, a]));
 
-  // 1. Calculate Current Total Saldo from journal entries
+  // 1. Calculate Current Total Saldo from ALL asset accounts
   const assetAccounts = accounts.filter(a => a.tipeAkun === 'Asset' || a.tipeAkun === 'Aset');
   let currentSaldo = 0;
   
@@ -117,34 +112,33 @@ async function buildDashboardData(
     }))
     .sort((a, b) => b.value - a.value);
 
-  // 4. Build Bar Chart (12 months)
+  // 4. Build Bar Chart (12 months) - Single pass aggregation
   const barChart: Array<{ bulan: string; pendapatan: number; beban: number }> = [];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  const chartYear = params.tahun || end.getFullYear();
-
-  for (let m = 0; m < 12; m++) {
-    const mStart = new Date(chartYear, m, 1);
-    const mEnd = new Date(chartYear, m + 1, 0, 23, 59, 59);
+  
+  // Pre-initialize monthly data
+  const monthlyData = Array.from({ length: 12 }, () => ({ pendapatan: 0, beban: 0 }));
+  
+  // Single pass through allLines to aggregate by month
+  for (const line of allLines) {
+    const acc = accountMap.get(line.kodeAkun);
+    if (!acc) continue;
     
-    let mPendapatan = 0;
-    let mBeban = 0;
-
-    const mLines = allLines.filter(l => {
-      const d = new Date(l.journalEntry.tanggal);
-      return d >= mStart && d <= mEnd;
-    });
-
-    for (const line of mLines) {
-      const acc = accountMap.get(line.kodeAkun);
-      if (!acc) continue;
-      if (acc.tipeAkun === 'Revenue') mPendapatan += (line.kredit - line.debit);
-      else if (acc.tipeAkun === 'Expense') mBeban += (line.debit - line.kredit);
+    const d = new Date(line.journalEntry.tanggal);
+    const month = d.getMonth();
+    
+    if (acc.tipeAkun === 'Revenue') {
+      monthlyData[month].pendapatan += (line.kredit - line.debit);
+    } else if (acc.tipeAkun === 'Expense') {
+      monthlyData[month].beban += (line.debit - line.kredit);
     }
-
+  }
+  
+  for (let m = 0; m < 12; m++) {
     barChart.push({
       bulan: monthNames[m],
-      pendapatan: Math.max(0, mPendapatan),
-      beban: Math.max(0, mBeban),
+      pendapatan: Math.max(0, monthlyData[m].pendapatan),
+      beban: Math.max(0, monthlyData[m].beban),
     });
   }
 
@@ -167,17 +161,26 @@ async function handler(
     const filterParams = parseFilterParams(req);
     const dashboardData = await buildDashboardData(filterParams);
     
-    // Get student stats
-    const students = await prisma.student.findMany({ 
-      where: { status: 'Active' },
-      include: { billings: true }
-    }) as unknown as StudentWithBillings[];
+    // Get student stats using aggregate queries
+    const totalStudents = await prisma.student.count({ where: { status: 'Active' } });
     
-    const totalStudents = students.length;
-    const lunasCount = students.filter((s) => {
-      const allLunas = s.billings.length > 0 && s.billings.every((b) => b.statusBayar === 'Lunas');
-      return allLunas;
-    }).length;
+    // Count students with all billings paid (Lunas)
+    const studentsWithBillings = await prisma.student.findMany({
+      where: { status: 'Active' },
+      select: {
+        id: true,
+        billings: {
+          select: { statusBayar: true }
+        }
+      }
+    });
+    
+    let lunasCount = 0;
+    for (const s of studentsWithBillings) {
+      if (s.billings.length > 0 && s.billings.every(b => b.statusBayar === 'Lunas')) {
+        lunasCount++;
+      }
+    }
     const belumLunasCount = totalStudents - lunasCount;
     
     // Get recent transactions from cashflow for display

@@ -1,13 +1,18 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import prisma from "./prisma";
 
-const prisma = new PrismaClient();
+interface AuditDetails {
+  before?: unknown;
+  after?: unknown;
+  [key: string]: unknown;
+}
 
 interface AuditLogData {
   userId?: string;
   action: string;
   resource: string;
   resourceId?: string;
-  details?: Record<string, any>;
+  details?: AuditDetails;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -19,8 +24,8 @@ export async function logAudit(data: AuditLogData) {
         action: data.action,
         entity: data.resource,
         entityId: data.resourceId || "",
-        oldData: data.details?.before || null,
-        newData: data.details?.after || data.details,
+        oldData: data.details?.before ? data.details.before as Prisma.InputJsonValue : undefined,
+        newData: (data.details?.after || data.details) as Prisma.InputJsonValue | undefined,
         userId: data.userId,
         ipAddress: data.ipAddress,
       },

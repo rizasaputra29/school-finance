@@ -6,6 +6,7 @@
 
 import type { NextApiResponse } from 'next';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import { 
@@ -425,44 +426,49 @@ async function handler(
             },
           });
           
-          // Create journal lines
-          const createdEntries = [];
-          for (const entry of entries) {
-            const line = await tx.journalEntryLine.create({
-              data: {
-                journalEntryId: journal.id,
-                kodeAkun: entry.kodeAkun,
-                debit: roundAmount(entry.debit),
-                kredit: roundAmount(entry.kredit),
-              },
-            });
-            createdEntries.push(line);
-          }
-          
           // Add periode to each entry
           const periode = formatPeriode(new Date(tanggal));
           
-          // Create cashflow records (for reporting)
-          for (const entry of entries) {
+          // Create journal lines using createMany for better performance
+          const journalLineData = entries.map(entry => ({
+            journalEntryId: journal.id,
+            kodeAkun: entry.kodeAkun,
+            debit: roundAmount(entry.debit),
+            kredit: roundAmount(entry.kredit),
+          }));
+          
+          await tx.journalEntryLine.createMany({
+            data: journalLineData,
+          });
+          
+          // Fetch created lines for return data
+          const createdEntries = await tx.journalEntryLine.findMany({
+            where: { journalEntryId: journal.id },
+          });
+          
+          // Create cashflow records using createMany for better performance
+          const cashflowData: Prisma.CashflowCreateManyInput[] = entries.map(entry => {
             const isBankAccount = 
               entry.kodeAkun.startsWith('111') || 
               entry.kodeAkun === '102';
             
-            await tx.cashflow.create({
-              data: {
-                tanggal: new Date(tanggal),
-                keterangan: entry.keterangan || `${keterangan} - ${entry.kodeAkun}`,
-                kodeAkun: entry.kodeAkun,
-                kategori: 'journal',
-                debit: roundAmount(entry.debit),
-                kredit: roundAmount(entry.kredit),
-                source: isBankAccount ? 'bank' : 'kas',
-                status: 'draft',
-                periode,
-                version: 1,
-              } as never,
-            });
-          }
+            return {
+              tanggal: new Date(tanggal),
+              keterangan: entry.keterangan || `${keterangan} - ${entry.kodeAkun}`,
+              kodeAkun: entry.kodeAkun,
+              kategori: 'journal',
+              debit: roundAmount(entry.debit),
+              kredit: roundAmount(entry.kredit),
+              source: isBankAccount ? 'bank' : 'kas',
+              status: 'draft',
+              periode,
+              version: 1,
+            };
+          });
+          
+          await tx.cashflow.createMany({
+            data: cashflowData,
+          });
           
           // Audit trail
           await logAudit('create', 'journal', journal.id, userId, undefined, {

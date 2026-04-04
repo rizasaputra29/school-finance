@@ -8,6 +8,7 @@
 
 import type { NextApiResponse } from 'next';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import { formatPeriode, roundAmount } from '@/lib/accounting/validation';
@@ -338,61 +339,63 @@ async function handler(
             },
           });
 
-          // Update account balances - Debit asset accounts
-          for (const entry of entries) {
-            if (entry.debit > 0) {
-              await tx.account.update({
+          // Update account balances in parallel - Debit asset accounts
+          const accountUpdates = entries
+            .filter(entry => entry.debit > 0)
+            .map(entry => 
+              tx.account.update({
                 where: { kodeAkun: entry.kodeAkun },
                 data: {
                   saldo: { increment: roundAmount(entry.debit) },
                 },
-              });
-            }
-          }
+              })
+            );
+          
+          // Add Ekuitas Saldo Awal update
+          accountUpdates.push(
+            tx.account.update({
+              where: { kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT },
+              data: {
+                saldo: { increment: roundAmount(totalDebit) },
+              },
+            })
+          );
+          
+          await Promise.all(accountUpdates);
 
-          // Update Ekuitas Saldo Awal account (kredit increases equity)
-          await tx.account.update({
-            where: { kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT },
-            data: {
-              saldo: { increment: roundAmount(totalDebit) },
-            },
-          });
-
-          // Create cashflow records for audit
+          // Create cashflow records using createMany for better performance
           const periode = formatPeriode(transactionDate);
-          for (const entry of entries) {
-            if (entry.debit > 0 || entry.kredit > 0) {
-              await tx.cashflow.create({
-                data: {
-                  tanggal: transactionDate,
-                  keterangan: `Saldo Awal - ${entry.kodeAkun}`,
-                  kodeAkun: entry.kodeAkun,
-                  kategori: 'opening_balance',
-                  debit: roundAmount(entry.debit),
-                  kredit: roundAmount(entry.kredit),
-                  source: 'kas',
-                  status: 'posted',
-                  periode,
-                  version: 1,
-                } as never,
-              });
-            }
-          }
-
-          // Add cashflow for Ekuitas Saldo Awal
-          await tx.cashflow.create({
-            data: {
+          const cashflowData: Prisma.CashflowCreateManyInput[] = entries
+            .filter(entry => entry.debit > 0 || entry.kredit > 0)
+            .map(entry => ({
               tanggal: transactionDate,
-              keterangan: `Saldo Awal - ${EQUITAS_SALDO_AWAL_ACCOUNT}`,
-              kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT,
+              keterangan: `Saldo Awal - ${entry.kodeAkun}`,
+              kodeAkun: entry.kodeAkun,
               kategori: 'opening_balance',
-              debit: 0,
-              kredit: roundAmount(totalDebit),
+              debit: roundAmount(entry.debit),
+              kredit: roundAmount(entry.kredit),
               source: 'kas',
               status: 'posted',
               periode,
               version: 1,
-            } as never,
+            }));
+          
+          // Add Ekuitas Saldo Awal cashflow
+          cashflowData.push({
+            tanggal: transactionDate,
+            keterangan: `Saldo Awal - ${EQUITAS_SALDO_AWAL_ACCOUNT}`,
+            kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT,
+            kategori: 'opening_balance',
+            debit: 0,
+            kredit: roundAmount(totalDebit),
+            source: 'kas',
+            status: 'posted',
+            periode,
+            version: 1,
+          });
+          
+          await tx.cashflow.createMany({
+            data: cashflowData,
           });
 
           // Audit trail

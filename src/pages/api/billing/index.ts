@@ -49,7 +49,8 @@ async function handler(
           ];
         }
 
-        const [billings, total] = await Promise.all([
+        // Fetch paginated billings and aggregates in parallel
+        const [billings, total, aggregates, statusCounts] = await Promise.all([
           prisma.billing.findMany({
             where,
             include: {
@@ -70,13 +71,36 @@ async function handler(
             take: parseInt(limit as string),
           }),
           prisma.billing.count({ where }),
+          // Calculate summary using aggregate
+          prisma.billing.aggregate({
+            where,
+            _sum: { jumlah: true },
+          }),
+          // Calculate status breakdown using groupBy
+          prisma.billing.groupBy({
+            by: ['statusBayar'],
+            where,
+            _sum: { jumlah: true },
+            _count: { _all: true },
+          }),
         ]);
 
-        // Calculate summary
-        const allBillings = await prisma.billing.findMany({ where });
-        const totalTagihan = allBillings.reduce((sum, b) => sum + b.jumlah, 0);
-        const totalBelumLunas = allBillings.filter(b => b.statusBayar === 'Belum Lunas').reduce((sum, b) => sum + b.jumlah, 0);
-        const totalLunas = allBillings.filter(b => b.statusBayar === 'Lunas').reduce((sum, b) => sum + b.jumlah, 0);
+        // Process aggregates into summary
+        const totalTagihan = aggregates._sum.jumlah || 0;
+        let totalBelumLunas = 0;
+        let totalLunas = 0;
+        let countBelumLunas = 0;
+        let countLunas = 0;
+
+        for (const group of statusCounts) {
+          if (group.statusBayar === 'Belum Lunas') {
+            totalBelumLunas = group._sum.jumlah || 0;
+            countBelumLunas = group._count._all;
+          } else if (group.statusBayar === 'Lunas') {
+            totalLunas = group._sum.jumlah || 0;
+            countLunas = group._count._all;
+          }
+        }
 
         return res.status(200).json({
           data: billings,
@@ -84,8 +108,8 @@ async function handler(
             totalTagihan,
             totalBelumLunas,
             totalLunas,
-            countBelumLunas: allBillings.filter(b => b.statusBayar === 'Belum Lunas').length,
-            countLunas: allBillings.filter(b => b.statusBayar === 'Lunas').length,
+            countBelumLunas,
+            countLunas,
           },
           pagination: {
             page: parseInt(page as string),

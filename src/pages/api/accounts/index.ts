@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { validateBody, sendValidationError } from '@/lib/validation';
-import { getCachedAccounts, invalidateAccountsCache } from '@/lib/cache';
+import { invalidateAccountsCache } from '@/lib/cache';
 import { 
   getIdempotencyResult, 
   setIdempotencyResult,

@@ -10,6 +10,17 @@ interface AccountRecord {
   saldo: number;
 }
 
+interface DateRangeFilter {
+  gte?: Date;
+  lte?: Date;
+}
+
+interface JournalWhereClause {
+  journalEntry?: {
+    tanggal: DateRangeFilter;
+  };
+}
+
 async function handler(
   req: AuthenticatedRequest,
   res: NextApiResponse
@@ -21,7 +32,7 @@ async function handler(
   try {
     const { bulan, tahun } = req.query;
 
-    const journalWhereDate: any = {};
+    const journalWhereDate: DateRangeFilter = {};
     
     if (bulan && tahun) {
       const month = parseInt(bulan as string, 10);
@@ -46,7 +57,7 @@ async function handler(
     // If there's a strict `gte` start date, we likely only want net movement in that specific period.
     const shouldIncludeSeededSaldo = !journalWhereDate.gte;
 
-    const queryWhere: any = {};
+    const queryWhere: JournalWhereClause = {};
     if (journalWhereDate.gte || journalWhereDate.lte) {
       queryWhere.journalEntry = { tanggal: journalWhereDate };
     }

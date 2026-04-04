@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { CheckCircle, XCircle, Eye, Clock, AlertTriangle, FileText, TrendingUp, TrendingDown } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, Clock, TrendingUp, TrendingDown } from 'lucide-react';
 import { formatCurrency, formatShortDate } from '@/lib/utils';
 
 interface Cashflow {
@@ -35,7 +35,7 @@ interface Account {
 }
 
 export default function ApprovePage() {
-  const { isAdmin, user } = useAuth();
+  const { isAdmin } = useAuth();
   const [cashflows, setCashflows] = useState<Cashflow[]>([]);
   const [accounts, setAccounts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -127,8 +127,7 @@ export default function ApprovePage() {
   };
 
   // Compute derived values before conditional returns
-  const { totalPending, totalDebit, totalKredit } = useMemo(() => ({
-    totalPending: cashflows.reduce((sum, cf) => sum + cf.debit + cf.kredit, 0),
+  const { totalDebit, totalKredit } = useMemo(() => ({
     totalDebit: cashflows.reduce((sum, cf) => sum + cf.debit, 0),
     totalKredit: cashflows.reduce((sum, cf) => sum + cf.kredit, 0),
   }), [cashflows]);

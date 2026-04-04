@@ -275,20 +275,23 @@ async function processInstallmentPayment(
 
     // 8. If there's a linked billing, check if all installments are paid
     if (installment.billingId) {
-      const paidInstallments = await tx.installment.count({
-        where: {
-          billingId: installment.billingId,
-          status: 'Bayar',
-        },
+      // Use single query with groupBy to get both counts
+      const statusCounts = await tx.installment.groupBy({
+        by: ['status'],
+        where: { billingId: installment.billingId },
+        _count: { _all: true },
       });
 
-      const totalInstallments = await tx.installment.count({
-        where: {
-          billingId: installment.billingId,
-        },
-      });
+      let paidCount = 0;
+      let totalCount = 0;
+      for (const group of statusCounts) {
+        totalCount += group._count._all;
+        if (group.status === 'Bayar') {
+          paidCount = group._count._all;
+        }
+      }
 
-      if (paidInstallments === totalInstallments) {
+      if (paidCount === totalCount && totalCount > 0) {
         await tx.billing.update({
           where: { id: installment.billingId },
           data: {

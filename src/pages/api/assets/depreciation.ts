@@ -6,6 +6,7 @@
 
 import type { NextApiResponse } from 'next';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuth, AuthenticatedRequest } from '@/lib/withAuth';
 import {
@@ -277,59 +278,69 @@ async function processDepreciation(
         },
       });
 
-      // Create journal entry lines
-      for (const entry of allEntries) {
-        await tx.journalEntryLine.create({
+      // Create journal entry lines using createMany for better performance
+      const journalLineData = allEntries.map(entry => ({
+        journalEntryId: journalEntry.id,
+        kodeAkun: entry.kodeAkun,
+        debit: entry.debit,
+        kredit: entry.kredit,
+      }));
+      
+      await tx.journalEntryLine.createMany({
+        data: journalLineData,
+      });
+
+      // Fetch accounts needed for balance updates
+      const entryKodeAkuns = [...new Set(allEntries.map(e => e.kodeAkun))];
+      const accounts = await tx.account.findMany({
+        where: { kodeAkun: { in: entryKodeAkuns } },
+      });
+      const accountMap = new Map(accounts.map(a => [a.kodeAkun, a]));
+
+      // Update account balances in parallel
+      const accountUpdates = allEntries.map(entry => {
+        const account = accountMap.get(entry.kodeAkun);
+        if (!account) return null;
+
+        const isDebitNormal = ['Asset', 'Expense'].includes(account.tipeAkun);
+        let saldoChange = 0;
+
+        if (isDebitNormal) {
+          saldoChange = entry.debit - entry.kredit;
+        } else {
+          saldoChange = entry.kredit - entry.debit;
+        }
+
+        return tx.account.update({
+          where: { kodeAkun: entry.kodeAkun },
           data: {
-            journalEntryId: journalEntry.id,
-            kodeAkun: entry.kodeAkun,
-            debit: entry.debit,
-            kredit: entry.kredit,
+            saldo: { increment: saldoChange },
           },
         });
+      }).filter(Boolean);
 
-        // Update account balances
-        const account = await tx.account.findUnique({
-          where: { kodeAkun: entry.kodeAkun },
-        });
+      await Promise.all(accountUpdates);
 
-        if (account) {
-          const isDebitNormal = ['Asset', 'Expense'].includes(account.tipeAkun);
-          let saldoChange = 0;
-
-          if (isDebitNormal) {
-            saldoChange = entry.debit - entry.kredit;
-          } else {
-            saldoChange = entry.kredit - entry.debit;
-          }
-
-          await tx.account.update({
-            where: { kodeAkun: entry.kodeAkun },
-            data: {
-              saldo: { increment: saldoChange },
-            },
-          });
-        }
-      }
-
-        // Create cashflow entries for tracking
-      for (const entry of allEntries) {
+      // Create cashflow entries using createMany for better performance
+      const cashflowData: Prisma.CashflowCreateManyInput[] = allEntries.map(entry => {
         const isBankAccount =
           entry.kodeAkun.startsWith('111') || entry.kodeAkun === '102';
         const source = isBankAccount ? 'bank' : 'kas';
 
-        await tx.cashflow.create({
-          data: {
-            tanggal: new Date(year, 11, 31),
-            keterangan: entry.keterangan,
-            kodeAkun: entry.kodeAkun,
-            kategori: 'penyusutan',
-            debit: entry.debit,
-            kredit: entry.kredit,
-            source,
-          } as never,
-        });
-      }
+        return {
+          tanggal: new Date(year, 11, 31),
+          keterangan: entry.keterangan,
+          kodeAkun: entry.kodeAkun,
+          kategori: 'penyusutan',
+          debit: entry.debit,
+          kredit: entry.kredit,
+          source,
+        };
+      });
+      
+      await tx.cashflow.createMany({
+        data: cashflowData,
+      });
     });
 
     return {
