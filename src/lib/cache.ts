@@ -59,7 +59,7 @@ export async function getCachedCashflows(page: number = 1, limit: number = 10) {
 /**
  * No-op cache invalidation functions since we querying directly now.
  */
-export function revalidateCache(tag: string): void {}
+export function revalidateCache(_tag: string): void {}
 export function invalidateAccountsCache(): void {}
 export function invalidateReportsCache(): void {}
 export function invalidateDashboardCache(): void {}
