@@ -1,6 +1,6 @@
 import Link from "next/link"
 import Image from "next/image"
-import { useRouter } from "next/router"
+import { usePathname } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { useState, useEffect } from "react"
 import {
@@ -115,7 +115,7 @@ function isActive(pathname: string, item: NavItem): boolean {
 }
 
 export function AppSidebar() {
-  const router = useRouter()
+  const pathname = usePathname()
   const { user, isAdmin, logout } = useAuth()
   const { state, toggleSidebar } = useSidebar()
   const isExpanded = state === "expanded"
@@ -132,12 +132,12 @@ export function AppSidebar() {
       setExpandedGroups(prev => {
         const next = { ...prev }
         navGroups.forEach(group => {
-          if (group.items.some(item => isActive(router.pathname, item))) {
+          if (group.items.some(item => isActive(pathname || "", item))) {
             next[group.label] = true
           }
         })
         bottomNav.forEach(group => {
-          if (group.items.some(item => isActive(router.pathname, item))) {
+          if (group.items.some(item => isActive(pathname || "", item))) {
             next[group.label] = true
           }
         })
@@ -147,14 +147,14 @@ export function AppSidebar() {
     }, 0)
     
     return () => clearTimeout(timer)
-  }, [router.pathname])
+  }, [pathname])
 
   const toggleGroup = (label: string) => {
     setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }))
   }
 
   const renderNavItem = (item: NavItem) => {
-    const active = isActive(router.pathname, item)
+    const active = isActive(pathname || "", item)
     return (
       <SidebarMenuItem key={item.name}>
         <SidebarMenuButton 
@@ -238,7 +238,7 @@ export function AppSidebar() {
                       {isExpandedOpen && (
                         <div className={`flex flex-col gap-1 ${isExpanded ? 'ml-3' : 'items-center'}`}>
                           {group.items.map(item => {
-                            const active = isActive(router.pathname, item)
+                            const active = isActive(pathname || "", item)
                             return (
                               <SidebarMenuItem key={item.name}>
                                 <SidebarMenuButton 
@@ -294,7 +294,7 @@ export function AppSidebar() {
                       {isExpandedOpen && (
                         <div className={`flex flex-col gap-1 ${isExpanded ? 'ml-3' : 'items-center'}`}>
                           {group.items.map(item => {
-                            const active = isActive(router.pathname, item)
+                            const active = isActive(pathname || "", item)
                             return (
                               <SidebarMenuItem key={item.name}>
                                 <SidebarMenuButton 

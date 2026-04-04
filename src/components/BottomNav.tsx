@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/router';
+import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   ArrowRightLeft,
@@ -42,7 +42,7 @@ const adminNavItems = [
 ];
 
 export function BottomNav() {
-  const router = useRouter();
+  const pathname = usePathname();
   const { isAdmin } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -76,7 +76,7 @@ export function BottomNav() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             {allMoreItems.map((item) => {
-              const isActive = router.pathname === item.href;
+              const isActive = pathname === item.href;
               return (
                 <Link
                   key={item.name}
@@ -103,7 +103,7 @@ export function BottomNav() {
       <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
         <div className="flex items-center justify-around h-16 px-1 max-w-lg mx-auto">
           {mainNavItems.map((item) => {
-            const isActive = router.pathname === item.href;
+            const isActive = pathname === item.href;
             return (
               <Link
                 key={item.name}

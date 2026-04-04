@@ -1,6 +1,7 @@
 import { betterAuth, BetterAuthOptions } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { customSession } from "better-auth/plugins";
+import { nextCookies } from "better-auth/next-js";
 import prisma from "./prisma";
 
 // Define options separately for type inference
@@ -74,6 +75,7 @@ export const auth = betterAuth({
         session,
       };
     }, options),
+    nextCookies(), // MUST be last plugin for App Router support
   ],
 });
 

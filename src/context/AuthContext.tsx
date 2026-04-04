@@ -1,7 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { ROLES, type Role } from '@/lib/permissions';
+import { useRouter } from 'next/navigation';
+import { type Role } from '@/lib/permissions';
+import { signIn, signOut } from '@/lib/auth-client';
 
 export type UserRole = Role;
 
@@ -24,7 +26,7 @@ interface AuthContextType {
   canApprove: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   continueAsGuest: () => void;
   hasPermission: (action: PermissionAction) => boolean;
   refreshSession: () => Promise<boolean>;
@@ -48,27 +50,26 @@ function checkPermission(role: UserRole | null, action: PermissionAction): boole
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
-  // Check session on mount
+  // Check session on mount using Better Auth client
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch('/api/auth/get-session', {
-          credentials: 'include',
-        });
+        // Import authClient dynamically to avoid SSR issues
+        const { authClient } = await import('@/lib/auth-client');
+        const { data } = await authClient.getSession();
         
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.user) {
-            setUser({
-              id: data.user.id,
-              email: data.user.email,
-              name: data.user.name || '',
-              // Role is now properly included via customSession plugin
-              role: (data.user.role as Role) || 'user',
-            });
-          }
-        }
+      if (data?.user) {
+        const userWithRole = data.user as AuthUser & { role?: string };
+        setUser({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name || '',
+          role: (userWithRole.role as Role) || 'user',
+        });
+        return true;
+      }
       } catch (error) {
         console.error('Auth check failed:', error);
       } finally {
@@ -81,21 +82,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
+      const result = await signIn.email({
+        email,
+        password,
+        callbackURL: '/',
       });
-      
-      const data = await res.json();
 
-      if (res.ok && data.user) {
+      if (result.error) {
+        console.error('Login failed:', result.error);
+        return false;
+      }
+
+      // Get session after successful login
+      const { data } = await result;
+      if (data?.user) {
+        const userWithRole = data.user as unknown as AuthUser & { role?: string };
         setUser({
           id: data.user.id,
           email: data.user.email,
           name: data.user.name || '',
-          role: (data.user.role as Role) || 'user',
+          role: (userWithRole.role as Role) || 'user',
         });
         return true;
       }
@@ -109,38 +115,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/sign-out', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await signOut();
+      setUser(null);
+      router.push('/login');
     } catch (error) {
       console.error('Logout failed:', error);
+      // Force redirect even if signOut fails
+      setUser(null);
+      router.push('/login');
     }
-    setUser(null);
-    window.location.href = '/login';
   };
 
   const refreshSession = async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/auth/get-session', {
-        credentials: 'include',
-      });
+      const { authClient } = await import('@/lib/auth-client');
+      const { data } = await authClient.getSession();
       
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.user) {
-          setUser({
-            id: data.user.id,
-            email: data.user.email,
-            name: data.user.name || '',
-            role: (data.user.role as Role) || 'user',
-          });
-          return true;
-        }
+      if (data?.user) {
+        setUser({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name || '',
+          role: (data.user.role as Role) || 'user',
+        });
+        return true;
       }
+      
+      setUser(null);
       return false;
     } catch (error) {
       console.error('Session refresh failed:', error);
+      setUser(null);
       return false;
     }
   };
