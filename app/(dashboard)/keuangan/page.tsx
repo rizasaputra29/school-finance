@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,20 +69,28 @@ export default function KeuanganPage() {
         fetch('/api/accounts'),
         fetch('/api/keuangan/mutasi?limit=20'),
       ]);
-      const accJson = await accRes.json();
-      const mutasiJson = await mutasiRes.json();
+      const accResult = await accRes.json();
+      const mutasiResult = await mutasiRes.json();
 
-      if (accRes.ok) {
-        const accs = accJson.data || accJson;
+      if (!accResult.success) {
+        toast.error(accResult.error?.message || 'Gagal memuat data akun');
+      } else {
+        const accs = accResult.data || [];
         setAccounts(Array.isArray(accs) ? accs : []);
         setKasAccount(Array.isArray(accs) ? accs.find((a: Account) => a.kodeAkun === '101') || null : null);
         setBankAccount(Array.isArray(accs) ? accs.find((a: Account) => a.kodeAkun === '102') || null : null);
       }
-      if (mutasiRes.ok) {
-        setMutasiHistory(mutasiJson.data || []);
+      
+      if (!mutasiResult.success) {
+        toast.error(mutasiResult.error?.message || 'Gagal memuat data mutasi');
+      } else {
+        setMutasiHistory(mutasiResult.data || []);
       }
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+    } catch { 
+      toast.error('Terjadi kesalahan saat memuat data');
+    } finally { 
+      setLoading(false); 
+    }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -99,13 +108,19 @@ export default function KeuanganPage() {
           jumlah: parseFloat(transferForm.jumlah) || 0,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'Gagal transfer'); return; }
-      setSuccess(json.message || 'Transfer berhasil');
+      const result = await res.json();
+      if (!result.success) { 
+        setError(result.error?.message || 'Gagal transfer'); 
+        return; 
+      }
+      setSuccess(result.message || 'Transfer berhasil');
       setIsTransferOpen(false);
       setTransferForm(f => ({ ...f, jumlah: '', keterangan: '' }));
       fetchData();
-    } catch { setError('Terjadi kesalahan'); }
+      toast.success('Transfer berhasil');
+    } catch { 
+      setError('Terjadi kesalahan'); 
+    }
   };
 
   // Group accounts by type for COA tab

@@ -6,12 +6,14 @@
  * - Only one opening balance per period/year
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { formatPeriode, roundAmount } from '@/lib/accounting/validation';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -209,14 +211,13 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       });
 
-      return NextResponse.json({
-        data: openingBalances,
-        count: openingBalances.length,
+      return success(openingBalances, {
+        message: 'Data saldo awal berhasil diambil',
+        meta: { count: openingBalances.length },
       });
     } catch (error) {
       console.error('Opening Balance API error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -229,10 +230,12 @@ export async function POST(request: NextRequest) {
       // Create opening balance
       const validation = createOpeningBalanceSchema.safeParse(body);
       if (!validation.success) {
-        return NextResponse.json({
-          error: 'Validasi gagal',
-          details: validation.error.errors,
-        }, { status: 400 });
+        return errors.validation(
+          validation.error.errors.map((err) => ({
+            field: err.path.join('.'),
+            message: err.message,
+          }))
+        );
       }
 
       const { tanggal, entries, periode: requestedPeriode } = validation.data;
@@ -244,10 +247,7 @@ export async function POST(request: NextRequest) {
       // Validate entries
       const entryValidation = validateOpeningBalanceEntries(entries);
       if (!entryValidation.isValid) {
-        return NextResponse.json({
-          error: 'Validasi entri gagal',
-          details: entryValidation.errors,
-        }, { status: 422 });
+        return errors.validation(entryValidation.errors);
       }
 
       // Calculate totals
@@ -419,65 +419,49 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      return NextResponse.json({
-        success: true,
-        data: {
-          id: result.journal.id,
-          reference: result.journal.reference,
-          tanggal: result.journal.tanggal,
-          keterangan: result.journal.keterangan,
-          status: result.journal.status,
-          periode: transactionPeriode,
-          entries: [
-            ...result.entries.map(e => ({
-              kodeAkun: e.kodeAkun,
-              debit: e.debit,
-              kredit: e.kredit,
-            })),
-            {
-              kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT,
-              debit: 0,
-              kredit: roundAmount(totalDebit),
-            },
-          ],
-          totalDebit: roundAmount(totalDebit),
-          totalKredit: roundAmount(totalDebit),
-        },
+      return success({
+        id: result.journal.id,
+        reference: result.journal.reference,
+        tanggal: result.journal.tanggal,
+        keterangan: result.journal.keterangan,
+        status: result.journal.status,
+        periode: transactionPeriode,
+        entries: [
+          ...result.entries.map(e => ({
+            kodeAkun: e.kodeAkun,
+            debit: e.debit,
+            kredit: e.kredit,
+          })),
+          {
+            kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT,
+            debit: 0,
+            kredit: roundAmount(totalDebit),
+          },
+        ],
+        totalDebit: roundAmount(totalDebit),
+        totalKredit: roundAmount(totalDebit),
+      }, {
         message: `Saldo awal berhasil dibuat untuk periode ${transactionPeriode}`,
-      }, { status: 201 });
+        status: 201,
+      });
     } catch (error) {
       console.error('Opening Balance API error:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       
       // Handle specific error codes
       if (message.includes('sudah ada')) {
-        return NextResponse.json({
-          error: {
-            code: 'OPENING_BALANCE_EXISTS',
-            message,
-          },
-        }, { status: 422 });
+        return errors.conflict(message);
       }
       
       if (message.includes('tidak ditemukan')) {
-        return NextResponse.json({
-          error: {
-            code: 'ACCOUNT_NOT_FOUND',
-            message,
-          },
-        }, { status: 422 });
+        return errors.notFound('Akun');
       }
       
       if (message.includes('bukan akun')) {
-        return NextResponse.json({
-          error: {
-            code: 'INVALID_ACCOUNT_TYPE',
-            message,
-          },
-        }, { status: 422 });
+        return errors.validation([{ message }]);
       }
       
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

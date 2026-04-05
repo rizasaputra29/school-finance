@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,14 +71,21 @@ export default function BukuBesarPage() {
   useEffect(() => {
     fetch('/api/accounts')
       .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setAccounts(data);
+      .then(result => {
+        if (!result.success) {
+          toast.error(result.error?.message || 'Gagal memuat data akun');
+          return;
+        }
+        if (Array.isArray(result.data)) {
+          setAccounts(result.data);
         } else {
-          console.error('Expected accounts array, got:', data);
+          console.error('Expected accounts array, got:', result);
         }
       })
-      .catch(e => console.error('Error fetching accounts:', e));
+      .catch(e => {
+        console.error('Error fetching accounts:', e);
+        toast.error('Terjadi kesalahan saat memuat data akun');
+      });
   }, []);
 
 
@@ -104,17 +112,17 @@ export default function BukuBesarPage() {
       else params.append('kodeAkun', 'Semua');
       
       const res = await fetch(`/api/reports/buku-besar?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setReports(data.reports || []);
-        setReportParam({
-          start: startDate,
-          end: endDate
-        });
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Gagal memuat buku besar');
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat buku besar');
+        return;
       }
+      
+      setReports(result.data.reports || []);
+      setReportParam({
+        start: startDate,
+        end: endDate
+      });
     } catch (error) {
       console.error(error);
     } finally {

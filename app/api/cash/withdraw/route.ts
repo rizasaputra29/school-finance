@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { validateBody } from '@/lib/validation';
+import { success, errors } from '@/lib/api-response';
 
 // Validation schema for cash withdrawal
 const withdrawSchema = z.object({
@@ -42,11 +43,8 @@ async function validateCashAccounts(): Promise<{ valid: boolean; error?: string 
   return { valid: true };
 }
 
-function sendValidationErrorResponse(errors: Array<{ field: string; message: string }>) {
-  return NextResponse.json({
-    error: 'Validation failed',
-    validationErrors: errors,
-  }, { status: 400 });
+function sendValidationErrorResponse(validationErrors: Array<{ field: string; message: string }>) {
+  return errors.validation(validationErrors);
 }
 
 export async function POST(request: NextRequest) {
@@ -56,15 +54,7 @@ export async function POST(request: NextRequest) {
     // Rate limiting for create operations
     const rateLimitResult = rateLimit(`withdraw:${ip}`, RATE_LIMITS.create);
     if (!rateLimitResult.success) {
-      return NextResponse.json({
-        error: formatRateLimitError(rateLimitResult),
-        code: 'RATE_LIMIT_EXCEEDED'
-      }, {
-        status: 429,
-        headers: {
-          'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString()
-        }
-      });
+      return errors.rateLimit(formatRateLimitError(rateLimitResult));
     }
 
     const body = await request.json();
@@ -81,7 +71,7 @@ export async function POST(request: NextRequest) {
     // Validate accounts exist and have sufficient balance
     const accountValidation = await validateCashAccounts();
     if (!accountValidation.valid) {
-      return NextResponse.json({ error: accountValidation.error }, { status: 400 });
+      return errors.badRequest(accountValidation.error || 'Validasi akun gagal');
     }
 
     // Get current bank balance
@@ -90,9 +80,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!bankAccount || bankAccount.saldo < withdrawalAmount) {
-      return NextResponse.json({
-        error: `Saldo Bank tidak mencukupi. Saldo saat ini: ${bankAccount?.saldo || 0}`,
-      }, { status: 400 });
+      return errors.badRequest(`Saldo Bank tidak mencukupi. Saldo saat ini: ${bankAccount?.saldo || 0}`);
     }
 
     // Process the withdrawal as double-entry transaction
@@ -138,13 +126,12 @@ export async function POST(request: NextRequest) {
       return { kasEntry, bankEntry };
     });
 
-    return NextResponse.json({
-      success: true,
+    return success({
+      kas: result.kasEntry,
+      bank: result.bankEntry,
+    }, {
       message: `Penarikan sebesar ${withdrawalAmount} berhasil`,
-      data: {
-        kas: result.kasEntry,
-        bank: result.bankEntry,
-      },
-    }, { status: 201 });
+      status: 201,
+    });
   });
 }

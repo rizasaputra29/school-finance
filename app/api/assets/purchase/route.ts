@@ -8,11 +8,13 @@
  * - Non-asset: Debit Beban (Expense account), Credit Kas/Bank (payment)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -459,41 +461,42 @@ export async function GET(request: NextRequest) {
       else if (isAsset === 'false') total = totalNonAssets;
       else total = totalAssets + totalNonAssets;
 
-      return NextResponse.json({
-        data: {
-          assets: assetPurchases.map((a) => ({
-            id: a.id,
-            nama: a.nama,
-            kategori: a.kategori,
-            jumlah: a.hargaPerolehan,
-            tanggal: a.tanggalPerolehan,
-            lokasi: a.lokasi,
-            isAsset: true,
-          })),
-          expenses: nonAssetPurchases.map((c) => ({
-            id: c.id,
-            nama: c.keterangan,
-            kategori: c.kategori,
-            jumlah: c.debit,
-            tanggal: c.tanggal,
-            isAsset: false,
-          })),
-        },
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          totalPages: Math.ceil(total / parseInt(limit)),
-        },
+      return success({
+        assets: assetPurchases.map((a) => ({
+          id: a.id,
+          nama: a.nama,
+          kategori: a.kategori,
+          jumlah: a.hargaPerolehan,
+          tanggal: a.tanggalPerolehan,
+          lokasi: a.lokasi,
+          isAsset: true,
+        })),
+        expenses: nonAssetPurchases.map((c) => ({
+          id: c.id,
+          nama: c.keterangan,
+          kategori: c.kategori,
+          jumlah: c.debit,
+          tanggal: c.tanggal,
+          isAsset: false,
+        })),
         categories: {
           assets: ASSET_CATEGORIES,
           nonAssets: NON_ASSET_CATEGORIES,
         },
+      }, {
+        message: 'Assets retrieved successfully',
+        meta: {
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total,
+            totalPages: Math.ceil(total / parseInt(limit)),
+          },
+        },
       });
     } catch (error) {
       console.error('Asset Purchase API error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -506,14 +509,8 @@ export async function POST(request: NextRequest) {
       // Rate limiting for payment operations
       const rateLimitResult = rateLimit(`purchase:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED',
-        }, { 
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-          }
+        return errors.rateLimit(formatRateLimitError(rateLimitResult), {
+          'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
         });
       }
 
@@ -522,13 +519,12 @@ export async function POST(request: NextRequest) {
       // Validate request body
       const validation = purchaseSchema.safeParse(body);
       if (!validation.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          validationErrors: validation.error.errors.map((err) => ({
+        return errors.validation(
+          validation.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const data = validation.data;
@@ -539,22 +535,20 @@ export async function POST(request: NextRequest) {
           return processPurchase(tx, data);
         });
 
-        return NextResponse.json({
-          success: true,
+        return success(result, {
           message: isAssetCategory(data.kategori)
             ? `Pembelian aktiva "${data.nama}" berhasil`
             : `Pengeluaran "${data.nama}" berhasil dicatat`,
-          data: result,
-        }, { status: 201 });
+          status: 201,
+        });
       } catch (error) {
         console.error('Purchase transaction error:', error);
         const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+        return errors.badRequest(message);
       }
     } catch (error) {
       console.error('Asset Purchase API error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

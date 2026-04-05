@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -94,10 +95,12 @@ export default function Dashboard() {
       setChartLoading(true);
       try {
         const res = await fetch(`/api/dashboard?chart=true&bulan=${selectedBulan}&tahun=${selectedTahun}`);
-        if (res.ok) {
-          const data = await res.json();
-          setChartData(data);
+        const result = await res.json();
+        if (!result.success) {
+          toast.error(result.error?.message || 'Gagal memuat data grafik');
+          return;
         }
+        setChartData(result.data);
       } catch (error) {
         console.error('Failed to fetch chart data:', error);
       } finally {
@@ -111,10 +114,12 @@ export default function Dashboard() {
     const fetchData = async () => {
       try {
         const res = await fetch('/api/dashboard');
-        if (res.ok) {
-          const dashboardData = await res.json();
-          setData(dashboardData);
+        const result = await res.json();
+        if (!result.success) {
+          toast.error(result.error?.message || 'Gagal memuat dashboard');
+          return;
         }
+        setData(result.data);
       } catch (error) {
         console.error('Failed to fetch dashboard:', error);
       } finally {

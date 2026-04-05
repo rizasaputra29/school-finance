@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { TrendingUp, TrendingDown, DollarSign, BarChart3 } from 'lucide-react';
@@ -60,10 +61,17 @@ export default function PerformaPage() {
     setLoading(true);
     try {
       const res = await fetch(`/api/performa?tahun=${tahun}`);
-      const json = await res.json();
-      if (res.ok) setData(json);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data performa');
+        return;
+      }
+      setData(result.data);
+    } catch { 
+      toast.error('Terjadi kesalahan saat memuat data performa');
+    } finally { 
+      setLoading(false); 
+    }
   }, [tahun]);
 
   useEffect(() => { fetchData(); }, [fetchData]);

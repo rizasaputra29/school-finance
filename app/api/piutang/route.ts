@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // Account codes for double-entry
 const BANK_ACCOUNT_CODE = '102'; // Bank
@@ -367,13 +369,13 @@ export async function GET(request: NextRequest) {
 
       const summary = calculatePiutangSummary(piutangItems);
 
-      return NextResponse.json({
-        data: piutangItems,
-        summary,
+      return success(piutangItems, {
+        message: 'Data piutang berhasil diambil',
+        meta: { summary },
       });
     } catch (error) {
       console.error('Piutang API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -388,15 +390,7 @@ export async function POST(request: NextRequest) {
       // Auto-create piutang from overdue installments
       const rateLimitResult = rateLimit(`piutang-auto:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({ 
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED'
-        }, { 
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-          }
-        });
+        return errors.rateLimit(formatRateLimitError(rateLimitResult));
       }
 
       // Check action type
@@ -406,23 +400,20 @@ export async function POST(request: NextRequest) {
         // Auto-create piutang: mark overdue installments as Jatuh Tempo
         const count = await autoCreatePiutangFromOverdueInstallments();
         
-        return NextResponse.json({
-          success: true,
+        return success({ count }, {
           message: `${count} piutang berhasil dibuat dari installment overdue`,
-          count,
         });
       }
 
       // Otherwise, validate as payment
       const validationErrors = payPiutangSchema.safeParse(body);
       if (!validationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: validationErrors.error.errors.map((err) => ({
+        return errors.validation(
+          validationErrors.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const { installmentId, jumlahBayar, tanggalBayar } = validationErrors.data;
@@ -431,7 +422,7 @@ export async function POST(request: NextRequest) {
       const paymentDate = tanggalBayar ? new Date(tanggalBayar) : new Date();
 
       if (isNaN(amount) || amount <= 0) {
-        return NextResponse.json({ error: 'Jumlah pembayaran harus lebih dari 0' }, { status: 400 });
+        return errors.validation([{ field: 'jumlahBayar', message: 'Jumlah pembayaran harus lebih dari 0' }]);
       }
 
       try {
@@ -441,22 +432,20 @@ export async function POST(request: NextRequest) {
           paymentDate
         );
 
-        return NextResponse.json({
-          success: true,
+        return success({
+          installment: result.installment,
+          cashflows: result.cashflows,
+          student: result.studentUpdated,
+        }, {
           message: 'Pembayaran piutang berhasil!',
-          data: {
-            installment: result.installment,
-            cashflows: result.cashflows,
-            student: result.studentUpdated,
-          },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+        return errors.badRequest(message);
       }
     } catch (error) {
       console.error('Piutang API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -469,13 +458,12 @@ export async function PUT(request: NextRequest) {
       // Manual payment: pay partial or full amount to piutang
       const validationErrors = payPiutangSchema.safeParse(body);
       if (!validationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: validationErrors.error.errors.map((err) => ({
+        return errors.validation(
+          validationErrors.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const { installmentId, jumlahBayar, tanggalBayar } = validationErrors.data;
@@ -484,7 +472,7 @@ export async function PUT(request: NextRequest) {
       const paymentDate = tanggalBayar ? new Date(tanggalBayar) : new Date();
 
       if (isNaN(amount) || amount <= 0) {
-        return NextResponse.json({ error: 'Jumlah pembayaran harus lebih dari 0' }, { status: 400 });
+        return errors.validation([{ field: 'jumlahBayar', message: 'Jumlah pembayaran harus lebih dari 0' }]);
       }
 
       try {
@@ -494,22 +482,20 @@ export async function PUT(request: NextRequest) {
           paymentDate
         );
 
-        return NextResponse.json({
-          success: true,
+        return success({
+          installment: result.installment,
+          cashflows: result.cashflows,
+          student: result.studentUpdated,
+        }, {
           message: 'Pembayaran piutang berhasil!',
-          data: {
-            installment: result.installment,
-            cashflows: result.cashflows,
-            student: result.studentUpdated,
-          },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+        return errors.badRequest(message);
       }
     } catch (error) {
       console.error('Piutang API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

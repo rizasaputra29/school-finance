@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Image from 'next/image';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,20 +51,31 @@ export default function ReportsPage() {
       try {
         // Fetch neraca data - always shows current state (no date filter needed)
         const neracaRes = await fetch('/api/reports/neraca');
-        if (neracaRes.ok) {
-          const neracaJson = await neracaRes.json();
-          setNeracaData(neracaJson);
+        const neracaResult = await neracaRes.json();
+        if (!neracaResult.success) {
+          toast.error(neracaResult.error?.message || 'Gagal memuat data neraca');
+        } else {
+          setNeracaData({
+            data: neracaResult.data,
+            summary: neracaResult.meta?.summary
+          });
         }
 
         // Fetch laba rugi data - shows ALL historical data by default (no date filter)
         // This allows seeing complete revenue/expense breakdown from all periods
         const labaRugiRes = await fetch('/api/reports/laba-rugi');
-        if (labaRugiRes.ok) {
-          const labaRugiJson = await labaRugiRes.json();
-          setLabaRugiData(labaRugiJson);
+        const labaRugiResult = await labaRugiRes.json();
+        if (!labaRugiResult.success) {
+          toast.error(labaRugiResult.error?.message || 'Gagal memuat data laba rugi');
+        } else {
+          setLabaRugiData({
+            data: labaRugiResult.data,
+            summary: labaRugiResult.meta?.summary
+          });
         }
       } catch (error) {
         console.error('Failed to fetch data:', error);
+        toast.error('Terjadi kesalahan saat memuat laporan');
       } finally {
         setIsLoading(false);
       }
@@ -76,19 +88,25 @@ export default function ReportsPage() {
     try {
       const endpoint = format === 'excel' ? '/api/export/excel' : '/api/export/pdf';
       const res = await fetch(`${endpoint}?type=${type}`);
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `laporan-${type}-${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal mengekspor laporan');
+        setIsExporting(null);
+        return;
       }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-${type}-${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+      toast.success('Laporan berhasil diekspor');
     } catch (error) {
       console.error('Export error:', error);
+      toast.error('Terjadi kesalahan saat mengekspor laporan');
     } finally {
       setIsExporting(null);
     }

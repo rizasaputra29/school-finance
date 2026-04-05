@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,14 +54,21 @@ export default function JurnalPage() {
   useEffect(() => {
     fetch('/api/accounts')
       .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setAccounts(data);
+      .then(result => {
+        if (!result.success) {
+          toast.error(result.error?.message || 'Gagal memuat data akun');
+          return;
+        }
+        if (Array.isArray(result.data)) {
+          setAccounts(result.data);
         } else {
-          console.error('Expected accounts array, got:', data);
+          console.error('Expected accounts array, got:', result);
         }
       })
-      .catch(e => console.error(e));
+      .catch(e => {
+        console.error(e);
+        toast.error('Terjadi kesalahan saat memuat data akun');
+      });
   }, []);
 
 
@@ -79,40 +87,40 @@ export default function JurnalPage() {
       // The API filters JournalEntry by date/search, so let's fetch those and filter lines client-side if needed.
 
       const res = await fetch(`/api/reports/jurnal?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        const journals = data.data || [];
-        
-        // Flatten journals to lines
-        let flattenedLines: JurnalLine[] = [];
-        for (const j of journals) {
-          for (const e of j.entries) {
-            flattenedLines.push({
-              id: `${j.id}-${e.kodeAkun}`,
-              tanggal: j.tanggal, // use journal date
-              kodeAkun: e.kodeAkun,
-              namaAkun: e.namaAkun,
-              debit: e.debit,
-              kredit: e.kredit,
-              keterangan: j.keterangan,
-              reference: j.reference
-            });
-          }
-        }
-
-        // Apply local filter for akun since backend journal search is by JournalEntry not line
-        if (kodeAkun) {
-          flattenedLines = flattenedLines.filter(l => l.kodeAkun === kodeAkun);
-        }
-
-        // Sort by date ascending to match images
-        flattenedLines.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime());
-
-        setLines(flattenedLines);
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Gagal memuat jurnal');
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat jurnal');
+        return;
       }
+      
+      const journals = result.data || [];
+      
+      // Flatten journals to lines
+      let flattenedLines: JurnalLine[] = [];
+      for (const j of journals) {
+        for (const e of j.entries) {
+          flattenedLines.push({
+            id: `${j.id}-${e.kodeAkun}`,
+            tanggal: j.tanggal, // use journal date
+            kodeAkun: e.kodeAkun,
+            namaAkun: e.namaAkun,
+            debit: e.debit,
+            kredit: e.kredit,
+            keterangan: j.keterangan,
+            reference: j.reference
+          });
+        }
+      }
+
+      // Apply local filter for akun since backend journal search is by JournalEntry not line
+      if (kodeAkun) {
+        flattenedLines = flattenedLines.filter(l => l.kodeAkun === kodeAkun);
+      }
+
+      // Sort by date ascending to match images
+      flattenedLines.sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime());
+
+      setLines(flattenedLines);
     } catch (error) {
       console.error(error);
     } finally {

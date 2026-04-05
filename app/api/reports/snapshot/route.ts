@@ -4,11 +4,12 @@
  * Snapshot reports at closing - cannot change, only regenerate via reopen
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams, AuthUser } from '@/lib/with-auth';
 import { roundAmount } from '@/lib/accounting/validation';
+import { success, errors } from '@/lib/api-response';
 
 // ============================================================================
 // Validation Schemas
@@ -155,7 +156,7 @@ export async function GET(request: NextRequest) {
       const { periode, tipe } = query;
 
       if (!periode) {
-        return NextResponse.json({ error: 'Periode wajib diisi' }, { status: 400 });
+        return errors.validation([{ field: 'periode', message: 'Periode wajib diisi' }]);
       }
 
       const where: Record<string, unknown> = { periode };
@@ -169,9 +170,8 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       });
 
-      return NextResponse.json({
-        periode,
-        snapshots: snapshots.map((s) => ({
+      return success(
+        snapshots.map((s) => ({
           id: s.id,
           tipe: s.tipe,
           totalDebit: s.totalDebit,
@@ -179,7 +179,11 @@ export async function GET(request: NextRequest) {
           createdAt: s.createdAt,
           createdBy: s.createdBy,
         })),
-      });
+        {
+          message: 'Data snapshot berhasil diambil',
+          meta: { periode },
+        }
+      );
     },
     { requireAdmin: true }
   );
@@ -195,12 +199,11 @@ export async function POST(request: NextRequest) {
       const body = await request.json();
       const validation = createSnapshotSchema.safeParse(body);
       if (!validation.success) {
-        return NextResponse.json(
-          {
-            error: 'Validasi gagal',
-            details: validation.error.errors,
-          },
-          { status: 400 }
+        return errors.validation(
+          validation.error.errors.map((err) => ({
+            field: err.path.join('.'),
+            message: err.message,
+          }))
         );
       }
 
@@ -212,30 +215,23 @@ export async function POST(request: NextRequest) {
       });
 
       if (!periodRecord || periodRecord.status !== 'closed') {
-        return NextResponse.json(
-          {
-            error: `Periode ${periode} belum ditutup. Snapshot hanya bisa dibuat untuk periode yang sudah ditutup.`,
-          },
-          { status: 422 }
-        );
+        return errors.badRequest(`Periode ${periode} belum ditutup. Snapshot hanya bisa dibuat untuk periode yang sudah ditutup.`);
       }
 
       // Create snapshot
       const result = await createSnapshot(periode, tipe, user.id);
 
       if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 500 });
+        return errors.internal(result.error || 'Gagal membuat snapshot');
       }
 
-      return NextResponse.json(
-        {
-          success: true,
-          message: `Snapshot ${tipe} untuk periode ${periode} berhasil dibuat`,
-          periode,
-          tipe,
-        },
-        { status: 201 }
-      );
+      return success({
+        periode,
+        tipe,
+      }, {
+        message: `Snapshot ${tipe} untuk periode ${periode} berhasil dibuat`,
+        status: 201,
+      });
     },
     { requireAdmin: true }
   );
@@ -249,23 +245,17 @@ export async function DELETE(request: NextRequest) {
       // Only owner can reopen closed periods
 
       if (user.role !== 'owner') {
-        return NextResponse.json(
-          {
-            error: 'Hanya owner yang dapat membuka kembali periode yang ditutup',
-          },
-          { status: 403 }
-        );
+        return errors.forbidden('Hanya owner yang dapat membuka kembali periode yang ditutup');
       }
 
       const body = await request.json();
       const validation = reopenSchema.safeParse(body);
       if (!validation.success) {
-        return NextResponse.json(
-          {
-            error: 'Validasi gagal',
-            details: validation.error.errors,
-          },
-          { status: 400 }
+        return errors.validation(
+          validation.error.errors.map((err) => ({
+            field: err.path.join('.'),
+            message: err.message,
+          }))
         );
       }
 
@@ -297,10 +287,10 @@ export async function DELETE(request: NextRequest) {
         },
       });
 
-      return NextResponse.json({
-        success: true,
-        message: `Periode ${periode} berhasil dibuka kembali. Snapshot telah dihapus.`,
+      return success({
         periode,
+      }, {
+        message: `Periode ${periode} berhasil dibuka kembali. Snapshot telah dihapus.`,
       });
     },
     { requireAdmin: true }

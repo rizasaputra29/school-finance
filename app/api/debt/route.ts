@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -321,22 +323,24 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      return NextResponse.json({
-        data: debtsWithOverdueStatus,
-        summary: {
-          totalHutangAwal: summary._sum.jumlahAwal || 0,
-          totalHutangSisa: Math.abs(summary._sum.jumlahSisa || 0), // Display as positive
-        },
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          totalPages: Math.ceil(total / parseInt(limit)),
+      return success(debtsWithOverdueStatus, {
+        message: 'Debts retrieved successfully',
+        meta: {
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total,
+            totalPages: Math.ceil(total / parseInt(limit)),
+          },
+          summary: {
+            totalHutangAwal: summary._sum.jumlahAwal || 0,
+            totalHutangSisa: Math.abs(summary._sum.jumlahSisa || 0), // Display as positive
+          },
         },
       });
     } catch (error) {
       console.error('Debt API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -355,26 +359,19 @@ export async function POST(request: NextRequest) {
         // Handle debt payment
         const rateLimitResult = rateLimit(`debt-payment:${ip}`, RATE_LIMITS.create);
         if (!rateLimitResult.success) {
-          return NextResponse.json({ 
-            error: formatRateLimitError(rateLimitResult),
-            code: 'RATE_LIMIT_EXCEEDED'
-          }, { 
-            status: 429,
-            headers: {
-              'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-            }
+          return errors.rateLimit(formatRateLimitError(rateLimitResult), {
+            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
           });
         }
 
         const validationErrors = debtPaymentSchema.safeParse(body);
         if (!validationErrors.success) {
-          return NextResponse.json({
-            error: 'Validation failed',
-            details: validationErrors.error.errors.map((err) => ({
+          return errors.validation(
+            validationErrors.error.errors.map((err) => ({
               field: err.path.join('.'),
               message: err.message,
-            })),
-          }, { status: 400 });
+            }))
+          );
         }
 
         const { debtId, jumlahPembayaran, kodeAkun, tanggalPembayaran, keterangan } = validationErrors.data;
@@ -390,45 +387,37 @@ export async function POST(request: NextRequest) {
             });
           });
 
-          return NextResponse.json({
-            success: true,
-            data: {
-              ...result,
-              jumlahSisaDisplay: Math.abs(result.jumlahSisa),
-            },
+          return success({
+            ...result,
+            jumlahSisaDisplay: Math.abs(result.jumlahSisa),
+          }, { 
             message: result.status === 'Lunas' 
               ? 'Hutang telah lunas' 
               : 'Pembayaran hutang berhasil',
-          }, { status: 201 });
+            status: 201 
+          });
         } catch (error) {
           console.error('Debt payment error:', error);
           const message = error instanceof Error ? error.message : 'Unknown error';
-          return NextResponse.json({ error: message }, { status: 400 });
+          return errors.badRequest(message);
         }
       } else {
         // Handle new debt creation
         const rateLimitResult = rateLimit(`debt-create:${ip}`, RATE_LIMITS.create);
         if (!rateLimitResult.success) {
-          return NextResponse.json({ 
-            error: formatRateLimitError(rateLimitResult),
-            code: 'RATE_LIMIT_EXCEEDED'
-          }, { 
-            status: 429,
-            headers: {
-              'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-            }
+          return errors.rateLimit(formatRateLimitError(rateLimitResult), {
+            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
           });
         }
 
         const validationErrors = createDebtSchema.safeParse(body);
         if (!validationErrors.success) {
-          return NextResponse.json({
-            error: 'Validation failed',
-            details: validationErrors.error.errors.map((err) => ({
+          return errors.validation(
+            validationErrors.error.errors.map((err) => ({
               field: err.path.join('.'),
               message: err.message,
-            })),
-          }, { status: 400 });
+            }))
+          );
         }
 
         const { 
@@ -447,11 +436,14 @@ export async function POST(request: NextRequest) {
         });
 
         if (!account) {
-          return NextResponse.json({ error: `Akun dengan kode ${kodeAkun} tidak ditemukan` }, { status: 400 });
+          return errors.notFound(`Akun dengan kode ${kodeAkun}`);
         }
 
         if (account.tipeAkun !== 'Liability') {
-          return NextResponse.json({ error: 'Akun hutang harus bertipe Liability' }, { status: 400 });
+          return errors.validation([{
+            field: 'kodeAkun',
+            message: 'Akun hutang harus bertipe Liability',
+          }]);
         }
 
         const tanggalMulaiDate = new Date(tanggalMulai);
@@ -470,23 +462,22 @@ export async function POST(request: NextRequest) {
             });
           });
 
-          return NextResponse.json({
-            success: true,
-            data: {
-              ...result,
-              jumlahSisaDisplay: Math.abs(result.jumlahSisa),
-            },
+          return success({
+            ...result,
+            jumlahSisaDisplay: Math.abs(result.jumlahSisa),
+          }, { 
             message: 'Hutang berhasil dibuat',
-          }, { status: 201 });
+            status: 201 
+          });
         } catch (error) {
           console.error('Debt creation error:', error);
           const message = error instanceof Error ? error.message : 'Unknown error';
-          return NextResponse.json({ error: message }, { status: 400 });
+          return errors.badRequest(message);
         }
       }
     } catch (error) {
       console.error('Debt API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

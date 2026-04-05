@@ -1,13 +1,15 @@
 import { z, ZodError } from 'zod';
 import type { NextApiResponse } from 'next';
 import type { AuthenticatedRequest } from './with-auth';
+import { ErrorCodes } from './error-codes';
 
 /**
  * Validation utility for API routes
  * Provides type-safe request validation using Zod schemas
+ * Updated for standard API response format
  */
 
-interface ValidationError {
+export interface ValidationError {
   field: string;
   message: string;
 }
@@ -56,15 +58,20 @@ export function validateQuery<T extends z.ZodSchema>(
 }
 
 /**
- * Sends validation error response
+ * Sends validation error response (Pages Router)
+ * @deprecated Use errors.validation() from api-response.ts for App Router
  */
 export function sendValidationError(
   res: NextApiResponse,
   errors: ValidationError[]
 ): void {
-  res.status(400).json({
-    error: 'Validation failed',
-    validationErrors: errors,
+  res.status(422).json({
+    success: false,
+    error: {
+      code: ErrorCodes.VALIDATION_ERROR,
+      message: 'Validation failed',
+      details: errors,
+    },
   });
 }
 
@@ -89,7 +96,13 @@ export async function parseBody<T extends z.ZodSchema>(
       sendValidationError(res, errors);
       return null;
     }
-    res.status(400).json({ error: 'Invalid request body' });
+    res.status(400).json({
+      success: false,
+      error: {
+        code: ErrorCodes.INVALID_REQUEST_FORMAT,
+        message: 'Invalid request body',
+      },
+    });
     return null;
   }
 }
@@ -136,3 +149,40 @@ export const accountIdSchema = z.object({
 // ==================== Type Exports ====================
 
 export type { AuthenticatedRequest };
+
+// ==================== App Router Validation Helpers ====================
+
+import { errors } from './api-response';
+import { NextResponse } from 'next/server';
+import type { ApiErrorResponse } from './api-types';
+
+/**
+ * Validates data against a Zod schema and returns validation errors
+ * for use with App Router api-response helpers
+ */
+export function validateSchema<T extends z.ZodSchema>(
+  data: unknown,
+  schema: T
+): { success: true; data: z.infer<T> } | { success: false; errors: ValidationError[] } {
+  const result = schema.safeParse(data);
+
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+
+  const validationErrors = result.error.errors.map((err) => ({
+    field: err.path.join('.'),
+    message: err.message,
+  }));
+
+  return { success: false, errors: validationErrors };
+}
+
+/**
+ * Creates a standard validation error response for App Router
+ */
+export function createValidationErrorResponse(
+  validationErrors: ValidationError[]
+): NextResponse<ApiErrorResponse> {
+  return errors.validation(validationErrors);
+}

@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -98,19 +99,21 @@ export default function AdminPage() {
           }),
         });
 
-        const data = await res.json();
+        const result = await res.json();
 
-        if (res.ok) {
+        if (result.success) {
           setResult({
             success: true,
             message: 'Import berhasil!',
-            details: data.results,
+            details: result.data?.results,
           });
+          toast.success('Import data berhasil');
         } else {
           setResult({
             success: false,
-            message: data.error || 'Gagal mengimport data',
+            message: result.error?.message || 'Gagal mengimport data',
           });
+          toast.error(result.error?.message || 'Gagal mengimport data');
         }
 
         setIsUploading(false);
@@ -123,6 +126,7 @@ export default function AdminPage() {
         success: false,
         message: 'Terjadi kesalahan saat upload',
       });
+      toast.error('Terjadi kesalahan saat upload');
       setIsUploading(false);
     }
   };
@@ -130,10 +134,13 @@ export default function AdminPage() {
   const handleExport = async () => {
     try {
       const res = await fetch('/api/export');
-      if (!res.ok) throw new Error('Failed to export');
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal mengekspor data');
+        return;
+      }
       
-      const data = await res.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -142,9 +149,10 @@ export default function AdminPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      toast.success('Data berhasil diekspor');
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Gagal mengekspor data');
+      toast.error('Gagal mengekspor data');
     }
   };
 
@@ -171,16 +179,17 @@ export default function AdminPage() {
          body: JSON.stringify({ confirmation: 'RESET_DATABASE' }),
       });
 
-      if (res.ok) {
-        alert('Database telah di-reset sepenuhnya.');
+      const result = await res.json();
+      if (result.success) {
+        toast.success('Database telah di-reset sepenuhnya.');
         setIsResetOpen(false);
         setResetConfirmation('');
       } else {
-        alert('Gagal melakukan reset database.');
+        toast.error(result.error?.message || 'Gagal melakukan reset database.');
       }
     } catch (error) {
       console.error('Reset failed:', error);
-      alert('Terjadi kesalahan saat reset.');
+      toast.error('Terjadi kesalahan saat reset.');
     } finally {
       setIsResetting(false);
     }

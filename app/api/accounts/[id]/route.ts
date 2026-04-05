@@ -1,14 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
-import { 
-  getIdempotencyResult, 
+import {
+  getIdempotencyResult,
   setIdempotencyResult,
   getIdempotencyKeyFromRequest,
-  isValidIdempotencyKey 
+  isValidIdempotencyKey
 } from '@/lib/idempotency';
 import { invalidateAccountsCache } from '@/lib/cache';
+import { success, errors, noContent } from '@/lib/api-response';
+import { handlePrismaError } from '@/lib/prisma-errors';
 
 // Type for account update request body
 interface AccountUpdateBody {
@@ -33,10 +35,9 @@ export async function PATCH(
       });
 
       if (existingAccount?.isSystem) {
-        return NextResponse.json({
-          error: `Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`,
-          code: 'SYSTEM_ACCOUNT_PROTECTED',
-        }, { status: 403 });
+        return errors.forbidden(
+          `Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`
+        );
       }
 
       // Check for idempotency key in headers (for PATCH)
@@ -45,12 +46,14 @@ export async function PATCH(
         headers[key] = value;
       }
       const idempotencyKey = getIdempotencyKeyFromRequest({ headers });
-      
+
       // Check for idempotency - return cached result if same request
       if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
         const cachedResult = getIdempotencyResult(idempotencyKey);
         if (cachedResult !== null) {
-          return NextResponse.json(cachedResult);
+          return success(cachedResult, {
+            message: 'Account updated successfully (cached)',
+          });
         }
       }
 
@@ -59,19 +62,19 @@ export async function PATCH(
 
       const data: Prisma.AccountUpdateInput = {};
       if (namaAkun) data.namaAkun = namaAkun;
-      
+
       // Task 32: Prevent changing account type for system accounts
       if (tipeAkun) {
         // Check if trying to change type (not allowed for any account with transactions)
         if (existingAccount && existingAccount.tipeAkun !== tipeAkun) {
-          return NextResponse.json({
-            error: 'Tidak dapat mengubah tipe akun. Akun dengan transaksi tidak bisa更换类型.',
-            code: 'TYPE_CHANGE_NOT_ALLOWED',
-          }, { status: 422 });
+          return errors.validation([{
+            field: 'tipeAkun',
+            message: 'Tidak dapat mengubah tipe akun. Akun dengan transaksi tidak bisa diganti tipe.',
+          }]);
         }
         data.tipeAkun = tipeAkun;
       }
-      
+
       if (saldo !== undefined) data.saldo = typeof saldo === 'string' ? parseFloat(saldo) : saldo;
 
       const updatedAccount = await prisma.account.update({
@@ -87,14 +90,17 @@ export async function PATCH(
       // Invalidate cache
       invalidateAccountsCache();
 
-      return NextResponse.json(updatedAccount);
+      return success(updatedAccount, {
+        message: 'Account updated successfully',
+      });
     } catch (error) {
       console.error('Account API Error:', error);
       // Prisma error P2025: Record to update not found.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-         return NextResponse.json({ error: 'Akun tidak ditemukan' }, { status: 404 });
+        return errors.notFound('Account');
       }
-      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+      const { message } = handlePrismaError(error);
+      return errors.internal(message);
     }
   }, { requireAdmin: true });
 }
@@ -113,10 +119,9 @@ export async function DELETE(
       });
 
       if (accountToDelete?.isSystem) {
-        return NextResponse.json({
-          error: `Akun ${accountToDelete.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat menghapus akun ini.`,
-          code: 'SYSTEM_ACCOUNT_PROTECTED',
-        }, { status: 403 });
+        return errors.forbidden(
+          `Akun ${accountToDelete.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat menghapus akun ini.`
+        );
       }
 
       // Check for idempotency
@@ -128,7 +133,7 @@ export async function DELETE(
       if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
         const cachedResult = getIdempotencyResult(idempotencyKey);
         if (cachedResult !== null) {
-          return NextResponse.json(cachedResult);
+          return noContent();
         }
       }
 
@@ -139,20 +144,22 @@ export async function DELETE(
 
       // Cache result for idempotency
       if (idempotencyKey) {
-        setIdempotencyResult(idempotencyKey, { message: 'Account and related data deleted successfully' });
+        setIdempotencyResult(idempotencyKey, { deleted: true });
       }
 
       // Invalidate cache
       invalidateAccountsCache();
 
-      return NextResponse.json({ message: 'Account and related data deleted successfully' });
+      // Return 204 No Content for DELETE
+      return noContent();
     } catch (error) {
       console.error('Account API Error:', error);
       // Prisma error P2025: Record to update not found.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-         return NextResponse.json({ error: 'Akun tidak ditemukan' }, { status: 404 });
+        return errors.notFound('Account');
       }
-      return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+      const { message } = handlePrismaError(error);
+      return errors.internal(message);
     }
   }, { requireAdmin: true });
 }

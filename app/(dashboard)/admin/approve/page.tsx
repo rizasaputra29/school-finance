@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -52,25 +53,28 @@ export default function ApprovePage() {
         fetch('/api/accounts'),
       ]);
 
-      if (cfRes.ok) {
-        const cfData = await cfRes.json();
-        if (Array.isArray(cfData.data)) {
-          setCashflows(cfData.data);
-        } else if (Array.isArray(cfData)) {
-          setCashflows(cfData);
+      const cfResult = await cfRes.json();
+      if (!cfResult.success) {
+        toast.error(cfResult.error?.message || 'Gagal memuat data transaksi');
+      } else {
+        if (Array.isArray(cfResult.data)) {
+          setCashflows(cfResult.data);
         }
       }
 
-      if (accRes.ok) {
-        const accData = await accRes.json();
+      const accResult = await accRes.json();
+      if (!accResult.success) {
+        toast.error(accResult.error?.message || 'Gagal memuat data akun');
+      } else {
         const accMap: Record<string, string> = {};
-        accData.forEach((acc: Account) => {
+        accResult.data.forEach((acc: Account) => {
           accMap[acc.kodeAkun] = acc.namaAkun;
         });
         setAccounts(accMap);
       }
     } catch (error) {
       console.error('Failed to fetch data:', error);
+      toast.error('Terjadi kesalahan saat memuat data');
     } finally {
       setIsLoading(false);
     }
@@ -84,16 +88,17 @@ export default function ApprovePage() {
         body: JSON.stringify({ status: 'posted' }),
       });
 
-      if (res.ok) {
-        alert('Transaksi berhasil disetujui!');
-        fetchData();
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Gagal menyetujui transaksi');
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal menyetujui transaksi');
+        return;
       }
+
+      toast.success('Transaksi berhasil disetujui!');
+      fetchData();
     } catch (error) {
       console.error('Failed to approve:', error);
-      alert('Terjadi kesalahan');
+      toast.error('Terjadi kesalahan');
     }
   };
 
@@ -107,16 +112,17 @@ export default function ApprovePage() {
         body: JSON.stringify({ status: 'rejected' }),
       });
 
-      if (res.ok) {
-        alert('Transaksi berhasil ditolak!');
-        fetchData();
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Gagal menolak transaksi');
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal menolak transaksi');
+        return;
       }
+
+      toast.success('Transaksi berhasil ditolak!');
+      fetchData();
     } catch (error) {
       console.error('Failed to reject:', error);
-      alert('Terjadi kesalahan');
+      toast.error('Terjadi kesalahan');
     }
   };
 

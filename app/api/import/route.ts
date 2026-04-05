@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
@@ -13,6 +13,8 @@ import {
   ValidatedRow,
   ImportResult,
 } from '@/lib/import/validator';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // ============================================
 // Type Definitions
@@ -287,10 +289,7 @@ export async function POST(request: NextRequest) {
     const rateLimitResult = rateLimit(identifier, RATE_LIMITS.import);
 
     if (!rateLimitResult.success) {
-      return NextResponse.json({
-        error: formatRateLimitError(rateLimitResult),
-        code: 'RATE_LIMIT_EXCEEDED',
-      }, { status: 429 });
+      return errors.rateLimit(formatRateLimitError(rateLimitResult));
     }
 
     try {
@@ -298,7 +297,7 @@ export async function POST(request: NextRequest) {
       const { fileData, sheets, type = 'excel' } = body;
 
       if (!fileData) {
-        return NextResponse.json({ error: 'File data tidak ditemukan' }, { status: 400 });
+        return errors.validation([{ field: 'fileData', message: 'File data tidak ditemukan' }]);
       }
 
       // Track validation errors
@@ -597,7 +596,6 @@ export async function POST(request: NextRequest) {
 
       // Build response with required format
       const response = {
-        message: warnings.length > 0 ? 'Import selesai dengan peringatan' : 'Import berhasil',
         results: {
           accounts: { inserted: results.accounts.inserted, updated: results.accounts.updated, errors: results.accounts.errors },
           students: { inserted: results.students.inserted, updated: results.students.updated, errors: results.students.errors },
@@ -610,10 +608,11 @@ export async function POST(request: NextRequest) {
         warnings: warnings.length > 0 ? warnings : undefined,
       };
 
-      return NextResponse.json(response);
+      const message = warnings.length > 0 ? 'Import selesai dengan peringatan' : 'Import berhasil';
+      return success(response, { message });
     } catch (error) {
       console.error('Import error:', error);
-      return NextResponse.json({ error: 'Gagal mengimport data' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

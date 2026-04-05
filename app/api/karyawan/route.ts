@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { validateBody } from '@/lib/validation';
+import { success, errors, noContent } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 const createEmployeeSchema = z.object({
   nip: z.string().min(1, 'NIP wajib diisi'),
@@ -21,171 +23,193 @@ const updateEmployeeSchema = createEmployeeSchema.partial().extend({
   id: z.string().min(1),
 });
 
-function sendValidationErrorResponse(errors: Array<{ field: string; message: string }>) {
-  return NextResponse.json({
-    error: 'Validation failed',
-    validationErrors: errors,
-  }, { status: 400 });
-}
-
 export async function GET(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const { searchParams } = new URL(request.url);
-    const page = searchParams.get('page') || '1';
-    const limit = searchParams.get('limit') || '10';
-    const search = searchParams.get('search');
-    const status = searchParams.get('status');
-    const jabatan = searchParams.get('jabatan');
-    
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const take = parseInt(limit);
+    try {
+      const { searchParams } = new URL(request.url);
+      const page = searchParams.get('page') || '1';
+      const limit = searchParams.get('limit') || '10';
+      const search = searchParams.get('search');
+      const status = searchParams.get('status');
+      const jabatan = searchParams.get('jabatan');
+      
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      const take = parseInt(limit);
 
-    const where: Record<string, unknown> = {};
-    if (search) {
-      where.OR = [
-        { nama: { contains: search, mode: 'insensitive' } },
-        { nip: { contains: search, mode: 'insensitive' } },
-        { jabatan: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    if (status) where.status = status;
-    if (jabatan) where.jabatan = jabatan;
+      const where: Record<string, unknown> = {};
+      if (search) {
+        where.OR = [
+          { nama: { contains: search, mode: 'insensitive' } },
+          { nip: { contains: search, mode: 'insensitive' } },
+          { jabatan: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+      if (status) where.status = status;
+      if (jabatan) where.jabatan = jabatan;
 
-    const [employees, total, activeCount, inactiveCount] = await Promise.all([
-      prisma.employee.findMany({
-        where,
-        orderBy: { nama: 'asc' },
-        skip,
-        take,
-        include: {
-          _count: { select: { payrolls: true } },
+      const [employees, total, activeCount, inactiveCount] = await Promise.all([
+        prisma.employee.findMany({
+          where,
+          orderBy: { nama: 'asc' },
+          skip,
+          take,
+          include: {
+            _count: { select: { payrolls: true } },
+          },
+        }),
+        prisma.employee.count({ where }),
+        prisma.employee.count({ where: { status: 'Active' } }),
+        prisma.employee.count({ where: { status: 'Inactive' } }),
+      ]);
+
+      return success(employees, {
+        message: 'Employees retrieved successfully',
+        meta: {
+          pagination: {
+            page: parseInt(page),
+            limit: take,
+            total,
+            totalPages: Math.ceil(total / take),
+          },
+          summary: {
+            total: activeCount + inactiveCount,
+            active: activeCount,
+            inactive: inactiveCount,
+          },
         },
-      }),
-      prisma.employee.count({ where }),
-      prisma.employee.count({ where: { status: 'Active' } }),
-      prisma.employee.count({ where: { status: 'Inactive' } }),
-    ]);
-
-    return NextResponse.json({
-      data: employees,
-      summary: {
-        total: activeCount + inactiveCount,
-        active: activeCount,
-        inactive: inactiveCount,
-      },
-      pagination: {
-        page: parseInt(page),
-        limit: take,
-        total,
-        totalPages: Math.ceil(total / take),
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Employee API error:', error);
+      return handlePrismaErrorResponse(error);
+    }
   });
 }
 
 export async function POST(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const ip = getClientIp(request);
+    try {
+      const ip = getClientIp(request);
 
-    const rateLimitResult = rateLimit(`create-employee:${ip}`, RATE_LIMITS.create);
-    if (!rateLimitResult.success) {
-      return NextResponse.json({
-        error: formatRateLimitError(rateLimitResult),
-        code: 'RATE_LIMIT_EXCEEDED',
-      }, {
-        status: 429,
-        headers: {
+      const rateLimitResult = rateLimit(`create-employee:${ip}`, RATE_LIMITS.create);
+      if (!rateLimitResult.success) {
+        return errors.rateLimit(formatRateLimitError(rateLimitResult), {
           'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString()
-        }
+        });
+      }
+
+      const body = await request.json();
+
+      const validationErrors = validateBody(body, createEmployeeSchema);
+      if (validationErrors) {
+        return errors.validation(validationErrors);
+      }
+
+      const data = body as z.infer<typeof createEmployeeSchema>;
+      const gajiPokok = typeof data.gajiPokok === 'string' ? parseFloat(data.gajiPokok) : Number(data.gajiPokok) || 0;
+
+      // Check duplicate NIP
+      const existing = await prisma.employee.findUnique({ where: { nip: data.nip } });
+      if (existing) {
+        return errors.conflict(`NIP ${data.nip} sudah terdaftar`);
+      }
+
+      const employee = await prisma.employee.create({
+        data: {
+          nip: data.nip,
+          nama: data.nama,
+          jabatan: data.jabatan,
+          jenisKelamin: data.jenisKelamin || null,
+          noTelp: data.noTelp || null,
+          alamat: data.alamat || null,
+          tanggalMasuk: new Date(data.tanggalMasuk),
+          gajiPokok,
+          status: data.status || 'Active',
+        },
       });
+
+      return success(employee, { 
+        message: 'Karyawan berhasil ditambahkan',
+        status: 201 
+      });
+    } catch (error) {
+      console.error('Employee POST error:', error);
+      return handlePrismaErrorResponse(error);
     }
-
-    const body = await request.json();
-
-    const validationErrors = validateBody(body, createEmployeeSchema);
-    if (validationErrors) return sendValidationErrorResponse(validationErrors);
-
-    const data = body as z.infer<typeof createEmployeeSchema>;
-    const gajiPokok = typeof data.gajiPokok === 'string' ? parseFloat(data.gajiPokok) : Number(data.gajiPokok) || 0;
-
-    // Check duplicate NIP
-    const existing = await prisma.employee.findUnique({ where: { nip: data.nip } });
-    if (existing) {
-      return NextResponse.json({ error: `NIP ${data.nip} sudah terdaftar` }, { status: 400 });
-    }
-
-    const employee = await prisma.employee.create({
-      data: {
-        nip: data.nip,
-        nama: data.nama,
-        jabatan: data.jabatan,
-        jenisKelamin: data.jenisKelamin || null,
-        noTelp: data.noTelp || null,
-        alamat: data.alamat || null,
-        tanggalMasuk: new Date(data.tanggalMasuk),
-        gajiPokok,
-        status: data.status || 'Active',
-      },
-    });
-
-    return NextResponse.json({ ...employee, message: 'Karyawan berhasil ditambahkan' }, { status: 201 });
   });
 }
 
 export async function PUT(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const body = await request.json();
+    try {
+      const body = await request.json();
 
-    const validationErrors = validateBody(body, updateEmployeeSchema);
-    if (validationErrors) return sendValidationErrorResponse(validationErrors);
+      const validationErrors = validateBody(body, updateEmployeeSchema);
+      if (validationErrors) {
+        return errors.validation(validationErrors);
+      }
 
-    const data = body as z.infer<typeof updateEmployeeSchema>;
+      const data = body as z.infer<typeof updateEmployeeSchema>;
 
-    const existing = await prisma.employee.findUnique({ where: { id: data.id } });
-    if (!existing) return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
+      const existing = await prisma.employee.findUnique({ where: { id: data.id } });
+      if (!existing) {
+        return errors.notFound('Karyawan');
+      }
 
-    // Check NIP uniqueness if changing
-    if (data.nip && data.nip !== existing.nip) {
-      const nipConflict = await prisma.employee.findUnique({ where: { nip: data.nip } });
-      if (nipConflict) return NextResponse.json({ error: `NIP ${data.nip} sudah terdaftar` }, { status: 400 });
+      // Check NIP uniqueness if changing
+      if (data.nip && data.nip !== existing.nip) {
+        const nipConflict = await prisma.employee.findUnique({ where: { nip: data.nip } });
+        if (nipConflict) {
+          return errors.conflict(`NIP ${data.nip} sudah terdaftar`);
+        }
+      }
+
+      const gajiPokok = data.gajiPokok !== undefined
+        ? (typeof data.gajiPokok === 'string' ? parseFloat(data.gajiPokok) : Number(data.gajiPokok) || 0)
+        : undefined;
+
+      const employee = await prisma.employee.update({
+        where: { id: data.id },
+        data: {
+          ...(data.nip && { nip: data.nip }),
+          ...(data.nama && { nama: data.nama }),
+          ...(data.jabatan && { jabatan: data.jabatan }),
+          ...(data.jenisKelamin !== undefined && { jenisKelamin: data.jenisKelamin || null }),
+          ...(data.noTelp !== undefined && { noTelp: data.noTelp || null }),
+          ...(data.alamat !== undefined && { alamat: data.alamat || null }),
+          ...(data.tanggalMasuk && { tanggalMasuk: new Date(data.tanggalMasuk) }),
+          ...(gajiPokok !== undefined && { gajiPokok }),
+          ...(data.status && { status: data.status }),
+        },
+      });
+
+      return success(employee, { message: 'Karyawan berhasil diperbarui' });
+    } catch (error) {
+      console.error('Employee PUT error:', error);
+      return handlePrismaErrorResponse(error);
     }
-
-    const gajiPokok = data.gajiPokok !== undefined
-      ? (typeof data.gajiPokok === 'string' ? parseFloat(data.gajiPokok) : Number(data.gajiPokok) || 0)
-      : undefined;
-
-    const employee = await prisma.employee.update({
-      where: { id: data.id },
-      data: {
-        ...(data.nip && { nip: data.nip }),
-        ...(data.nama && { nama: data.nama }),
-        ...(data.jabatan && { jabatan: data.jabatan }),
-        ...(data.jenisKelamin !== undefined && { jenisKelamin: data.jenisKelamin || null }),
-        ...(data.noTelp !== undefined && { noTelp: data.noTelp || null }),
-        ...(data.alamat !== undefined && { alamat: data.alamat || null }),
-        ...(data.tanggalMasuk && { tanggalMasuk: new Date(data.tanggalMasuk) }),
-        ...(gajiPokok !== undefined && { gajiPokok }),
-        ...(data.status && { status: data.status }),
-      },
-    });
-
-    return NextResponse.json({ ...employee, message: 'Karyawan berhasil diperbarui' });
   });
 }
 
 export async function DELETE(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    
-    if (!id) {
-      return NextResponse.json({ error: 'ID karyawan wajib diisi' }, { status: 400 });
+    try {
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get('id');
+      
+      if (!id) {
+        return errors.validation([{ field: 'id', message: 'ID karyawan wajib diisi' }]);
+      }
+
+      const existing = await prisma.employee.findUnique({ where: { id } });
+      if (!existing) {
+        return errors.notFound('Karyawan');
+      }
+
+      await prisma.employee.delete({ where: { id } });
+      return noContent();
+    } catch (error) {
+      console.error('Employee DELETE error:', error);
+      return handlePrismaErrorResponse(error);
     }
-
-    const existing = await prisma.employee.findUnique({ where: { id } });
-    if (!existing) return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 404 });
-
-    await prisma.employee.delete({ where: { id } });
-    return NextResponse.json({ message: 'Karyawan berhasil dihapus' });
   });
 }

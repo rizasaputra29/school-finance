@@ -3,10 +3,12 @@
  * Provides journal entry listing with date filtering and status
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
 import { roundAmount, isAmountEqual } from '@/lib/accounting/validation';
+import { success } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // ============================================================================
 // Types
@@ -147,77 +149,83 @@ function buildFilters(params: QueryParams) {
 
 export async function GET(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const query = getQueryParams(request);
-    const params = parseQueryParams(query);
-    const where = buildWhereClause(params);
-    const skip = (params.page - 1) * params.limit;
+    try {
+      const query = getQueryParams(request);
+      const params = parseQueryParams(query);
+      const where = buildWhereClause(params);
+      const skip = (params.page - 1) * params.limit;
 
-    // Fetch journal entries with pagination
-    const [journals, total] = await Promise.all([
-      prisma.journalEntry.findMany({
-        where,
-        include: {
-          entries: {
-            include: {
-              account: {
-                select: { namaAkun: true, tipeAkun: true },
+      // Fetch journal entries with pagination
+      const [journals, total] = await Promise.all([
+        prisma.journalEntry.findMany({
+          where,
+          include: {
+            entries: {
+              include: {
+                account: {
+                  select: { namaAkun: true, tipeAkun: true },
+                },
               },
             },
           },
-        },
-        orderBy: [{ tanggal: 'desc' }, { createdAt: 'desc' }],
-        skip,
-        take: params.limit,
-      }) as Promise<JournalEntryRecord[]>,
-      prisma.journalEntry.count({ where }),
-    ]);
+          orderBy: [{ tanggal: 'desc' }, { createdAt: 'desc' }],
+          skip,
+          take: params.limit,
+        }) as Promise<JournalEntryRecord[]>,
+        prisma.journalEntry.count({ where }),
+      ]);
 
-    // Format response
-    const data = journals.map(formatJournalEntry);
+      // Format response
+      const data = journals.map(formatJournalEntry);
 
-    // Calculate summary
-    let totalDebit = 0;
-    let totalKredit = 0;
-    let postedCount = 0;
-    let draftCount = 0;
-    let approvedCount = 0;
+      // Calculate summary
+      let totalDebit = 0;
+      let totalKredit = 0;
+      let postedCount = 0;
+      let draftCount = 0;
+      let approvedCount = 0;
 
-    for (const journal of journals) {
-      totalDebit += journal.entries.reduce((sum, e) => sum + e.debit, 0);
-      totalKredit += journal.entries.reduce((sum, e) => sum + e.kredit, 0);
+      for (const journal of journals) {
+        totalDebit += journal.entries.reduce((sum, e) => sum + e.debit, 0);
+        totalKredit += journal.entries.reduce((sum, e) => sum + e.kredit, 0);
 
-      switch (journal.status) {
-        case 'posted':
-          postedCount++;
-          break;
-        case 'draft':
-          draftCount++;
-          break;
-        case 'approved':
-          approvedCount++;
-          break;
+        switch (journal.status) {
+          case 'posted':
+            postedCount++;
+            break;
+          case 'draft':
+            draftCount++;
+            break;
+          case 'approved':
+            approvedCount++;
+            break;
+        }
       }
-    }
 
-    return NextResponse.json({
-      data,
-      summary: {
-        totalDebit: roundAmount(totalDebit),
-        totalKredit: roundAmount(totalKredit),
-        isBalanced: isAmountEqual(totalDebit, totalKredit),
-        byStatus: {
-          draft: draftCount,
-          approved: approvedCount,
-          posted: postedCount,
+      return success(data, {
+        message: 'Laporan jurnal berhasil diambil',
+        meta: {
+          pagination: {
+            page: params.page,
+            limit: params.limit,
+            total,
+            totalPages: Math.ceil(total / params.limit),
+          },
+          summary: {
+            totalDebit: roundAmount(totalDebit),
+            totalKredit: roundAmount(totalKredit),
+            isBalanced: isAmountEqual(totalDebit, totalKredit),
+            byStatus: {
+              draft: draftCount,
+              approved: approvedCount,
+              posted: postedCount,
+            },
+          },
+          filters: buildFilters(params),
         },
-      },
-      filters: buildFilters(params),
-      pagination: {
-        page: params.page,
-        limit: params.limit,
-        total,
-        totalPages: Math.ceil(total / params.limit),
-      },
-    });
+      });
+    } catch (error) {
+      return handlePrismaErrorResponse(error);
+    }
   });
 }

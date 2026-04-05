@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
 import { roundAmount, isAmountEqual } from '@/lib/accounting/validation';
+import { success, errors } from '@/lib/api-response';
 
 // ============================================================================
 // Types
@@ -319,7 +320,7 @@ export async function GET(request: NextRequest) {
             (tipe === 'ledger' && c.name === 'LEDGER_ACCOUNT_MATCH')
         );
 
-        return NextResponse.json({
+        return success({
           periode: periode || 'all',
           tipe,
           isConsistent: filteredChecks.every((c) => c.passed),
@@ -329,15 +330,19 @@ export async function GET(request: NextRequest) {
             passed: filteredChecks.filter((c) => c.passed).length,
             failed: filteredChecks.filter((c) => !c.passed).length,
           },
+        }, {
+          message: 'Data konsistensi berhasil diambil',
         });
       }
 
       // Run all checks
       const fullResult = await runConsistencyCheck(periode);
 
-      return NextResponse.json({
+      return success({
         periode: periode || 'all',
         ...fullResult,
+      }, {
+        message: 'Data konsistensi berhasil diambil',
       });
     },
     { requireAdmin: true }
@@ -353,7 +358,7 @@ export async function POST(request: NextRequest) {
       const { periode, check } = body;
 
       if (!check) {
-        return NextResponse.json({ error: 'Parameter check wajib diisi' }, { status: 400 });
+        return errors.validation([{ field: 'check', message: 'Parameter check wajib diisi' }]);
       }
 
       const result = await runConsistencyCheck(periode);
@@ -361,21 +366,18 @@ export async function POST(request: NextRequest) {
       const selectedCheck = result.checks.find((c) => c.name === check.toUpperCase());
 
       if (!selectedCheck) {
-        return NextResponse.json(
-          {
-            error: `Check ${check} tidak ditemukan. Gunakan: jurnal, ledger, neraca, labarugi, cashflow`,
-          },
-          { status: 404 }
-        );
+        return errors.notFound(`Check ${check} tidak ditemukan. Gunakan: jurnal, ledger, neraca, labarugi, cashflow`);
       }
 
-      return NextResponse.json({
+      return success({
         periode: periode || 'all',
         check: selectedCheck.name,
         description: selectedCheck.description,
         passed: selectedCheck.passed,
         details: selectedCheck.details,
         difference: selectedCheck.difference,
+      }, {
+        message: 'Data check konsistensi berhasil diambil',
       });
     },
     { requireAdmin: true }

@@ -1,14 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
-import { validateBody } from '@/lib/validation';
-import { 
-  getIdempotencyResult, 
+import {
+  getIdempotencyResult,
   setIdempotencyResult,
-  isValidIdempotencyKey 
+  isValidIdempotencyKey
 } from '@/lib/idempotency';
+import { success, errors } from '@/lib/api-response';
 
 // Validation schemas
 const createStudentSchema = z.object({
@@ -21,13 +21,6 @@ const createStudentSchema = z.object({
   noTelp: z.string().optional(),
   statusBayar: z.string().optional(),
 });
-
-function sendValidationErrorResponse(errors: Array<{ field: string; message: string }>) {
-  return NextResponse.json({
-    error: 'Validation failed',
-    validationErrors: errors,
-  }, { status: 400 });
-}
 
 function getIdempotencyKeyFromNextRequest(req: NextRequest): string | null {
   const header = req.headers.get('x-idempotency-key');
@@ -44,24 +37,24 @@ export async function GET(request: NextRequest) {
     const statusBayar = searchParams.get('statusBayar');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
-    
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const where: Record<string, unknown> = {};
-    
+
     // Filter by class
     if (kelas) where.kelas = kelas;
-    
+
     // Filter by payment status
     if (statusBayar) where.statusBayar = statusBayar;
-    
+
     // Filter by active status (default: Active only)
     if (status) {
       where.status = status;
     } else {
       where.status = 'Active'; // Default to active students
     }
-    
+
     // Search by name, NIS, or class
     if (search) {
       where.OR = [
@@ -81,7 +74,7 @@ export async function GET(request: NextRequest) {
 
     // Get all billing aggregates for these students in one query
     const studentIds = students.map(s => s.id);
-    
+
     const [billingAggregates, billingStatusCounts] = await Promise.all([
       // Aggregate total amounts per student
       prisma.billing.groupBy({
@@ -103,11 +96,11 @@ export async function GET(request: NextRequest) {
     const paidByStudent = new Map<string, number>();
     const lunasCountByStudent = new Map<string, number>();
     const totalCountByStudent = new Map<string, number>();
-    
+
     for (const group of billingStatusCounts) {
       const currentTotal = totalCountByStudent.get(group.studentId) || 0;
       totalCountByStudent.set(group.studentId, currentTotal + group._count._all);
-      
+
       if (group.statusBayar === 'Lunas') {
         paidByStudent.set(group.studentId, group._sum.jumlah || 0);
         lunasCountByStudent.set(group.studentId, group._count._all);
@@ -120,12 +113,12 @@ export async function GET(request: NextRequest) {
       const totalBayar = paidByStudent.get(student.id) || 0;
       const totalBills = totalCountByStudent.get(student.id) || 0;
       const lunasBills = lunasCountByStudent.get(student.id) || 0;
-      
+
       // Determine statusBayar based on actual billing status
       const allLunas = totalBills > 0 && lunasBills === totalBills;
       const anyLunas = lunasBills > 0;
       const computedStatusBayar = allLunas ? 'Lunas' : (anyLunas ? 'Belum Lunas' : (student.statusBayar || 'Belum Lunas'));
-      
+
       return {
         ...student,
         totalTagihan,
@@ -136,13 +129,15 @@ export async function GET(request: NextRequest) {
 
     const total = await prisma.student.count({ where });
 
-    return NextResponse.json({
-      data: studentsWithTotals,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit)),
+    return success(studentsWithTotals, {
+      message: 'Students retrieved successfully',
+      meta: {
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          totalPages: Math.ceil(total / parseInt(limit)),
+        },
       },
     });
   });
@@ -151,19 +146,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
     const ip = getClientIp(request);
-    
+
     // Rate limiting for create operations
     const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
     if (!rateLimitResult.success) {
-      return NextResponse.json({ 
-        error: formatRateLimitError(rateLimitResult),
-        code: 'RATE_LIMIT_EXCEEDED'
-      }, { 
-        status: 429,
-        headers: {
-          'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString()
-        }
-      });
+      return errors.rateLimit(formatRateLimitError(rateLimitResult));
     }
 
     // Check for idempotency key in headers
@@ -171,19 +158,26 @@ export async function POST(request: NextRequest) {
     if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
       const cachedResult = getIdempotencyResult(idempotencyKey);
       if (cachedResult !== null) {
-        return NextResponse.json(cachedResult, { status: 201 });
+        return success(cachedResult, {
+          message: 'Student created successfully (cached)',
+          status: 201,
+        });
       }
     }
 
     const body = await request.json();
 
     // Validate request body
-    const validationErrors = validateBody(body, createStudentSchema);
-    if (validationErrors) {
-      return sendValidationErrorResponse(validationErrors);
+    const validationResult = createStudentSchema.safeParse(body);
+    if (!validationResult.success) {
+      const validationErrors = validationResult.error.errors.map(err => ({
+        field: err.path.join('.'),
+        message: err.message,
+      }));
+      return errors.validation(validationErrors);
     }
 
-    const { nis, nama, kelas, tahunMasuk, tahunAjaran, namaOrtu, noTelp, statusBayar } = body as z.infer<typeof createStudentSchema>;
+    const { nis, nama, kelas, tahunMasuk, tahunAjaran, namaOrtu, noTelp, statusBayar } = validationResult.data;
 
     // Check for duplicate NIS
     const existingStudent = await prisma.student.findUnique({
@@ -191,7 +185,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingStudent) {
-      return NextResponse.json({ error: 'NIS sudah terdaftar' }, { status: 400 });
+      return errors.conflict('NIS sudah terdaftar');
     }
 
     const student = await prisma.student.create({
@@ -215,6 +209,9 @@ export async function POST(request: NextRequest) {
       setIdempotencyResult(idempotencyKey, student);
     }
 
-    return NextResponse.json(student, { status: 201 });
+    return success(student, {
+      message: 'Student created successfully',
+      status: 201,
+    });
   });
 }

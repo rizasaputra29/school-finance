@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -104,17 +105,22 @@ export default function PaymentPage() {
       if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
 
       const res = await fetch(`/api/payment/manual?${params.toString()}`);
-      const data = await res.json();
+      const result = await res.json();
       
-      if (data.data) {
-        setBillings(data.data);
-        setSummary(data.summary || { totalUnpaid: 0, totalOverdue: 0 });
-        if (data.pagination) {
-          setPagination(prev => ({ ...prev, ...data.pagination }));
-        }
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data tagihan');
+        setIsLoading(false);
+        return;
+      }
+      
+      setBillings(result.data);
+      setSummary(result.meta.summary || { totalUnpaid: 0, totalOverdue: 0 });
+      if (result.meta.pagination) {
+        setPagination(prev => ({ ...prev, ...result.meta.pagination }));
       }
     } catch (error) {
       console.error('Error fetching billings:', error);
+      toast.error('Terjadi kesalahan saat memuat data tagihan');
     } finally {
       setIsLoading(false);
     }
@@ -159,10 +165,10 @@ export default function PaymentPage() {
         }),
       });
 
-      const data = await res.json();
+      const result = await res.json();
 
-      if (!res.ok) {
-        setPaymentError(data.error || 'Terjadi kesalahan');
+      if (!result.success) {
+        setPaymentError(result.error?.message || 'Terjadi kesalahan');
         return;
       }
 
@@ -177,7 +183,7 @@ export default function PaymentPage() {
       fetchBillings();
       
       // Show success message
-      alert(data.message || 'Pembayaran berhasil!');
+      toast.success(result.message || 'Pembayaran berhasil!');
     } catch (error) {
       console.error('Payment error:', error);
       setPaymentError('Terjadi kesalahan saat memproses pembayaran');

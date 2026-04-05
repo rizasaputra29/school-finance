@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Input } from "@/components/ui/input";
@@ -230,10 +231,11 @@ export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsPr
         }),
       });
 
-      const data = await res.json();
+      const result = await res.json();
 
-      if (res.ok) {
+      if (result.success) {
         setSuccess(true);
+        toast.success('Transaksi berhasil disimpan');
         setTimeout(() => {
           setIsMainModalOpen(false);
           setOpenType(null);
@@ -243,7 +245,7 @@ export function TransactionButtons({ accounts, onSuccess }: TransactionButtonsPr
           onSuccess?.();
         }, 1500);
       } else {
-        setError(data.error || "Gagal menyimpan transaksi");
+        setError(result.error?.message || "Gagal menyimpan transaksi");
       }
     } catch (err) {
       console.error("Transaction error:", err);

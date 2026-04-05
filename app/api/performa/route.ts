@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
+import { success } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
@@ -120,17 +122,19 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      return NextResponse.json({
+      return success({
         year,
         summary: { totalPendapatan, totalBeban, netProfit },
         barChart: monthlyData,
         expensePie: pieChart,
         revenuePie,
         cashflowTrend,
+      }, {
+        message: 'Data performa berhasil diambil',
       });
     } catch (error) {
       console.error('Performa API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   });
 }

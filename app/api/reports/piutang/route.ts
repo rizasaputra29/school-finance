@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
+import { success } from '@/lib/api-response';
 
 // Type for piutang item
 interface PiutangAgingItem {
@@ -184,26 +185,28 @@ export async function GET(request: NextRequest) {
       // Sort by total piutang (descending)
       studentSummary.sort((a, b) => b.totalPiutang - a.totalPiutang);
 
-      return NextResponse.json({
-        data: filteredItems,
-        studentSummary,
-        summary: {
-          ...summary,
-          ...counts,
+      return success(filteredItems, {
+        message: 'Data piutang berhasil diambil',
+        meta: {
+          studentSummary,
+          summary: {
+            ...summary,
+            ...counts,
+          },
+          formatted: {
+            totalPiutang: formatCurrency(summary.totalPiutang),
+            belumJatuhTempo: formatCurrency(summary.belumJatuhTempo),
+            aging30: formatCurrency(summary.aging30),
+            aging60: formatCurrency(summary.aging60),
+            aging90plus: formatCurrency(summary.aging90plus),
+          },
+          filters: {
+            studentId: studentId || null,
+            kelas: kelas || null,
+            aging: aging || null,
+          },
+          generatedAt: new Date().toISOString(),
         },
-        formatted: {
-          totalPiutang: formatCurrency(summary.totalPiutang),
-          belumJatuhTempo: formatCurrency(summary.belumJatuhTempo),
-          aging30: formatCurrency(summary.aging30),
-          aging60: formatCurrency(summary.aging60),
-          aging90plus: formatCurrency(summary.aging90plus),
-        },
-        filters: {
-          studentId: studentId || null,
-          kelas: kelas || null,
-          aging: aging || null,
-        },
-        generatedAt: new Date().toISOString(),
       });
     },
     { requireAdmin: true }

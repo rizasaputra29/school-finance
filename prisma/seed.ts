@@ -195,6 +195,7 @@ async function main() {
   await prisma.student.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.academicYear.deleteMany();
+  await prisma.inventory.deleteMany();
   await prisma.account.deleteMany();
   await prisma.asset.deleteMany();
   await prisma.debt.deleteMany();
@@ -516,7 +517,7 @@ async function main() {
     });
   }
 
-  // Add payroll expenses
+  // Add payroll expenses for 2025
   for (const m of MONTHS_2025) {
     for (const emp of employees) {
       const totalGaji = emp.gajiPokok + 500000 + (emp.jabatan === 'Guru' ? 500000 : 0);
@@ -622,6 +623,94 @@ async function main() {
     }
   }
 
+  // 9b. ADD HISTORICAL 2024 CASHFLOW DATA (for year-over-year comparison)
+  console.log('9b. Adding historical 2024 cashflow data...');
+  const MONTHS_2024 = ['2024-07', '2024-08', '2024-09', '2024-10', '2024-11', '2024-12'];
+  
+  for (const m of MONTHS_2024) {
+    // Historical payroll (slightly lower salaries)
+    for (const emp of employees) {
+      const totalGaji = emp.gajiPokok * 0.95 + 500000; // 5% lower in 2024
+      const payDate = new Date(`${m}-25`);
+
+      cashflowData.push({
+        id: createId(),
+        tanggal: payDate,
+        keterangan: `Gaji ${emp.jabatan} - ${emp.nama} (2024)`,
+        kodeAkun: '101',
+        kategori: 'Gaji',
+        debit: 0,
+        kredit: totalGaji,
+        status: 'posted',
+        periode: m,
+        source: 'kas',
+      });
+    }
+
+    // Historical student payments (mixed)
+    for (let i = 0; i < 15; i++) {
+      const isPaid = Math.random() < 0.85; // Higher payment rate in past
+      const sppAmount = 600000 + Math.floor(Math.random() * 100000);
+      
+      if (isPaid) {
+        cashflowData.push({
+          id: createId(),
+          tanggal: new Date(`${m}-${10 + Math.floor(Math.random() * 15)}`),
+          keterangan: `Pembayaran SPP 2024 - Siswa ${i + 1}`,
+          kodeAkun: '101',
+          kategori: 'SPP',
+          debit: sppAmount,
+          kredit: 0,
+          status: 'posted',
+          periode: m,
+          source: 'kas',
+        });
+      }
+    }
+
+    // Historical expenses
+    cashflowData.push({
+      id: createId(),
+      tanggal: new Date(`${m}-05`),
+      keterangan: `Pembayaran Listrik & Internet 2024`,
+      kodeAkun: '101',
+      kategori: 'Listrik',
+      debit: 0,
+      kredit: 1400000 + Math.random() * 400000,
+      status: 'posted',
+      periode: m,
+      source: 'kas',
+    });
+
+    cashflowData.push({
+      id: createId(),
+      tanggal: new Date(`${m}-10`),
+      keterangan: `Pembayaran ATK Kantor 2024`,
+      kodeAkun: '101',
+      kategori: 'ATK',
+      debit: 0,
+      kredit: 700000 + Math.random() * 350000,
+      status: 'posted',
+      periode: m,
+      source: 'kas',
+    });
+
+    // Bank transactions for reconciliation
+    cashflowData.push({
+      id: createId(),
+      tanggal: new Date(`${m}-20`),
+      keterangan: `Setor Tunai ke Bank 2024`,
+      kodeAkun: '102',
+      kategori: 'Setor',
+      debit: 20000000 + Math.random() * 10000000,
+      kredit: 0,
+      status: 'posted',
+      periode: m,
+      source: 'bank',
+    });
+  }
+  console.log(`   ✅ Added historical 2024 cashflow data\n`);
+
   // Insert cashflows
   console.log(`   Inserting ${cashflowData.length} cashflows...`);
   const cashflowChunks = chunkArray(cashflowData, BATCH_SIZE);
@@ -637,12 +726,15 @@ async function main() {
   for (let i = 0; i < 10; i++) {
     const m = MONTHS_2025[i % MONTHS_2025.length];
     const isBankToKas = i % 2 === 0;
-    
+    const dari = isBankToKas ? '102' : '101';
+    const ke = isBankToKas ? '101' : '102';
+    const timestamp = Date.now() + i * 1000;
+
     transferData.push({
       tanggal: new Date(`${m}-${5 + i * 2}`),
       keterangan: `Transfer ${isBankToKas ? 'Bank ke Kas' : 'Kas ke Bank'} #${i + 1}`,
       status: 'posted',
-      reference: `TRF-${2025}${String(i + 1).padStart(3, '0')}`,
+      reference: `mutasi-${dari}-${ke}-${timestamp}`,
     });
   }
   
@@ -798,23 +890,270 @@ async function main() {
   }
   console.log(`   ✅ Created ${journalLines.length} journal entry lines\n`);
 
+  // 12b. CREATE DRAFT JOURNAL ENTRIES (for approval workflow testing)
+  console.log('12b. Creating draft journal entries for approval workflow...');
+  const draftJournalEntries = [];
+  const draftJournalLines = [];
+  
+  const draftDescriptions = [
+    'Koreksi Jurnal Pembayaran SPP',
+    'Jurnal Penyesuaian Piutang Siswa',
+    'Koreksi Biaya Listrik Bulan Juli',
+    'Jurnal Pembelian ATK Kantor',
+    'Koreksi Gaji Karyawan Bagian Admin',
+    'Jurnal Penyusutan Aset Tetap',
+    'Koreksi Pendapatan Konsumsi',
+    'Jurnal Pembelian Perlengkapan Sekolah',
+    'Koreksi Biaya Transportasi',
+    'Jurnal Pembayaran Hutang Supplier',
+    'Koreksi Biaya Pemasaran PPDB',
+    'Jurnal Penerimaan Pinjaman Bank',
+    'Koreksi Biaya Kegiatan Kesiswaan',
+    'Jurnal Pembelian Seragam Siswa',
+    'Koreksi Biaya Perbaikan Gedung',
+  ];
+  
+  for (let i = 0; i < 15; i++) {
+    const entryId = createId();
+    const m = MONTHS_2025[i % MONTHS_2025.length];
+    const amount = 1000000 + Math.floor(Math.random() * 5000000);
+    
+    draftJournalEntries.push({
+      id: entryId,
+      tanggal: new Date(`${m}-${5 + i}`),
+      keterangan: draftDescriptions[i],
+      status: 'draft',
+      reference: `DRAFT-${2025}${String(i + 1).padStart(3, '0')}`,
+    });
+    
+    // Create double-entry lines (various account combinations)
+    const accountCombos = [
+      { debit: '502', kredit: '101' }, // ATK Kantor vs Kas
+      { debit: '504', kredit: '102' }, // Listrik vs Bank
+      { debit: '500', kredit: '101' }, // Gaji vs Kas
+      { debit: '103', kredit: '405' }, // Piutang vs SPP Revenue
+      { debit: '101', kredit: '407' }, // Kas vs Piutang Revenue
+    ];
+    
+    const combo = accountCombos[i % accountCombos.length];
+    
+    draftJournalLines.push(
+      { id: createId(), journalEntryId: entryId, kodeAkun: combo.debit, debit: amount, kredit: 0 },
+      { id: createId(), journalEntryId: entryId, kodeAkun: combo.kredit, debit: 0, kredit: amount }
+    );
+  }
+  
+  if (draftJournalEntries.length > 0) {
+    await prisma.journalEntry.createMany({ data: draftJournalEntries });
+    await prisma.journalEntryLine.createMany({ data: draftJournalLines });
+  }
+  console.log(`   ✅ Created ${draftJournalEntries.length} draft journal entries with ${draftJournalLines.length} lines\n`);
+
+  // 12c. CREATE CASH WITHDRAWAL RECORDS
+  console.log('12c. Creating cash withdrawal records...');
+  const withdrawalData = [];
+  
+  for (let i = 0; i < 8; i++) {
+    const m = MONTHS_2025[i % MONTHS_2025.length];
+    const amount = 5000000 + Math.floor(Math.random() * 15000000);
+    
+    withdrawalData.push({
+      tanggal: new Date(`${m}-${10 + i * 3}`),
+      keterangan: `Penarikan Kas dari Bank #${i + 1}`,
+      kodeAkun: '102', // Bank
+      kategori: 'penarikan',
+      debit: 0,
+      kredit: amount,
+      status: 'posted',
+      periode: m,
+      source: 'bank',
+    });
+    
+    // Corresponding cash receipt
+    withdrawalData.push({
+      tanggal: new Date(`${m}-${10 + i * 3}`),
+      keterangan: `Penerimaan Kas dari Penarikan Bank #${i + 1}`,
+      kodeAkun: '101', // Kas
+      kategori: 'penarikan',
+      debit: amount,
+      kredit: 0,
+      status: 'posted',
+      periode: m,
+      source: 'kas',
+    });
+  }
+  
+  if (withdrawalData.length > 0) {
+    const withdrawalChunks = chunkArray(withdrawalData, BATCH_SIZE);
+    for (const chunk of withdrawalChunks) {
+      await prisma.cashflow.createMany({ data: chunk });
+    }
+  }
+  console.log(`   ✅ Created ${withdrawalData.length} cash withdrawal records\n`);
+
+  // 12d. CLOSE SOME PERIODS (for period closing workflow testing)
+  console.log('12d. Closing periods for 2024...');
+  const closedPeriods = ['2024-07', '2024-08', '2024-09', '2024-10', '2024-11', '2024-12'];
+  
+  for (const periodCode of closedPeriods) {
+    await prisma.period.update({
+      where: { kode: periodCode },
+      data: { 
+        status: 'closed',
+        closedAt: new Date('2025-01-15'),
+        closedBy: 'admin-1',
+      },
+    });
+  }
+  console.log(`   ✅ Closed ${closedPeriods.length} periods for 2024\n`);
+
   // 13. CREATE ASSETS
   console.log('13. Creating assets...');
+  // Calculate date for asset that will show depreciation reminder in current month
+  const assetToday = new Date();
+  const lastMonth = new Date(assetToday.getFullYear(), assetToday.getMonth() - 1, 15);
+
+  // Helper to calculate sisaUmurTeknis
+  const calcSisaUmur = (umurTeknis: number, alreadyDepreciatedYears: number) =>
+    umurTeknis > 0 ? Math.max(0, umurTeknis - alreadyDepreciatedYears) : 0;
+
   const assetData = [
-    { kodeAkun: '107', nama: 'Lahan Sekolah Utama', kategori: 'Tanah', lokasi: 'Jakarta Selatan', tanggalPerolehan: new Date('2018-01-15'), hargaPerolehan: 500000000, nilaiResidu: 0, isTanah: true, umurTeknis: 0, status: 'Active' },
-    { kodeAkun: '108', nama: 'Gedung Sayap Timur', kategori: 'Bangunan', lokasi: 'Jakarta Selatan', tanggalPerolehan: new Date('2019-05-10'), hargaPerolehan: 1000000000, nilaiResidu: 100000000, isTanah: false, umurTeknis: 20, status: 'Active' },
-    { kodeAkun: '108', nama: 'Gedung Sayap Barat', kategori: 'Bangunan', lokasi: 'Jakarta Selatan', tanggalPerolehan: new Date('2020-03-20'), hargaPerolehan: 800000000, nilaiResidu: 80000000, isTanah: false, umurTeknis: 20, status: 'Active' },
-    { kodeAkun: '109', nama: 'Toyota Hiace', kategori: 'Kendaraan', lokasi: 'Parkiran', tanggalPerolehan: new Date('2022-01-10'), hargaPerolehan: 450000000, nilaiResidu: 50000000, isTanah: false, umurTeknis: 8, status: 'Active' },
-    { kodeAkun: '109', nama: 'Honda Brio', kategori: 'Kendaraan', lokasi: 'Parkiran', tanggalPerolehan: new Date('2023-06-15'), hargaPerolehan: 250000000, nilaiResidu: 25000000, isTanah: false, umurTeknis: 8, status: 'Active' },
-    { kodeAkun: '110', nama: 'MacBook Air M2 (Admin)', kategori: 'Peralatan', lokasi: 'Ruang Admin', tanggalPerolehan: new Date('2024-11-20'), hargaPerolehan: 18000000, nilaiResidu: 2000000, isTanah: false, umurTeknis: 5, status: 'Active' },
-    { kodeAkun: '110', nama: 'Printer Canon MF264dw', kategori: 'Peralatan', lokasi: 'Ruang Admin', tanggalPerolehan: new Date('2023-04-10'), hargaPerolehan: 5000000, nilaiResidu: 500000, isTanah: false, umurTeknis: 5, status: 'Active' },
-    { kodeAkun: '110', nama: 'Proyektor Epson EB-X41', kategori: 'Peralatan', lokasi: 'Ruang Kelas A', tanggalPerolehan: new Date('2023-07-05'), hargaPerolehan: 7500000, nilaiResidu: 750000, isTanah: false, umurTeknis: 5, status: 'Active' },
+    // Tanah - no depreciation
+    { kodeAkun: '107', nama: 'Lahan Sekolah Utama', kategori: 'Tanah', lokasi: 'Jakarta Selatan', tanggalPerolehan: new Date('2018-01-15'), hargaPerolehan: 500000000, nilaiResidu: 0, isTanah: true, umurTeknis: 0, status: 'Active', alreadyDepreciatedAmount: 0, alreadyDepreciatedYears: 0, sisaUmurTeknis: calcSisaUmur(0, 0) },
+    // Gedung - with depreciation (6 years)
+    { kodeAkun: '108', nama: 'Gedung Sayap Timur', kategori: 'Bangunan', lokasi: 'Jakarta Selatan', tanggalPerolehan: new Date('2019-05-10'), hargaPerolehan: 1000000000, nilaiResidu: 100000000, isTanah: false, umurTeknis: 20, status: 'Active', alreadyDepreciatedAmount: 270000000, alreadyDepreciatedYears: 6, sisaUmurTeknis: calcSisaUmur(20, 6) },
+    { kodeAkun: '108', nama: 'Gedung Sayap Barat', kategori: 'Bangunan', lokasi: 'Jakarta Selatan', tanggalPerolehan: new Date('2020-03-20'), hargaPerolehan: 800000000, nilaiResidu: 80000000, isTanah: false, umurTeknis: 20, status: 'Active', alreadyDepreciatedAmount: 216000000, alreadyDepreciatedYears: 5, sisaUmurTeknis: calcSisaUmur(20, 5) },
+    // Kendaraan - with depreciation
+    { kodeAkun: '109', nama: 'Toyota Hiace', kategori: 'Kendaraan', lokasi: 'Parkiran', tanggalPerolehan: new Date('2022-01-10'), hargaPerolehan: 450000000, nilaiResidu: 50000000, isTanah: false, umurTeknis: 8, status: 'Active', alreadyDepreciatedAmount: 100000000, alreadyDepreciatedYears: 3, sisaUmurTeknis: calcSisaUmur(8, 3) },
+    { kodeAkun: '109', nama: 'Honda Brio', kategori: 'Kendaraan', lokasi: 'Parkiran', tanggalPerolehan: new Date('2023-06-15'), hargaPerolehan: 250000000, nilaiResidu: 25000000, isTanah: false, umurTeknis: 8, status: 'Active', alreadyDepreciatedAmount: 28125000, alreadyDepreciatedYears: 1, sisaUmurTeknis: calcSisaUmur(8, 1) },
+    // Peralatan - newer with minimal depreciation
+    { kodeAkun: '110', nama: 'MacBook Air M2 (Admin)', kategori: 'Peralatan', lokasi: 'Ruang Admin', tanggalPerolehan: new Date('2024-11-20'), hargaPerolehan: 18000000, nilaiResidu: 2000000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 320000, alreadyDepreciatedYears: 0, sisaUmurTeknis: calcSisaUmur(5, 0) },
+    { kodeAkun: '110', nama: 'Printer Canon MF264dw', kategori: 'Peralatan', lokasi: 'Ruang Admin', tanggalPerolehan: new Date('2023-04-10'), hargaPerolehan: 5000000, nilaiResidu: 500000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 1800000, alreadyDepreciatedYears: 2, sisaUmurTeknis: calcSisaUmur(5, 2) },
+    { kodeAkun: '110', nama: 'Proyektor Epson EB-X41', kategori: 'Peralatan', lokasi: 'Ruang Kelas A', tanggalPerolehan: new Date('2023-07-05'), hargaPerolehan: 7500000, nilaiResidu: 750000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 2025000, alreadyDepreciatedYears: 1, sisaUmurTeknis: calcSisaUmur(5, 1) },
+    // Asset for current month depreciation reminder - new assets (0 depreciation)
+    { kodeAkun: '110', nama: 'Laptop Dell Latitude (New)', kategori: 'Peralatan', lokasi: 'Ruang Guru', tanggalPerolehan: lastMonth, hargaPerolehan: 12000000, nilaiResidu: 1200000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 0, alreadyDepreciatedYears: 0, sisaUmurTeknis: calcSisaUmur(5, 0) },
+    { kodeAkun: '110', nama: 'Monitor LG 24 Inch', kategori: 'Peralatan', lokasi: 'Ruang Admin', tanggalPerolehan: lastMonth, hargaPerolehan: 3500000, nilaiResidu: 350000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 0, alreadyDepreciatedYears: 0, sisaUmurTeknis: calcSisaUmur(5, 0) },
+    // Additional diverse assets for depreciation variety
+    { kodeAkun: '109', nama: 'Mitsubishi L300', kategori: 'Kendaraan', lokasi: 'Parkiran', tanggalPerolehan: new Date('2020-08-15'), hargaPerolehan: 320000000, nilaiResidu: 40000000, isTanah: false, umurTeknis: 8, status: 'Active', alreadyDepreciatedAmount: 157500000, alreadyDepreciatedYears: 4, sisaUmurTeknis: calcSisaUmur(8, 4) },
+    { kodeAkun: '110', nama: 'Server Dell PowerEdge', kategori: 'Peralatan', lokasi: 'Server Room', tanggalPerolehan: new Date('2021-03-10'), hargaPerolehan: 45000000, nilaiResidu: 5000000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 24000000, alreadyDepreciatedYears: 3, sisaUmurTeknis: calcSisaUmur(5, 3) },
+    { kodeAkun: '110', nama: 'AC Split 2PK (Ruang Guru)', kategori: 'Peralatan', lokasi: 'Ruang Guru', tanggalPerolehan: new Date('2021-06-20'), hargaPerolehan: 8500000, nilaiResidu: 850000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 4590000, alreadyDepreciatedYears: 3, sisaUmurTeknis: calcSisaUmur(5, 3) },
+    { kodeAkun: '110', nama: 'AC Split 2PK (Ruang Kelas B)', kategori: 'Peralatan', lokasi: 'Ruang Kelas B', tanggalPerolehan: new Date('2022-02-14'), hargaPerolehan: 8500000, nilaiResidu: 850000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 3060000, alreadyDepreciatedYears: 2, sisaUmurTeknis: calcSisaUmur(5, 2) },
+    { kodeAkun: '110', nama: 'Fotocopy Canon IR 2520', kategori: 'Peralatan', lokasi: 'Ruang Admin', tanggalPerolehan: new Date('2019-11-05'), hargaPerolehan: 25000000, nilaiResidu: 2500000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 13500000, alreadyDepreciatedYears: 3, sisaUmurTeknis: calcSisaUmur(5, 3) },
+    { kodeAkun: '110', nama: 'Interactive Whiteboard', kategori: 'Peralatan', lokasi: 'Ruang Kelas C', tanggalPerolehan: new Date('2022-09-01'), hargaPerolehan: 15000000, nilaiResidu: 1500000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 4050000, alreadyDepreciatedYears: 1, sisaUmurTeknis: calcSisaUmur(5, 1) },
+    { kodeAkun: '110', nama: 'CCTV System (8 Channel)', kategori: 'Peralatan', lokasi: 'Sekolah', tanggalPerolehan: new Date('2021-12-10'), hargaPerolehan: 12000000, nilaiResidu: 1200000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 6480000, alreadyDepreciatedYears: 3, sisaUmurTeknis: calcSisaUmur(5, 3) },
+    { kodeAkun: '110', nama: 'Generator Set 10KVA', kategori: 'Peralatan', lokasi: 'Gudang', tanggalPerolehan: new Date('2020-04-15'), hargaPerolehan: 28000000, nilaiResidu: 2800000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 15120000, alreadyDepreciatedYears: 3, sisaUmurTeknis: calcSisaUmur(5, 3) },
+    { kodeAkun: '110', nama: 'Sound System Portable', kategori: 'Peralatan', lokasi: 'Ruang OSIS', tanggalPerolehan: new Date('2023-01-20'), hargaPerolehan: 6500000, nilaiResidu: 650000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 2340000, alreadyDepreciatedYears: 2, sisaUmurTeknis: calcSisaUmur(5, 2) },
+    { kodeAkun: '110', nama: 'Router Mikrotik RB3011', kategori: 'Peralatan', lokasi: 'Server Room', tanggalPerolehan: new Date('2022-07-08'), hargaPerolehan: 3200000, nilaiResidu: 320000, isTanah: false, umurTeknis: 5, status: 'Active', alreadyDepreciatedAmount: 864000, alreadyDepreciatedYears: 1, sisaUmurTeknis: calcSisaUmur(5, 1) },
   ];
   await prisma.asset.createMany({ data: assetData });
   console.log(`   ✅ Created ${assetData.length} assets\n`);
 
-  // 14. CREATE DEBTS
+  // 14. CREATE INVENTORY
+  console.log('14. Creating inventory...');
+  const inventoryData = [
+    // ATK (Office Supplies) - Linked to Biaya ATK Kantor account (502)
+    {
+      kodeAkun: '502',
+      nama: 'Kertas A4 80gsm (Rim)',
+      kategori: 'ATK',
+      jumlahAwal: 50,
+      jumlahSisa: 35,
+      hargaSatuan: 45000,
+      tanggalBeli: new Date('2025-01-15'),
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '502',
+      nama: 'Tinta Printer Canon Black',
+      kategori: 'ATK',
+      jumlahAwal: 20,
+      jumlahSisa: 12,
+      hargaSatuan: 180000,
+      tanggalBeli: new Date('2025-02-10'),
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '502',
+      nama: 'Tinta Printer Canon Color',
+      kategori: 'ATK',
+      jumlahAwal: 15,
+      jumlahSisa: 8,
+      hargaSatuan: 220000,
+      tanggalBeli: new Date('2025-02-10'),
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '502',
+      nama: 'Ballpoint Standard AE7 (Box)',
+      kategori: 'ATK',
+      jumlahAwal: 30,
+      jumlahSisa: 22,
+      hargaSatuan: 35000,
+      tanggalBeli: new Date('2025-01-20'),
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '502',
+      nama: 'Pensil 2B Faber Castell (Box)',
+      kategori: 'ATK',
+      jumlahAwal: 25,
+      jumlahSisa: 18,
+      hargaSatuan: 28000,
+      tanggalBeli: new Date('2025-01-20'),
+      status: 'Aktif',
+    },
+    // School Supplies - Linked to Biaya ATK Siswa account (521)
+    {
+      kodeAkun: '521',
+      nama: 'Buku Tulis Big Boss (Pack)',
+      kategori: 'Buku',
+      jumlahAwal: 100,
+      jumlahSisa: 65,
+      hargaSatuan: 15000,
+      tanggalBeli: new Date('2025-06-01'),
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '521',
+      nama: 'Pensil Warna 24 Set',
+      kategori: 'ATK Siswa',
+      jumlahAwal: 40,
+      jumlahSisa: 28,
+      hargaSatuan: 45000,
+      tanggalBeli: new Date('2025-06-10'),
+      status: 'Aktif',
+    },
+    // Uniform - Linked to Biaya Seragam Siswa account (520)
+    {
+      kodeAkun: '520',
+      nama: 'Seragam Putih Abu (Set)',
+      kategori: 'Seragam',
+      jumlahAwal: 60,
+      jumlahSisa: 25,
+      hargaSatuan: 125000,
+      tanggalBeli: new Date('2025-05-15'),
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '520',
+      nama: 'Seragam Olahraga (Set)',
+      kategori: 'Seragam',
+      jumlahAwal: 50,
+      jumlahSisa: 20,
+      hargaSatuan: 95000,
+      tanggalBeli: new Date('2025-05-15'),
+      status: 'Aktif',
+    },
+  ];
+  await prisma.inventory.createMany({ data: inventoryData });
+  console.log(`   ✅ Created ${inventoryData.length} inventory items\n`);
+
+  // 15. CREATE DEBTS
   console.log('14. Creating debts...');
+  const today = new Date();
+  const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const in10Days = new Date(today.getTime() + 10 * 24 * 60 * 60 * 1000);
+
   const debtData = [
     {
       kodeAkun: '201',
@@ -840,12 +1179,37 @@ async function main() {
       cicilanPerBulan: 2500000,
       status: 'Aktif',
     },
+    // Debts due within 30 days for reminders
+    {
+      kodeAkun: '200',
+      nama: 'Hutang Jatuh Tempo 10 Hari',
+      kreditur: 'PT Supplier A',
+      jumlahAwal: 15000000,
+      jumlahSisa: 15000000,
+      tenor: 1,
+      tanggalMulai: today,
+      tanggalJatuhTempo: in10Days,
+      cicilanPerBulan: 15000000,
+      status: 'Aktif',
+    },
+    {
+      kodeAkun: '200',
+      nama: 'Hutang Jatuh Tempo 25 Hari',
+      kreditur: 'PT Supplier B',
+      jumlahAwal: 8000000,
+      jumlahSisa: 8000000,
+      tenor: 1,
+      tanggalMulai: today,
+      tanggalJatuhTempo: new Date(today.getTime() + 25 * 24 * 60 * 60 * 1000),
+      cicilanPerBulan: 8000000,
+      status: 'Aktif',
+    },
   ];
   await prisma.debt.createMany({ data: debtData });
   console.log(`   ✅ Created ${debtData.length} debts\n`);
 
-  // 15. CREATE NOTIFICATIONS
-  console.log('15. Creating notifications...');
+  // 16. CREATE NOTIFICATIONS
+  console.log('16. Creating notifications...');
   const notificationData = [
     { tipe: 'approval_request', judul: 'Persetujuan Jurnal Entry', pesan: 'Terdapat 3 jurnal entry menunggu persetujuan', isRead: false, referenceId: 'journal-batch-1' },
     { tipe: 'piutang_jatuh_tempo', judul: 'Piutang Jatuh Tempo', pesan: '5 siswa memiliki tagihan yang akan jatuh tempo dalam 7 hari', isRead: false, referenceId: 'billing-due' },
@@ -859,8 +1223,8 @@ async function main() {
   await prisma.notification.createMany({ data: notificationData });
   console.log(`   ✅ Created ${notificationData.length} notifications\n`);
 
-  // 16. CREATE AUDIT TRAIL ENTRIES
-  console.log('16. Creating audit trail entries...');
+  // 17. CREATE AUDIT TRAIL ENTRIES
+  console.log('17. Creating audit trail entries...');
   
   type AuditData = Record<string, string | number | boolean>;
   

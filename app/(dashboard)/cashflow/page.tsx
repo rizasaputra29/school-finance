@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,12 +98,15 @@ export default function CashflowPage() {
   const fetchAccounts = useCallback(async () => {
     try {
       const res = await fetch('/api/accounts');
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data);
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data akun');
+        return;
       }
+      setAccounts(result.data);
     } catch (error) {
       console.error('Failed to fetch accounts:', error);
+      toast.error('Terjadi kesalahan saat memuat akun');
     }
   }, []);
 
@@ -116,14 +120,17 @@ export default function CashflowPage() {
       if (debouncedSearchTerm) url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
 
       const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setCashflows(data.data);
-        setPagination(data.pagination);
-        setSummary(data.summary || { totalDebit: 0, totalKredit: 0, saldo: 0 });
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data cashflow');
+        return;
       }
+      setCashflows(result.data);
+      setPagination(result.meta.pagination);
+      setSummary(result.meta.summary || { totalDebit: 0, totalKredit: 0, saldo: 0 });
     } catch (error) {
       console.error('Failed to fetch cashflows:', error);
+      toast.error('Terjadi kesalahan saat memuat cashflow');
     } finally {
       setIsLoading(false);
     }
@@ -143,51 +150,63 @@ export default function CashflowPage() {
     if (!selectedCashflow) return;
     setError('');
 
-    try {
-      const submitData = {
-        ...formData,
-        debit: parseFormattedNumber(String(formData.debit)),
-        kredit: parseFormattedNumber(String(formData.kredit)),
-      };
+    const submitData = {
+      ...formData,
+      debit: parseFormattedNumber(String(formData.debit)),
+      kredit: parseFormattedNumber(String(formData.kredit)),
+    };
 
-      const res = await fetch(`/api/cashflow/${selectedCashflow.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-      });
+    const promise = fetch(`/api/cashflow/${selectedCashflow.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submitData),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal mengupdate transaksi');
+      return result;
+    });
 
-      const data = await res.json();
-
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Mengupdate transaksi...',
+      success: (result) => {
         setIsEditOpen(false);
         setSelectedCashflow(null);
         setFormData(INITIAL_FORM);
         fetchData(pagination.page);
-      } else {
-        setError(data.error || 'Gagal mengupdate transaksi');
-      }
-    } catch (error) {
-      console.error('Failed to update cashflow:', error);
-      setError('Terjadi kesalahan');
-    }
+        return `Transaksi ${result.data.keterangan} berhasil diupdate`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleDelete = async () => {
     if (!selectedCashflow) return;
-    
-    try {
-      const res = await fetch(`/api/cashflow/${selectedCashflow.id}`, {
-        method: 'DELETE',
-      });
 
-      if (res.ok) {
+    const promise = fetch(`/api/cashflow/${selectedCashflow.id}`, {
+      method: 'DELETE',
+    }).then(async (res) => {
+      // Handle 204 No Content for DELETE
+      if (res.status === 204) {
+        return { success: true, data: selectedCashflow };
+      }
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal menghapus transaksi');
+      return result;
+    });
+
+    toast.promise(promise, {
+      loading: 'Menghapus transaksi...',
+      success: (result) => {
         setIsDeleteOpen(false);
         setSelectedCashflow(null);
         fetchData(pagination.page);
-      }
-    } catch (error) {
-      console.error('Failed to delete cashflow:', error);
-    }
+        return `Transaksi ${result.data?.keterangan || selectedCashflow.keterangan} berhasil dihapus`;
+      },
+      error: (err) => err.message,
+    });
   };
 
   const openEditDialog = (cf: Cashflow) => {

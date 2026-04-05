@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { 
@@ -6,6 +6,16 @@ import {
   setIdempotencyResult,
   isValidIdempotencyKey 
 } from '@/lib/idempotency';
+import { success, errors, noContent, error } from '@/lib/api-response';
+import { handlePrismaError } from '@/lib/prisma-errors';
+
+/**
+ * Helper to convert PrismaErrorResult to NextResponse
+ */
+function prismaErrorToResponse(err: unknown) {
+  const prismaError = handlePrismaError(err);
+  return error(prismaError.message, prismaError.code, { status: prismaError.status });
+}
 
 function getIdempotencyKeyFromNextRequest(req: NextRequest): string | null {
   const header = req.headers.get('x-idempotency-key');
@@ -21,7 +31,7 @@ export async function PATCH(
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
+      return errors.validation([{ field: 'id', message: 'ID tidak valid' }]);
     }
 
     // Check for idempotency key in headers
@@ -31,7 +41,7 @@ export async function PATCH(
     if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
       const cachedResult = getIdempotencyResult(idempotencyKey);
       if (cachedResult !== null) {
-        return NextResponse.json(cachedResult);
+        return success(cachedResult, { message: 'Data berhasil diambil dari cache' });
       }
     }
 
@@ -42,7 +52,10 @@ export async function PATCH(
     if (status) {
       const validStatuses = ['draft', 'approved', 'posted', 'rejected'];
       if (!validStatuses.includes(status)) {
-        return NextResponse.json({ error: 'Status tidak valid' }, { status: 400 });
+        return errors.validation([{ 
+          field: 'status', 
+          message: `Status tidak valid. Status yang diperbolehkan: ${validStatuses.join(', ')}` 
+        }]);
       }
 
       try {
@@ -92,10 +105,13 @@ export async function PATCH(
           setIdempotencyResult(idempotencyKey, result);
         }
 
-        return NextResponse.json(result);
+        return success(result, { message: `Status transaksi berhasil diubah menjadi ${status}` });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+        if (message.includes('tidak ditemukan')) {
+          return errors.notFound('Transaksi');
+        }
+        return prismaErrorToResponse(error);
       }
     }
 
@@ -183,10 +199,16 @@ export async function PATCH(
         setIdempotencyResult(idempotencyKey, result);
       }
 
-      return NextResponse.json(result);
+      return success(result, { message: 'Transaksi berhasil diperbarui' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 400 });
+      if (message.includes('tidak ditemukan')) {
+        if (message.includes('Akun baru')) {
+          return errors.notFound('Akun');
+        }
+        return errors.notFound('Transaksi');
+      }
+      return prismaErrorToResponse(error);
     }
   });
 }
@@ -199,7 +221,7 @@ export async function DELETE(
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
+      return errors.validation([{ field: 'id', message: 'ID tidak valid' }]);
     }
 
     // Check for idempotency
@@ -207,12 +229,12 @@ export async function DELETE(
     if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
       const cachedResult = getIdempotencyResult(idempotencyKey);
       if (cachedResult !== null) {
-        return NextResponse.json(cachedResult);
+        return noContent();
       }
     }
 
     try {
-      const result = await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx) => {
         // 1. Get existing cashflow
         const cashflow = await tx.cashflow.findUnique({
           where: { id },
@@ -247,19 +269,20 @@ export async function DELETE(
         await tx.cashflow.delete({
           where: { id },
         });
-
-        return { message: 'Transaksi berhasil dihapus' };
       });
 
       // Cache result for idempotency
       if (idempotencyKey) {
-        setIdempotencyResult(idempotencyKey, result);
+        setIdempotencyResult(idempotencyKey, { deleted: true, id });
       }
 
-      return NextResponse.json(result);
+      return noContent();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 400 });
+      if (message.includes('tidak ditemukan')) {
+        return errors.notFound('Transaksi');
+      }
+      return prismaErrorToResponse(error);
     }
   });
 }

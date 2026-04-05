@@ -1,15 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { invalidateAccountsCache } from '@/lib/cache';
-import { 
-  getIdempotencyResult, 
+import {
+  getIdempotencyResult,
   setIdempotencyResult,
   getIdempotencyKeyFromRequest,
-  isValidIdempotencyKey 
+  isValidIdempotencyKey
 } from '@/lib/idempotency';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaError } from '@/lib/prisma-errors';
 
 // Validation schemas
 const createAccountSchema = z.object({
@@ -25,9 +27,9 @@ const createAccountSchema = z.object({
 // Bank account validation - only one bank account allowed
 async function validateBankAccount(kodeAkun: string, kategori?: string): Promise<{ valid: boolean; error?: string }> {
   // Check if this is a Bank account (kode 1110 or 102, or kategori = 'Bank')
-  const isBankAccount = 
-    kodeAkun === '1110' || 
-    kodeAkun === '102' || 
+  const isBankAccount =
+    kodeAkun === '1110' ||
+    kodeAkun === '102' ||
     kategori === 'Bank' ||
     kodeAkun.startsWith('111') ||
     kodeAkun.startsWith('102');
@@ -61,10 +63,13 @@ export async function GET(request: NextRequest) {
       const accounts = await prisma.account.findMany({
         orderBy: [{ tipeAkun: 'asc' }, { kodeAkun: 'asc' }],
       });
-      return NextResponse.json(accounts);
+      return success(accounts, {
+        message: 'Accounts retrieved successfully',
+      });
     } catch (error) {
       console.error('Accounts API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      const { message } = handlePrismaError(error);
+      return errors.internal(message);
     }
   });
 }
@@ -73,17 +78,11 @@ export async function POST(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
     try {
       const ip = getClientIp(request);
-      
+
       // Rate limiting for create operations
       const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({ 
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED'
-        }, { 
-          status: 429,
-          headers: { 'Retry-After': String(Math.ceil((rateLimitResult.reset - Date.now()) / 1000)) }
-        });
+        return errors.rateLimit(formatRateLimitError(rateLimitResult));
       }
 
       // Check for idempotency key in headers
@@ -97,20 +96,23 @@ export async function POST(request: NextRequest) {
         const cachedResult = getIdempotencyResult(idempotencyKey);
         if (cachedResult !== null) {
           // Return cached result - this is an idempotent response
-          return NextResponse.json(cachedResult, { status: 201 });
+          return success(cachedResult, {
+            message: 'Account created successfully (cached)',
+            status: 201,
+          });
         }
       }
 
       // Parse and validate request body
       const body = await request.json();
       const validationResult = createAccountSchema.safeParse(body);
-      
+
       if (!validationResult.success) {
-        const errors = validationResult.error.errors.map(e => ({
+        const validationErrors = validationResult.error.errors.map(e => ({
           field: e.path.join('.'),
-          message: e.message
+          message: e.message,
         }));
-        return NextResponse.json({ error: 'Validation failed', errors }, { status: 400 });
+        return errors.validation(validationErrors);
       }
 
       const { kodeAkun, namaAkun, tipeAkun, kategori, saldo } = validationResult.data;
@@ -118,7 +120,10 @@ export async function POST(request: NextRequest) {
       // Validate bank account (only one allowed)
       const bankValidation = await validateBankAccount(kodeAkun, kategori);
       if (!bankValidation.valid) {
-        return NextResponse.json({ error: bankValidation.error }, { status: 400 });
+        return errors.validation([{
+          field: 'kodeAkun',
+          message: bankValidation.error || 'Invalid bank account',
+        }]);
       }
 
       // Check for duplicate kodeAkun
@@ -126,7 +131,7 @@ export async function POST(request: NextRequest) {
         where: { kodeAkun },
       });
       if (existing) {
-        return NextResponse.json({ error: 'Kode akun sudah ada' }, { status: 400 });
+        return errors.conflict('Kode akun sudah ada');
       }
 
       const account = await prisma.account.create({
@@ -147,10 +152,17 @@ export async function POST(request: NextRequest) {
       // Invalidate accounts cache to reflect new data
       invalidateAccountsCache();
 
-      return NextResponse.json(account, { status: 201 });
+      return success(account, {
+        message: 'Account created successfully',
+        status: 201,
+      });
     } catch (error) {
       console.error('Accounts API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      if (error instanceof Error && error.name === 'SyntaxError') {
+        return errors.badRequest('Invalid JSON in request body');
+      }
+      const { message } = handlePrismaError(error);
+      return errors.internal(message);
     }
   }, { requireAdmin: true });
 }

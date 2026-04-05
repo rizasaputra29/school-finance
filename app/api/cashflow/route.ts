@@ -1,9 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { validateBody } from '@/lib/validation';
+import { success, errors, error } from '@/lib/api-response';
+import { handlePrismaError } from '@/lib/prisma-errors';
+
+/**
+ * Helper to convert PrismaErrorResult to NextResponse
+ */
+function prismaErrorToResponse(err: unknown) {
+  const prismaError = handlePrismaError(err);
+  return error(prismaError.message, prismaError.code, { status: prismaError.status });
+}
 
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -45,11 +55,8 @@ const createCashflowSchema = z.object({
   nis: z.string().optional(),
 });
 
-function sendValidationErrorResponse(errors: Array<{ field: string; message: string }>) {
-  return NextResponse.json({
-    error: 'Validation failed',
-    validationErrors: errors,
-  }, { status: 400 });
+function sendValidationErrorResponse(errorsList: Array<{ field: string; message: string }>) {
+  return errors.validation(errorsList);
 }
 
 // Process double-entry transaction
@@ -180,40 +187,47 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const [cashflows, total, summaryAgg] = await Promise.all([
-      prisma.cashflow.findMany({
-        where,
-        orderBy: { tanggal: 'desc' },
-        skip,
-        take: parseInt(limit),
-      }),
-      prisma.cashflow.count({ where }),
-      prisma.cashflow.aggregate({
-        where,
-        _sum: {
-          debit: true,
-          kredit: true,
+    try {
+      const [cashflows, total, summaryAgg] = await Promise.all([
+        prisma.cashflow.findMany({
+          where,
+          orderBy: { tanggal: 'desc' },
+          skip,
+          take: parseInt(limit),
+        }),
+        prisma.cashflow.count({ where }),
+        prisma.cashflow.aggregate({
+          where,
+          _sum: {
+            debit: true,
+            kredit: true,
+          },
+        }),
+      ]);
+
+      const totalDebit = summaryAgg._sum.debit || 0;
+      const totalKredit = summaryAgg._sum.kredit || 0;
+
+      return success(cashflows, {
+        message: 'Data arus kas berhasil diambil',
+        meta: {
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total,
+            totalPages: Math.ceil(total / parseInt(limit)),
+          },
+          summary: {
+            totalDebit,
+            totalKredit,
+            saldo: totalDebit - totalKredit,
+          },
         },
-      }),
-    ]);
-
-    const totalDebit = summaryAgg._sum.debit || 0;
-    const totalKredit = summaryAgg._sum.kredit || 0;
-
-    return NextResponse.json({
-      data: cashflows,
-      summary: {
-        totalDebit,
-        totalKredit,
-        saldo: totalDebit - totalKredit,
-      },
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit)),
-      },
-    });
+      });
+    } catch (error) {
+      console.error('Error fetching cashflows:', error);
+      return prismaErrorToResponse(error);
+    }
   });
 }
 
@@ -224,15 +238,7 @@ export async function POST(request: NextRequest) {
     // Rate limiting for create operations
     const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
     if (!rateLimitResult.success) {
-      return NextResponse.json({ 
-        error: formatRateLimitError(rateLimitResult),
-        code: 'RATE_LIMIT_EXCEEDED'
-      }, { 
-        status: 429,
-        headers: {
-          'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString()
-        }
-      });
+      return errors.rateLimit(formatRateLimitError(rateLimitResult));
     }
 
     const body = await request.json();
@@ -325,16 +331,17 @@ export async function POST(request: NextRequest) {
           timeout: 30000,
         });
 
-        return NextResponse.json({
-          success: true,
-          data: result.cashflows,
-          summary: result.summary,
+        return success(result.cashflows, {
           message: `Transaksi ${transactionType} berhasil dibuat dengan ${result.cashflows.length} entri`,
+          status: 201,
+          meta: { summary: result.summary },
         });
       } catch (error) {
         console.error('Double-entry transaction error:', error);
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+        if (error instanceof Error && error.message.includes('tidak ditemukan')) {
+          return errors.notFound(error.message.replace('Akun dengan kode ', 'Account '));
+        }
+        return prismaErrorToResponse(error);
       }
     }
 
@@ -359,11 +366,10 @@ export async function POST(request: NextRequest) {
       });
 
       if (existingTransaction) {
-        return NextResponse.json({
+        return success({
           ...existingTransaction,
           isDuplicate: true,
-          message: 'Transaksi sudah ada, menggunakan data yang sudah ada',
-        });
+        }, { message: 'Transaksi sudah ada, menggunakan data yang sudah ada' });
       }
 
       const result = await prisma.$transaction(async (tx) => {
@@ -417,15 +423,24 @@ export async function POST(request: NextRequest) {
         timeout: 30000,
       });
 
-      return NextResponse.json({
+      return success({
         ...result,
         isNew: true,
+      }, {
         message: 'Transaksi berhasil dibuat',
-      }, { status: 201 });
+        status: 201,
+      });
     } catch (error) {
       console.error('Transaction error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 400 });
+      if (error instanceof Error) {
+        if (error.message.includes('tidak ditemukan')) {
+          return errors.notFound(error.message.replace('Akun dengan kode ', 'Account '));
+        }
+        if (error.message.includes('wajib diisi')) {
+          return errors.validation([{ field: 'kodeAkun', message: error.message }]);
+        }
+      }
+      return prismaErrorToResponse(error);
     }
   });
 }

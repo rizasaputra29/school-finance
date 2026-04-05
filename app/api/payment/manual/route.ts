@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
+import { ErrorCodes } from '@/lib/error-codes';
+import { handlePrismaError } from '@/lib/prisma-errors';
 
 // Account codes
 const BANK_ACCOUNT_CODE = '102'; // Bank
@@ -269,16 +272,18 @@ export async function GET(request: NextRequest) {
         ? billingsWithOverdue.filter(b => b.isOverdue)
         : billingsWithOverdue;
 
-      return NextResponse.json({
-        data: filteredBillings,
-        summary: {
-          totalUnpaid: billings.filter(b => b.statusBayar === 'Belum Lunas').length,
-          totalOverdue: billingsWithOverdue.filter(b => b.isOverdue).length,
+      return success(filteredBillings, {
+        message: 'Data pembayaran berhasil diambil',
+        meta: {
+          summary: {
+            totalUnpaid: billings.filter(b => b.statusBayar === 'Belum Lunas').length,
+            totalOverdue: billingsWithOverdue.filter(b => b.isOverdue).length,
+          },
         },
       });
     } catch (error) {
       console.error('Payment API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return errors.internal('Terjadi kesalahan saat mengambil data pembayaran');
     }
   }, { requireAdmin: true });
 }
@@ -291,39 +296,33 @@ export async function POST(request: NextRequest) {
       // Rate limiting for payment operations
       const rateLimitResult = rateLimit(`payment:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({ 
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED'
-        }, { 
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-          }
-        });
+        return errors.rateLimit(formatRateLimitError(rateLimitResult));
       }
 
       const body = await request.json();
 
       // Validate request body
-      const validationErrors = manualPaymentSchema.safeParse(body);
-      if (!validationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: validationErrors.error.errors.map((err) => ({
+      const validationResult = manualPaymentSchema.safeParse(body);
+      if (!validationResult.success) {
+        return errors.validation(
+          validationResult.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
-      const { billingId, jumlahBayar, tanggalBayar, catatan } = validationErrors.data;
+      const { billingId, jumlahBayar, tanggalBayar, catatan } = validationResult.data;
       
       // Convert amount to number (handles both string and number from Zod transform)
       const amount = Number(jumlahBayar);
       const paymentDate = tanggalBayar ? new Date(tanggalBayar) : new Date();
 
       if (isNaN(amount) || amount <= 0) {
-        return NextResponse.json({ error: 'Jumlah pembayaran harus lebih dari 0' }, { status: 400 });
+        return errors.validation([{
+          field: 'jumlahBayar',
+          message: 'Jumlah pembayaran harus lebih dari 0'
+        }]);
       }
 
       try {
@@ -334,25 +333,46 @@ export async function POST(request: NextRequest) {
           catatan
         );
 
-        return NextResponse.json({
-          success: true,
-          message: result.overdue 
+        return success({
+          billing: result.billing,
+          cashflows: result.cashflows,
+          isOverdue: result.overdue,
+          student: result.studentUpdated,
+        }, {
+          message: result.overdue
             ? 'Pembayaran berhasil! Tagihan overdue telah dilunasi.'
             : 'Pembayaran berhasil!',
-          data: {
-            billing: result.billing,
-            cashflows: result.cashflows,
-            isOverdue: result.overdue,
-            student: result.studentUpdated,
-          },
-        }, { status: 201 });
+          status: 201
+        });
       } catch (error) {
+        // Handle specific error types
         const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+
+        if (message.includes('tidak ditemukan')) {
+          return errors.notFound('Tagihan');
+        }
+
+        if (message.includes('sudah lunas')) {
+          return errors.conflict('Tagihan sudah lunas');
+        }
+
+        // Handle Prisma errors
+        const { code: prismaCode, message: prismaMessage } = handlePrismaError(error);
+        if (prismaCode === ErrorCodes.RESOURCE_NOT_FOUND) {
+          return errors.notFound('Resource');
+        }
+        if (prismaCode === ErrorCodes.RESOURCE_ALREADY_EXISTS) {
+          return errors.conflict(prismaMessage);
+        }
+        if (prismaCode === ErrorCodes.RELATED_RESOURCE_NOT_FOUND) {
+          return errors.validation([{ message: prismaMessage }]);
+        }
+
+        return errors.internal(prismaMessage);
       }
     } catch (error) {
       console.error('Payment API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return errors.internal('Terjadi kesalahan saat memproses pembayaran');
     }
   }, { requireAdmin: true });
 }

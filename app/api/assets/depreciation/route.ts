@@ -4,11 +4,13 @@
  * Double-entry: Debit "Beban Penyusutan", Credit "Akumulasi Penyusutan"
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 import {
   calculateDepreciation,
   buildDepreciationJournalEntries,
@@ -420,34 +422,35 @@ export async function GET(request: NextRequest) {
         0
       );
 
-      return NextResponse.json({
-        year,
-        accounts: {
-          bebanPenyusutan: {
-            kodeAkun: bebanPenyusutanCode,
-            namaAkun: bebanAccount?.namaAkun,
-            tipeAkun: bebanAccount?.tipeAkun,
+      return success(assetsWithDepreciation, {
+        message: 'Depreciation data retrieved successfully',
+        meta: {
+          year,
+          accounts: {
+            bebanPenyusutan: {
+              kodeAkun: bebanPenyusutanCode,
+              namaAkun: bebanAccount?.namaAkun,
+              tipeAkun: bebanAccount?.tipeAkun,
+            },
+            akumulasiPenyusutan: {
+              kodeAkun: akumulasiPenyusutanCode,
+              namaAkun: akumulasiAccount?.namaAkun,
+              tipeAkun: akumulasiAccount?.tipeAkun,
+            },
           },
-          akumulasiPenyusutan: {
-            kodeAkun: akumulasiPenyusutanCode,
-            namaAkun: akumulasiAccount?.namaAkun,
-            tipeAkun: akumulasiAccount?.tipeAkun,
+          summary: {
+            totalAssets: assets.length,
+            depreciableAssets: depreciableAssets.length,
+            totalAcquisition,
+            totalCurrentYearDepreciation: totalCurrentDepreciation,
+            totalAccumulatedDepreciation: totalAccumulated,
+            totalRemainingUsefulLife: totalRemainingLife,
           },
         },
-        summary: {
-          totalAssets: assets.length,
-          depreciableAssets: depreciableAssets.length,
-          totalAcquisition,
-          totalCurrentYearDepreciation: totalCurrentDepreciation,
-          totalAccumulatedDepreciation: totalAccumulated,
-          totalRemainingUsefulLife: totalRemainingLife,
-        },
-        assets: assetsWithDepreciation,
       });
     } catch (error) {
       console.error('Depreciation API error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -460,9 +463,12 @@ export async function POST(request: NextRequest) {
       // Validate request body
       const validationResult = depreciateSchema.safeParse(body);
       if (!validationResult.success) {
-        return NextResponse.json({ 
-          errors: validationResult.error 
-        }, { status: 400 });
+        return errors.validation(
+          validationResult.error.errors.map((err) => ({
+            field: err.path.join('.'),
+            message: err.message,
+          }))
+        );
       }
 
       const { year, assetId, force } = validationResult.data;
@@ -474,14 +480,13 @@ export async function POST(request: NextRequest) {
       const result = await processDepreciation(targetYear, assetId, force);
 
       if (!result.success) {
-        return NextResponse.json(result, { status: 400 });
+        return errors.badRequest(result.message);
       }
 
-      return NextResponse.json(result);
+      return success(result, { message: result.message });
     } catch (error) {
       console.error('Depreciation API error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

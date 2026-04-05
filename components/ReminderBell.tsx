@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Bell, AlertTriangle, Calendar, FileText, Clock, X } from 'lucide-react';
 import { formatCurrency, formatShortDate } from '@/lib/utils';
 import Link from 'next/link';
@@ -26,12 +27,15 @@ export function ReminderBell() {
   const fetchReminders = async () => {
     try {
       const res = await fetch('/api/reminders');
-      if (res.ok) {
-        const data = await res.json();
-        setReminders(data);
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat pengingat');
+        return;
       }
+      setReminders(result.data);
     } catch (error) {
       console.error('Failed to fetch reminders:', error);
+      toast.error('Terjadi kesalahan saat memuat pengingat');
     } finally {
       setIsLoading(false);
     }

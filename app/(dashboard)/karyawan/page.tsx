@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,14 +81,16 @@ export default function KaryawanPage() {
         ...(debouncedSearch && { search: debouncedSearch }),
       });
       const res = await fetch(`/api/karyawan?${params}`);
-      const json = await res.json();
-      if (res.ok) {
-        setEmployees(json.data);
-        setSummary(json.summary);
-        setPagination(json.pagination);
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data karyawan');
+        return;
       }
+      setEmployees(result.data);
+      setSummary(result.meta.summary);
+      setPagination(result.meta.pagination);
     } catch {
-      // ignore
+      toast.error('Terjadi kesalahan saat memuat data karyawan');
     } finally {
       setLoading(false);
     }
@@ -98,55 +101,92 @@ export default function KaryawanPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    try {
-      const res = await fetch('/api/karyawan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          gajiPokok: parseFloat(form.gajiPokok) || 0,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'Gagal menyimpan'); return; }
-      setIsCreateOpen(false);
-      setForm(INITIAL_FORM);
-      fetchData();
-    } catch { setError('Terjadi kesalahan'); }
+
+    const promise = fetch('/api/karyawan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...form,
+        gajiPokok: parseFloat(form.gajiPokok) || 0,
+      }),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal menyimpan');
+      return result;
+    });
+
+    toast.promise(promise, {
+      loading: 'Menambahkan karyawan...',
+      success: (result) => {
+        setIsCreateOpen(false);
+        setForm(INITIAL_FORM);
+        fetchData();
+        return `Karyawan ${result.data.nama} berhasil ditambahkan`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee) return;
     setError('');
-    try {
-      const res = await fetch('/api/karyawan', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: selectedEmployee.id,
-          ...form,
-          gajiPokok: parseFloat(form.gajiPokok) || 0,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'Gagal menyimpan'); return; }
-      setIsEditOpen(false);
-      setSelectedEmployee(null);
-      fetchData();
-    } catch { setError('Terjadi kesalahan'); }
+
+    const promise = fetch('/api/karyawan', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: selectedEmployee.id,
+        ...form,
+        gajiPokok: parseFloat(form.gajiPokok) || 0,
+      }),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal menyimpan');
+      return result;
+    });
+
+    toast.promise(promise, {
+      loading: 'Mengupdate data karyawan...',
+      success: (result) => {
+        setIsEditOpen(false);
+        setSelectedEmployee(null);
+        fetchData();
+        return `Karyawan ${result.data.nama} berhasil diupdate`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleDelete = async () => {
     if (!selectedEmployee) return;
-    try {
-      const res = await fetch(`/api/karyawan?id=${selectedEmployee.id}`, { method: 'DELETE' });
-      if (res.ok) {
+
+    const promise = fetch(`/api/karyawan?id=${selectedEmployee.id}`, { method: 'DELETE' }).then(async (res) => {
+      // Handle 204 No Content for DELETE
+      if (res.status === 204) {
+        return { success: true, data: selectedEmployee };
+      }
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal menghapus data');
+      return result;
+    });
+
+    toast.promise(promise, {
+      loading: 'Menghapus karyawan...',
+      success: (result) => {
         setIsDeleteOpen(false);
         setSelectedEmployee(null);
         fetchData();
-      }
-    } catch { /* ignore */ }
+        return `Karyawan ${result.data?.nama || selectedEmployee.nama} berhasil dihapus`;
+      },
+      error: (err) => err.message,
+    });
   };
 
   const openEditDialog = (emp: Employee) => {

@@ -1,31 +1,30 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 export async function POST(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    // Rate Limiting for Reset (Critical Action)
-    const ip = getClientIp(request);
-    const identifier = `reset:${ip}`;
-    const rateLimitResult = rateLimit(identifier, RATE_LIMITS.reset);
-
-    if (!rateLimitResult.success) {
-      return NextResponse.json({ 
-        error: formatRateLimitError(rateLimitResult),
-        code: 'RATE_LIMIT_EXCEEDED' 
-      }, { status: 429 });
-    }
-
-    const body = await request.json();
-    const { confirmation } = body;
-
-    // Double check "confirm" body param
-    if (confirmation !== 'RESET_DATABASE') {
-      return NextResponse.json({ error: 'Invalid confirmation' }, { status: 400 });
-    }
-
     try {
+      // Rate Limiting for Reset (Critical Action)
+      const ip = getClientIp(request);
+      const identifier = `reset:${ip}`;
+      const rateLimitResult = rateLimit(identifier, RATE_LIMITS.reset);
+
+      if (!rateLimitResult.success) {
+        return errors.rateLimit(formatRateLimitError(rateLimitResult));
+      }
+
+      const body = await request.json();
+      const { confirmation } = body;
+
+      // Double check "confirm" body param
+      if (confirmation !== 'RESET_DATABASE') {
+        return errors.validation([{ field: 'confirmation', message: 'Invalid confirmation' }]);
+      }
+
       // Delete sequentially instead of using transaction to avoid timeout on serverless DBs
       // Order matters due to foreign key dependencies
       console.log('Deleting cashflows...');
@@ -41,10 +40,10 @@ export async function POST(request: NextRequest) {
       await prisma.account.deleteMany();
 
       console.log('Database reset successful');
-      return NextResponse.json({ message: 'Database reset successful' });
+      return success(null, { message: 'Database reset successful' });
     } catch (error) {
       console.error('Reset API Error:', error);
-      return NextResponse.json({ error: 'Failed to reset database' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

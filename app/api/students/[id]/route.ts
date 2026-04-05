@@ -1,12 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
-import { 
-  getIdempotencyResult, 
+import {
+  getIdempotencyResult,
   setIdempotencyResult,
-  isValidIdempotencyKey 
+  isValidIdempotencyKey
 } from '@/lib/idempotency';
+import { success, errors, noContent } from '@/lib/api-response';
+import { handlePrismaError } from '@/lib/prisma-errors';
 
 function getIdempotencyKeyFromNextRequest(req: NextRequest): string | null {
   const header = req.headers.get('x-idempotency-key');
@@ -22,7 +24,10 @@ export async function GET(
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ error: 'Invalid student ID' }, { status: 400 });
+      return errors.validation([{
+        field: 'id',
+        message: 'Invalid student ID',
+      }]);
     }
 
     const student = await prisma.student.findUnique({
@@ -31,10 +36,12 @@ export async function GET(
     });
 
     if (!student) {
-      return NextResponse.json({ error: 'Siswa tidak ditemukan' }, { status: 404 });
+      return errors.notFound('Student');
     }
 
-    return NextResponse.json(student);
+    return success(student, {
+      message: 'Student retrieved successfully',
+    });
   });
 }
 
@@ -46,7 +53,10 @@ export async function PATCH(
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ error: 'Invalid student ID' }, { status: 400 });
+      return errors.validation([{
+        field: 'id',
+        message: 'Invalid student ID',
+      }]);
     }
 
     // Check for idempotency key in headers
@@ -56,7 +66,9 @@ export async function PATCH(
     if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
       const cachedResult = getIdempotencyResult(idempotencyKey);
       if (cachedResult !== null) {
-        return NextResponse.json(cachedResult);
+        return success(cachedResult, {
+          message: 'Student updated successfully (cached)',
+        });
       }
     }
 
@@ -83,7 +95,9 @@ export async function PATCH(
       setIdempotencyResult(idempotencyKey, student);
     }
 
-    return NextResponse.json(student);
+    return success(student, {
+      message: 'Student updated successfully',
+    });
   });
 }
 
@@ -95,7 +109,10 @@ export async function DELETE(
     const { id } = await params;
 
     if (!id) {
-      return NextResponse.json({ error: 'Invalid student ID' }, { status: 400 });
+      return errors.validation([{
+        field: 'id',
+        message: 'Invalid student ID',
+      }]);
     }
 
     // Check for idempotency
@@ -103,30 +120,30 @@ export async function DELETE(
     if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
       const cachedResult = getIdempotencyResult(idempotencyKey);
       if (cachedResult !== null) {
-        return NextResponse.json(cachedResult);
+        return noContent();
       }
     }
 
     try {
       // Hard delete to trigger cascade delete for Billings
-      const student = await prisma.student.delete({
+      await prisma.student.delete({
         where: { id },
       });
 
-      const result = { message: 'Siswa dan data terkait berhasil dihapus', student };
-
       // Cache result for idempotency
       if (idempotencyKey) {
-        setIdempotencyResult(idempotencyKey, result);
+        setIdempotencyResult(idempotencyKey, { deleted: true });
       }
 
-      return NextResponse.json(result);
+      // Return 204 No Content for DELETE
+      return noContent();
     } catch (error) {
       // Prisma error P2025: Record to update not found.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        return NextResponse.json({ error: 'Siswa tidak ditemukan' }, { status: 404 });
+        return errors.notFound('Student');
       }
-      throw error;
+      const { message } = handlePrismaError(error);
+      return errors.internal(message);
     }
   });
 }

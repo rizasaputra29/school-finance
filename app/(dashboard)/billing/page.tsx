@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -114,19 +115,25 @@ export default function BillingPage() {
 
       const [studentsResponse, billingsResponse] = await Promise.all([studentsRes, billingsRes]);
 
-      if (studentsResponse.ok) {
-        const studentsData = await studentsResponse.json();
-        setStudents(studentsData.data);
+      const studentsResult = await studentsResponse.json();
+      if (!studentsResult.success) {
+        toast.error(studentsResult.error?.message || 'Gagal memuat data siswa');
+      } else {
+        setStudents(studentsResult.data);
       }
 
-      if (billingsResponse.ok) {
-        const billingsData = await billingsResponse.json();
-        setBillings(billingsData.data);
-        setPagination(billingsData.pagination);
-        setSummary(billingsData.summary);
+      const billingsResult = await billingsResponse.json();
+      if (!billingsResult.success) {
+        toast.error(billingsResult.error?.message || 'Gagal memuat data tagihan');
+        setIsLoading(false);
+        return;
       }
+      setBillings(billingsResult.data);
+      setPagination(billingsResult.meta.pagination);
+      setSummary(billingsResult.meta.summary);
     } catch (error) {
       console.error('Failed to fetch data:', error);
+      toast.error('Terjadi kesalahan saat memuat data');
     } finally {
       setIsLoading(false);
     }
@@ -139,58 +146,67 @@ export default function BillingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    try {
-      // Parse formatted number before sending
-      const submitData = {
-        ...formData,
-        jumlah: parseFormattedNumber(formData.jumlah),
-      };
-      const res = await fetch('/api/billing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-      });
 
-      const data = await res.json();
+    // Parse formatted number before sending
+    const submitData = {
+      ...formData,
+      jumlah: parseFormattedNumber(formData.jumlah),
+    };
 
-      if (!res.ok) {
-        setError(data.error || 'Gagal membuat tagihan');
-        return;
-      }
+    const promise = fetch('/api/billing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submitData),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal membuat tagihan');
+      return result;
+    });
 
-      setIsDialogOpen(false);
-      setFormData({
-        studentId: '',
-        jenisBiaya: '',
-        periodeBulan: new Date().toISOString().slice(0, 7),
-        jumlah: '',
-        catatan: '',
-      });
-      fetchData(pagination.page);
-    } catch (error) {
-      console.error('Failed to create billing:', error);
-      setError('Terjadi kesalahan');
-    }
+    toast.promise(promise, {
+      loading: 'Membuat tagihan...',
+      success: (result) => {
+        setIsDialogOpen(false);
+        setFormData({
+          studentId: '',
+          jenisBiaya: '',
+          periodeBulan: new Date().toISOString().slice(0, 7),
+          jumlah: '',
+          catatan: '',
+        });
+        fetchData(pagination.page);
+        return `Tagihan ${result.data.jenisBiaya} berhasil dibuat`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handlePayment = async () => {
     if (!selectedBilling) return;
 
-    try {
-      const res = await fetch(`/api/billing/${selectedBilling.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ statusBayar: 'Lunas' }),
-      });
+    const promise = fetch(`/api/billing/${selectedBilling.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statusBayar: 'Lunas' }),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal memproses pembayaran');
+      return result;
+    });
 
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Memproses pembayaran...',
+      success: (result) => {
         setIsPayDialogOpen(false);
         setSelectedBilling(null);
         fetchData(pagination.page);
-      }
-    } catch (error) {
-      console.error('Failed to process payment:', error);
-    }
+        return `Pembayaran ${result.data.jenisBiaya} berhasil diproses`;
+      },
+      error: (err) => err.message,
+    });
   };
 
   const selectedStudent = students.find((s) => s.id === formData.studentId);

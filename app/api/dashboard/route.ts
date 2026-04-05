@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
+import { success } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // Month names in Indonesian
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -10,81 +12,87 @@ const COLORS = ['#059DEA', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 
 export async function GET(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const isChart = searchParams.get('chart') === 'true';
-    const bulan = parseInt(searchParams.get('bulan') || '1');
-    const tahun = parseInt(searchParams.get('tahun') || new Date().getFullYear().toString());
+    try {
+      const { searchParams } = new URL(request.url);
+      const startDate = searchParams.get('startDate');
+      const endDate = searchParams.get('endDate');
+      const isChart = searchParams.get('chart') === 'true';
+      const bulan = parseInt(searchParams.get('bulan') || '1');
+      const tahun = parseInt(searchParams.get('tahun') || new Date().getFullYear().toString());
 
-    // Build date filter
-    const dateFilter: Record<string, unknown> = {};
-    if (startDate && endDate) {
-      dateFilter.gte = new Date(startDate);
-      dateFilter.lte = new Date(endDate);
-    }
+      // Build date filter
+      const dateFilter: Record<string, unknown> = {};
+      if (startDate && endDate) {
+        dateFilter.gte = new Date(startDate);
+        dateFilter.lte = new Date(endDate);
+      }
 
-    if (isChart) {
-      // Return chart data
-      const chartData = await getChartData(bulan, tahun);
-      return NextResponse.json(chartData);
-    }
+      if (isChart) {
+        // Return chart data
+        const chartData = await getChartData(bulan, tahun);
+        return success(chartData, { message: 'Data chart berhasil diambil' });
+      }
 
-    // Return main dashboard data
-    const [
-      totalStudents,
-      paidBillings,
-      unpaidBillings,
-      cashflowTotals,
-      recentTransactions,
-    ] = await Promise.all([
-      prisma.student.count({ where: { status: 'Active' } }),
-      prisma.billing.count({ where: { statusBayar: 'Lunas' } }),
-      prisma.billing.count({ where: { statusBayar: 'Belum Lunas' } }),
-      prisma.cashflow.aggregate({
-        _sum: {
-          debit: true,
-          kredit: true,
-        },
-        where: startDate && endDate ? { tanggal: dateFilter } : {},
-      }),
-      prisma.cashflow.findMany({
-        where: startDate && endDate ? { tanggal: dateFilter } : {},
-        orderBy: { tanggal: 'desc' },
-        take: 10,
-        include: {
-          account: {
-            select: {
-              kodeAkun: true,
-              namaAkun: true,
+      // Return main dashboard data
+      const [
+        totalStudents,
+        paidBillings,
+        unpaidBillings,
+        cashflowTotals,
+        recentTransactions,
+      ] = await Promise.all([
+        prisma.student.count({ where: { status: 'Active' } }),
+        prisma.billing.count({ where: { statusBayar: 'Lunas' } }),
+        prisma.billing.count({ where: { statusBayar: 'Belum Lunas' } }),
+        prisma.cashflow.aggregate({
+          _sum: {
+            debit: true,
+            kredit: true,
+          },
+          where: startDate && endDate ? { tanggal: dateFilter } : {},
+        }),
+        prisma.cashflow.findMany({
+          where: startDate && endDate ? { tanggal: dateFilter } : {},
+          orderBy: { tanggal: 'desc' },
+          take: 10,
+          include: {
+            account: {
+              select: {
+                kodeAkun: true,
+                namaAkun: true,
+              },
             },
           },
+        }),
+      ]);
+
+      const totalDebit = cashflowTotals._sum.debit || 0;
+      const totalKredit = cashflowTotals._sum.kredit || 0;
+      const saldo = totalDebit - totalKredit;
+
+      return success({
+        recentTransactions: recentTransactions.map((tx) => ({
+          id: tx.id,
+          tanggal: tx.tanggal.toISOString(),
+          keterangan: tx.keterangan,
+          kodeAkun: tx.kodeAkun,
+          debit: tx.debit,
+          kredit: tx.kredit,
+        })),
+        summary: {
+          totalStudents,
+          totalDebit,
+          totalKredit,
+          saldo,
+          lunasCount: paidBillings,
+          belumLunasCount: unpaidBillings,
         },
-      }),
-    ]);
-
-    const totalDebit = cashflowTotals._sum.debit || 0;
-    const totalKredit = cashflowTotals._sum.kredit || 0;
-    const saldo = totalDebit - totalKredit;
-
-    return NextResponse.json({
-      summary: {
-        totalStudents,
-        totalDebit,
-        totalKredit,
-        saldo,
-        lunasCount: paidBillings,
-        belumLunasCount: unpaidBillings,
-      },
-      recentTransactions: recentTransactions.map((tx) => ({
-        id: tx.id,
-        tanggal: tx.tanggal.toISOString(),
-        keterangan: tx.keterangan,
-        kodeAkun: tx.kodeAkun,
-        debit: tx.debit,
-        kredit: tx.kredit,
-      })),
-    });
+      }, {
+        message: 'Data dashboard berhasil diambil',
+      });
+    } catch (error) {
+      return handlePrismaErrorResponse(error);
+    }
   });
 }
 

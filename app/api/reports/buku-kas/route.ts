@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
+import { success } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // Type definitions
 interface CashflowRecord {
@@ -132,61 +134,67 @@ function buildFilters(params: ReturnType<typeof parseQueryParams>) {
 
 export async function GET(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const query = getQueryParams(request);
-    const params = parseQueryParams(query);
-    const where = buildWhereClause(params);
-    const skip = (params.page - 1) * params.limit;
+    try {
+      const query = getQueryParams(request);
+      const params = parseQueryParams(query);
+      const where = buildWhereClause(params);
+      const skip = (params.page - 1) * params.limit;
 
-    // Fetch cashflows with pagination
-    const [cashflows, total, summaryAgg] = await Promise.all([
-      prisma.cashflow.findMany({
-        where,
-        orderBy: [{ tanggal: 'asc' }, { createdAt: 'asc' }],
-        skip,
-        take: params.limit,
-      }) as Promise<CashflowRecord[]>,
-      prisma.cashflow.count({ where }),
-      prisma.cashflow.aggregate({
-        where,
-        _sum: {
-          debit: true,
-          kredit: true,
+      // Fetch cashflows with pagination
+      const [cashflows, total, summaryAgg] = await Promise.all([
+        prisma.cashflow.findMany({
+          where,
+          orderBy: [{ tanggal: 'asc' }, { createdAt: 'asc' }],
+          skip,
+          take: params.limit,
+        }) as Promise<CashflowRecord[]>,
+        prisma.cashflow.count({ where }),
+        prisma.cashflow.aggregate({
+          where,
+          _sum: {
+            debit: true,
+            kredit: true,
+          },
+        }),
+      ]);
+
+      // Calculate opening balance
+      const openingBalance = await calculateOpeningBalance(params.startDate);
+
+      // Calculate running balance for each entry
+      const data = calculateRunningBalance(cashflows, openingBalance);
+
+      // Get totals from aggregation
+      const totalDebit = summaryAgg._sum.debit || 0;
+      const totalKredit = summaryAgg._sum.kredit || 0;
+
+      // Verify double-entry
+      const balanceCheck = verifyDoubleEntry(totalDebit, totalKredit);
+
+      // Calculate final balance
+      const saldoAkhir = openingBalance + totalDebit - totalKredit;
+
+      return success(data, {
+        message: 'Laporan buku kas berhasil diambil',
+        meta: {
+          pagination: {
+            page: params.page,
+            limit: params.limit,
+            total,
+            totalPages: Math.ceil(total / params.limit),
+          },
+          summary: {
+            totalDebit,
+            totalKredit,
+            saldoAkhir,
+            isBalanced: balanceCheck.isBalanced,
+            openingBalance,
+          },
+          filters: buildFilters(params),
         },
-      }),
-    ]);
-
-    // Calculate opening balance
-    const openingBalance = await calculateOpeningBalance(params.startDate);
-
-    // Calculate running balance for each entry
-    const data = calculateRunningBalance(cashflows, openingBalance);
-
-    // Get totals from aggregation
-    const totalDebit = summaryAgg._sum.debit || 0;
-    const totalKredit = summaryAgg._sum.kredit || 0;
-
-    // Verify double-entry
-    const balanceCheck = verifyDoubleEntry(totalDebit, totalKredit);
-
-    // Calculate final balance
-    const saldoAkhir = openingBalance + totalDebit - totalKredit;
-
-    return NextResponse.json({
-      data,
-      summary: {
-        totalDebit,
-        totalKredit,
-        saldoAkhir,
-        isBalanced: balanceCheck.isBalanced,
-        openingBalance,
-      },
-      filters: buildFilters(params),
-      pagination: {
-        page: params.page,
-        limit: params.limit,
-        total,
-        totalPages: Math.ceil(total / params.limit),
-      },
-    });
+      });
+    } catch (error) {
+      return handlePrismaErrorResponse(error);
+    }
   });
 }

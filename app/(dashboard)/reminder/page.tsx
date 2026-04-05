@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Calendar, FileText, Clock, CheckCircle, ChevronRight, CreditCard, BookOpen, Send, DollarSign } from 'lucide-react';
@@ -61,12 +62,15 @@ export default function ReminderPage() {
   const fetchReminders = async () => {
     try {
       const res = await fetch('/api/reminders');
-      if (res.ok) {
-        const data = await res.json();
-        setReminders(data);
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat pengingat');
+        return;
       }
+      setReminders(result.data);
     } catch (error) {
       console.error('Failed to fetch reminders:', error);
+      toast.error('Terjadi kesalahan saat memuat pengingat');
     } finally {
       setIsLoading(false);
     }

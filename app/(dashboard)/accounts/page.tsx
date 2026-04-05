@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,12 +82,15 @@ export default function AccountsPage() {
   const fetchData = async () => {
     try {
       const res = await fetch('/api/accounts');
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data);
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data akun');
+        return;
       }
+      setAccounts(result.data);
     } catch (error) {
       console.error('Failed to fetch accounts:', error);
+      toast.error('Terjadi kesalahan saat memuat data akun');
     } finally {
       setIsLoading(false);
     }
@@ -99,32 +103,35 @@ export default function AccountsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    try {
-      const submitData = {
-        ...formData,
-        saldo: parseFormattedNumber(String(formData.saldo)),
-      };
 
-      const res = await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-      });
+    const submitData = {
+      ...formData,
+      saldo: parseFormattedNumber(String(formData.saldo)),
+    };
 
-      const data = await res.json();
+    const promise = fetch('/api/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submitData),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal membuat akun');
+      return result;
+    });
 
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Menyimpan akun...',
+      success: (result) => {
         setIsCreateOpen(false);
         setFormData(INITIAL_FORM);
         fetchData();
-      } else {
-        setError(data.error || 'Gagal membuat akun');
-      }
-    } catch (error) {
-      console.error('Failed to create account:', error);
-      setError('Terjadi kesalahan');
-    }
+        return `Akun ${result.data.namaAkun} berhasil dibuat`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -132,54 +139,62 @@ export default function AccountsPage() {
     if (!selectedAccount) return;
     setError('');
 
-    try {
-      const submitData = {
-        ...formData,
-        saldo: parseFormattedNumber(String(formData.saldo)),
-      };
+    const submitData = {
+      ...formData,
+      saldo: parseFormattedNumber(String(formData.saldo)),
+    };
 
-      const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-      });
+    const promise = fetch(`/api/accounts/${selectedAccount.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submitData),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal mengupdate akun');
+      return result;
+    });
 
-      const data = await res.json();
-
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Mengupdate akun...',
+      success: (result) => {
         setIsEditOpen(false);
         setSelectedAccount(null);
         setFormData(INITIAL_FORM);
         fetchData();
-      } else {
-        setError(data.error || 'Gagal mengupdate akun');
-      }
-    } catch (error) {
-      console.error('Failed to update account:', error);
-      setError('Terjadi kesalahan');
-    }
+        return `Akun ${result.data.namaAkun} berhasil diupdate`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleDelete = async () => {
     if (!selectedAccount) return;
 
-    try {
-      const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
-        method: 'DELETE',
-      });
+    const promise = fetch(`/api/accounts/${selectedAccount.id}`, {
+      method: 'DELETE',
+    }).then(async (res) => {
+      // Handle 204 No Content for DELETE
+      if (res.status === 204) {
+        return { success: true, data: selectedAccount };
+      }
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal menghapus akun');
+      return result;
+    });
 
-      const data = await res.json();
-
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Menghapus akun...',
+      success: (result) => {
         setIsDeleteOpen(false);
         setSelectedAccount(null);
         fetchData();
-      } else {
-        alert(data.error || 'Gagal menghapus akun');
-      }
-    } catch (error) {
-      console.error('Failed to delete account:', error);
-    }
+        return `Akun ${result.data?.namaAkun || selectedAccount.namaAkun} berhasil dihapus`;
+      },
+      error: (err) => err.message,
+    });
   };
 
   const openEditDialog = (acc: Account) => {

@@ -4,6 +4,8 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
+import { errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // Types for Prisma v7
 interface CashflowRecord {
@@ -313,7 +315,7 @@ export async function GET(request: NextRequest) {
       const { format, startDate, endDate, kodeAkun, kategori } = query;
 
       if (!format || !['pdf', 'excel'].includes(format)) {
-        return NextResponse.json({ error: 'Format harus pdf atau excel' }, { status: 400 });
+        return errors.validation([{ field: 'format', message: 'Format harus pdf atau excel' }]);
       }
 
       // Parse dates
@@ -367,7 +369,7 @@ export async function GET(request: NextRequest) {
       });
     } catch (error) {
       console.error('Export Buku Kas error:', error);
-      return NextResponse.json({ error: 'Gagal mengexport data' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

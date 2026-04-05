@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // Account codes for double-entry
 const BANK_ACCOUNT_CODE = '102'; // Bank
@@ -384,13 +386,13 @@ export async function GET(request: NextRequest) {
         JatuhTempo: installmentsWithOverdue.filter((i: InstallmentWithStatus) => i.isOverdue).length,
       };
 
-      return NextResponse.json({
-        data: filteredInstallments,
-        summary,
+      return success(filteredInstallments, {
+        message: 'Data cicilan berhasil diambil',
+        meta: { summary },
       });
     } catch (error) {
       console.error('Installment API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -403,15 +405,7 @@ export async function POST(request: NextRequest) {
       // Rate limiting for installment creation
       const rateLimitResult = rateLimit(`installment:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({ 
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED'
-        }, { 
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-          }
-        });
+        return errors.rateLimit(formatRateLimitError(rateLimitResult));
       }
 
       const body = await request.json();
@@ -419,13 +413,12 @@ export async function POST(request: NextRequest) {
       // Validate request body
       const validationErrors = createInstallmentPlanSchema.safeParse(body);
       if (!validationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: validationErrors.error.errors.map((err) => ({
+        return errors.validation(
+          validationErrors.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const { 
@@ -443,7 +436,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (!student) {
-        return NextResponse.json({ error: 'Siswa tidak ditemukan' }, { status: 400 });
+        return errors.notFound('Siswa');
       }
 
       // Validate billing if provided
@@ -453,7 +446,7 @@ export async function POST(request: NextRequest) {
         });
 
         if (!billing) {
-          return NextResponse.json({ error: 'Tagihan tidak ditemukan' }, { status: 400 });
+          return errors.notFound('Tagihan');
         }
       }
 
@@ -498,22 +491,21 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      return NextResponse.json({
-        success: true,
-        message: `Rencanan cicilan ${createdInstallments.length}x berhasil dibuat`,
-        data: {
-          installments: createdInstallments,
-          plan: {
-            jumlahTotal,
-            tenor,
-            tanggalMulai,
-            cicilanPerBulan: Math.round((jumlahTotal / tenor) * 100) / 100,
-          },
+      return success({
+        installments: createdInstallments,
+        plan: {
+          jumlahTotal,
+          tenor,
+          tanggalMulai,
+          cicilanPerBulan: Math.round((jumlahTotal / tenor) * 100) / 100,
         },
-      }, { status: 201 });
+      }, {
+        message: `Rencana cicilan ${createdInstallments.length}x berhasil dibuat`,
+        status: 201,
+      });
     } catch (error) {
       console.error('Installment API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -526,13 +518,12 @@ export async function PUT(request: NextRequest) {
       // Update single installment (flexible nominal, due date)
       const validationErrors = updateInstallmentSchema.safeParse(body);
       if (!validationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: validationErrors.error.errors.map((err) => ({
+        return errors.validation(
+          validationErrors.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const { installmentId, ...updateData } = validationErrors.data;
@@ -542,11 +533,11 @@ export async function PUT(request: NextRequest) {
       });
 
       if (!installment) {
-        return NextResponse.json({ error: 'Cicilan tidak ditemukan' }, { status: 400 });
+        return errors.notFound('Cicilan');
       }
 
       if (installment.status === 'Bayar') {
-        return NextResponse.json({ error: 'Cannot update paid installment' }, { status: 400 });
+        return errors.badRequest('Cannot update paid installment');
       }
 
       const updatePayload: Record<string, unknown> = {};
@@ -568,14 +559,12 @@ export async function PUT(request: NextRequest) {
         data: updatePayload,
       });
 
-      return NextResponse.json({
-        success: true,
+      return success(updatedInstallment, {
         message: 'Cicilan berhasil diperbarui',
-        data: updatedInstallment,
       });
     } catch (error) {
       console.error('Installment API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -588,28 +577,19 @@ export async function PATCH(request: NextRequest) {
       // Payment against installment
       const rateLimitResult = rateLimit(`installment-payment:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({ 
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED'
-        }, { 
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-          }
-        });
+        return errors.rateLimit(formatRateLimitError(rateLimitResult));
       }
 
       const body = await request.json();
 
       const paymentValidationErrors = payInstallmentSchema.safeParse(body);
       if (!paymentValidationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: paymentValidationErrors.error.errors.map((err) => ({
+        return errors.validation(
+          paymentValidationErrors.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const { installmentId, jumlahBayar, tanggalBayar } = paymentValidationErrors.data;
@@ -618,7 +598,7 @@ export async function PATCH(request: NextRequest) {
       const paymentDate = tanggalBayar ? new Date(tanggalBayar) : new Date();
 
       if (isNaN(amount) || amount <= 0) {
-        return NextResponse.json({ error: 'Jumlah pembayaran harus lebih dari 0' }, { status: 400 });
+        return errors.validation([{ field: 'jumlahBayar', message: 'Jumlah pembayaran harus lebih dari 0' }]);
       }
 
       try {
@@ -628,25 +608,23 @@ export async function PATCH(request: NextRequest) {
           paymentDate
         );
 
-        return NextResponse.json({
-          success: true,
-          message: result.overdue 
+        return success({
+          installment: result.installment,
+          cashflows: result.cashflows,
+          isOverdue: result.overdue,
+          student: result.studentUpdated,
+        }, {
+          message: result.overdue
             ? 'Pembayaran berhasil! Cicilan overdue telah dilunasi.'
             : 'Pembayaran cicilan berhasil!',
-          data: {
-            installment: result.installment,
-            cashflows: result.cashflows,
-            isOverdue: result.overdue,
-            student: result.studentUpdated,
-          },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 400 });
+        return errors.badRequest(message);
       }
     } catch (error) {
       console.error('Installment API error:', error);
-      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

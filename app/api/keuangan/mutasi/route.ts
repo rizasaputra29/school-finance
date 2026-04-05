@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter } from '@/lib/with-auth';
 import { rateLimit, RATE_LIMITS, getClientIp, formatRateLimitError } from '@/lib/rate-limit';
 import { invalidateDashboardCache } from '@/lib/cache';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 const mutasiSchema = z.object({
   tanggal: z.string().min(1, 'Tanggal wajib diisi'),
@@ -41,19 +43,20 @@ export async function GET(request: NextRequest) {
         prisma.journalEntry.count({ where }),
       ]);
 
-      return NextResponse.json({
-        data: entries,
-        pagination: {
-          page: parseInt(page),
-          limit: take,
-          total,
-          totalPages: Math.ceil(total / take),
+      return success(entries, {
+        message: 'Data mutasi berhasil diambil',
+        meta: {
+          pagination: {
+            page: parseInt(page),
+            limit: take,
+            total,
+            totalPages: Math.ceil(total / take),
+          },
         },
       });
     } catch (error) {
       console.error('Mutasi API error:', error);
-      const message = error instanceof Error ? error.message : 'Internal server error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }
@@ -65,14 +68,8 @@ export async function POST(request: NextRequest) {
     try {
       const rateLimitResult = rateLimit(`mutasi:${ip}`, RATE_LIMITS.create);
       if (!rateLimitResult.success) {
-        return NextResponse.json({
-          error: formatRateLimitError(rateLimitResult),
-          code: 'RATE_LIMIT_EXCEEDED',
-        }, { 
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
-          }
+        return errors.rateLimit(formatRateLimitError(rateLimitResult), {
+          'Retry-After': Math.ceil((rateLimitResult.reset - Date.now()) / 1000).toString(),
         });
       }
 
@@ -80,13 +77,12 @@ export async function POST(request: NextRequest) {
 
       const validationErrors = mutasiSchema.safeParse(body);
       if (!validationErrors.success) {
-        return NextResponse.json({
-          error: 'Validation failed',
-          details: validationErrors.error.errors.map((err) => ({
+        return errors.validation(
+          validationErrors.error.errors.map((err) => ({
             field: err.path.join('.'),
             message: err.message,
-          })),
-        }, { status: 400 });
+          }))
+        );
       }
 
       const data = validationErrors.data;
@@ -94,18 +90,18 @@ export async function POST(request: NextRequest) {
 
       // Validate: source and destination must be different
       if (data.dari === data.ke) {
-        return NextResponse.json({ error: 'Sumber dan tujuan harus berbeda' }, { status: 400 });
+        return errors.badRequest('Sumber dan tujuan harus berbeda');
       }
 
       if (jumlah <= 0) {
-        return NextResponse.json({ error: 'Jumlah harus lebih dari 0' }, { status: 400 });
+        return errors.badRequest('Jumlah harus lebih dari 0');
       }
 
       // Check period is open
       const periodeCode = data.tanggal.substring(0, 7); // YYYY-MM
       const period = await prisma.period.findUnique({ where: { kode: periodeCode } });
       if (period && period.status === 'closed') {
-        return NextResponse.json({ error: `Periode ${periodeCode} sudah ditutup` }, { status: 400 });
+        return errors.badRequest(`Periode ${periodeCode} sudah ditutup`);
       }
 
       // Validate both accounts exist
@@ -113,14 +109,14 @@ export async function POST(request: NextRequest) {
         prisma.account.findUnique({ where: { kodeAkun: data.dari } }),
         prisma.account.findUnique({ where: { kodeAkun: data.ke } }),
       ]);
-      if (!fromAccount) return NextResponse.json({ error: `Akun sumber ${data.dari} tidak ditemukan` }, { status: 400 });
-      if (!toAccount) return NextResponse.json({ error: `Akun tujuan ${data.ke} tidak ditemukan` }, { status: 400 });
+      if (!fromAccount) return errors.notFound(`Akun sumber ${data.dari}`);
+      if (!toAccount) return errors.notFound(`Akun tujuan ${data.ke}`);
 
       // Check sufficient balance in source
       if (fromAccount.saldo < jumlah) {
-        return NextResponse.json({
-          error: `Saldo ${fromAccount.namaAkun} tidak mencukupi (Rp ${fromAccount.saldo.toLocaleString('id-ID')})`,
-        }, { status: 400 });
+        return errors.badRequest(
+          `Saldo ${fromAccount.namaAkun} tidak mencukupi (Rp ${fromAccount.saldo.toLocaleString('id-ID')})`
+        );
       }
 
       const fromLabel = data.dari === '101' ? 'Kas' : 'Bank';
@@ -191,14 +187,13 @@ export async function POST(request: NextRequest) {
 
       invalidateDashboardCache();
 
-      return NextResponse.json({
-        ...result,
+      return success(result, {
         message: `Transfer ${fromLabel} → ${toLabel} sebesar Rp ${jumlah.toLocaleString('id-ID')} berhasil`,
-      }, { status: 201 });
+        status: 201,
+      });
     } catch (error) {
       console.error('Mutasi API error:', error);
-      const message = error instanceof Error ? error.message : 'Internal server error';
-      return NextResponse.json({ error: message }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

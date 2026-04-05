@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -87,19 +88,26 @@ export default function PayrollPage() {
         fetch('/api/karyawan?limit=100&status=Active')
       ]);
 
-      if (payrollRes.ok) {
-        const payrollJson = await payrollRes.json();
-        setPayrolls(payrollJson.data);
-        setSummary(payrollJson.summary);
-        setPagination(payrollJson.pagination);
+      const payrollResult = await payrollRes.json();
+      if (!payrollResult.success) {
+        toast.error(payrollResult.error?.message || 'Gagal memuat data payroll');
+      } else {
+        setPayrolls(payrollResult.data);
+        setSummary(payrollResult.meta.summary);
+        setPagination(payrollResult.meta.pagination);
       }
 
-      if (employeesRes.ok) {
-        const employeesJson = await employeesRes.json();
-        setEmployees(employeesJson.data);
+      const employeesResult = await employeesRes.json();
+      if (!employeesResult.success) {
+        toast.error(employeesResult.error?.message || 'Gagal memuat data karyawan');
+      } else {
+        setEmployees(employeesResult.data);
       }
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+    } catch { 
+      toast.error('Terjadi kesalahan saat memuat data');
+    } finally { 
+      setLoading(false); 
+    }
   }, [pagination.page, periodeFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -147,13 +155,19 @@ export default function PayrollPage() {
           jumlah: parseFloat(form.jumlah) || 0,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'Gagal menyimpan'); return; }
-      setSuccess(json.message || 'Pembayaran berhasil');
+      const result = await res.json();
+      if (!result.success) { 
+        setError(result.error?.message || 'Gagal menyimpan'); 
+        return; 
+      }
+      setSuccess(result.message || 'Pembayaran berhasil');
       setIsCreateOpen(false);
       setForm(f => ({ ...f, employeeId: '', jumlah: '', keterangan: '' }));
       fetchData();
-    } catch { setError('Terjadi kesalahan'); }
+      toast.success('Pembayaran gaji berhasil');
+    } catch { 
+      setError('Terjadi kesalahan'); 
+    }
   };
 
   return (

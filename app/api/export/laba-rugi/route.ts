@@ -4,6 +4,8 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
+import { errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 // Types for Prisma v7
 interface AccountRecord {
@@ -46,9 +48,9 @@ function formatCurrency(amount: number): string {
 
 // Helper to get period string
 function getPeriodString(bulan?: string, tahun?: string): string {
-  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
                       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  
+
   if (bulan && tahun) {
     const monthIdx = parseInt(bulan, 10) - 1;
     return `${monthNames[monthIdx]} ${tahun}`;
@@ -335,7 +337,7 @@ export async function GET(request: NextRequest) {
       const { format, bulan, tahun } = query;
 
       if (!format || !['pdf', 'excel'].includes(format)) {
-        return NextResponse.json({ error: 'Format harus pdf atau excel' }, { status: 400 });
+        return errors.validation([{ field: 'format', message: 'Format harus pdf atau excel' }]);
       }
 
       // Build date filter
@@ -388,7 +390,7 @@ export async function GET(request: NextRequest) {
       });
     } catch (error) {
       console.error('Export Laba Rugi error:', error);
-      return NextResponse.json({ error: 'Gagal mengexport data' }, { status: 500 });
+      return handlePrismaErrorResponse(error);
     }
   }, { requireAdmin: true });
 }

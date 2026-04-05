@@ -1,7 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
 import { Account, Prisma } from '@prisma/client';
+import { success, errors } from '@/lib/api-response';
+import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
 
 type JournalEntryLineWithJournal = Prisma.JournalEntryLineGetPayload<{
   include: {
@@ -108,95 +110,97 @@ async function getLedgerForAccount(
 
 export async function GET(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
-    const query = getQueryParams(request);
-    const params = parseQueryParams(query);
+    try {
+      const query = getQueryParams(request);
+      const params = parseQueryParams(query);
 
-    let targetAccounts: Account[] = [];
+      let targetAccounts: Account[] = [];
 
-    if (params.kodeAkun && params.kodeAkun !== 'Semua') {
-      const account = await prisma.account.findUnique({
-        where: { kodeAkun: params.kodeAkun },
-      });
-      if (!account) {
-        return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+      if (params.kodeAkun && params.kodeAkun !== 'Semua') {
+        const account = await prisma.account.findUnique({
+          where: { kodeAkun: params.kodeAkun },
+        });
+        if (!account) {
+          return errors.notFound('Akun tidak ditemukan');
+        }
+        targetAccounts = [account];
+      } else {
+        targetAccounts = await prisma.account.findMany({
+          orderBy: { kodeAkun: 'asc' },
+        });
       }
-      targetAccounts = [account];
-    } else {
-      targetAccounts = await prisma.account.findMany({
-        orderBy: { kodeAkun: 'asc' },
-      });
-    }
 
-    const kodeAkuns = targetAccounts.map((a) => a.kodeAkun);
+      const kodeAkuns = targetAccounts.map((a) => a.kodeAkun);
 
-    // Batch fetch 1: Get all opening balance aggregates in one query
-    const priorBalances = new Map<string, number>();
-    if (params.startDate) {
-      const priorLinesByAccount = await prisma.journalEntryLine.groupBy({
-        by: ['kodeAkun'],
-        where: {
-          kodeAkun: { in: kodeAkuns },
+      // Batch fetch 1: Get all opening balance aggregates in one query
+      const priorBalances = new Map<string, number>();
+      if (params.startDate) {
+        const priorLinesByAccount = await prisma.journalEntryLine.groupBy({
+          by: ['kodeAkun'],
+          where: {
+            kodeAkun: { in: kodeAkuns },
+            journalEntry: {
+              tanggal: { lt: params.startDate },
+              status: 'posted',
+            },
+          },
+          _sum: { debit: true, kredit: true },
+        });
+
+        for (const group of priorLinesByAccount) {
+          const pd = group._sum.debit || 0;
+          const pk = group._sum.kredit || 0;
+          priorBalances.set(group.kodeAkun, pd - pk);
+        }
+      }
+
+      // Batch fetch 2: Get all period lines in one query
+      const periodWhere: ReportWhere = {
+        kodeAkun: { in: kodeAkuns },
+      };
+
+      if (params.startDate || params.endDate) {
+        periodWhere.journalEntry = { tanggal: {} };
+        if (params.startDate) periodWhere.journalEntry!.tanggal.gte = params.startDate;
+        if (params.endDate) periodWhere.journalEntry!.tanggal.lte = params.endDate;
+      }
+
+      const allPeriodLines = await prisma.journalEntryLine.findMany({
+        where: periodWhere,
+        include: {
           journalEntry: {
-            tanggal: { lt: params.startDate },
-            status: 'posted',
+            select: {
+              tanggal: true,
+              keterangan: true,
+              reference: true,
+            },
           },
         },
-        _sum: { debit: true, kredit: true },
+        orderBy: [
+          { journalEntry: { tanggal: 'asc' } },
+          { journalEntry: { createdAt: 'asc' } },
+        ],
       });
 
-      for (const group of priorLinesByAccount) {
-        const pd = group._sum.debit || 0;
-        const pk = group._sum.kredit || 0;
-        priorBalances.set(group.kodeAkun, pd - pk);
+      // Group lines by account
+      const periodLinesByAccount = new Map<string, JournalEntryLineWithJournal[]>();
+      for (const line of allPeriodLines) {
+        const existing = periodLinesByAccount.get(line.kodeAkun) || [];
+        existing.push(line);
+        periodLinesByAccount.set(line.kodeAkun, existing);
       }
+
+      // Process each account with pre-fetched data
+      const reports = await Promise.all(
+        targetAccounts.map((account) =>
+          getLedgerForAccount(account, params, priorBalances, periodLinesByAccount)
+        )
+      );
+
+      // If only one account requested, still return inside reports array for consistency
+      return success(reports, { message: 'Laporan buku besar berhasil diambil' });
+    } catch (error) {
+      return handlePrismaErrorResponse(error);
     }
-
-    // Batch fetch 2: Get all period lines in one query
-    const periodWhere: ReportWhere = {
-      kodeAkun: { in: kodeAkuns },
-    };
-
-    if (params.startDate || params.endDate) {
-      periodWhere.journalEntry = { tanggal: {} };
-      if (params.startDate) periodWhere.journalEntry!.tanggal.gte = params.startDate;
-      if (params.endDate) periodWhere.journalEntry!.tanggal.lte = params.endDate;
-    }
-
-    const allPeriodLines = await prisma.journalEntryLine.findMany({
-      where: periodWhere,
-      include: {
-        journalEntry: {
-          select: {
-            tanggal: true,
-            keterangan: true,
-            reference: true,
-          },
-        },
-      },
-      orderBy: [
-        { journalEntry: { tanggal: 'asc' } },
-        { journalEntry: { createdAt: 'asc' } },
-      ],
-    });
-
-    // Group lines by account
-    const periodLinesByAccount = new Map<string, JournalEntryLineWithJournal[]>();
-    for (const line of allPeriodLines) {
-      const existing = periodLinesByAccount.get(line.kodeAkun) || [];
-      existing.push(line);
-      periodLinesByAccount.set(line.kodeAkun, existing);
-    }
-
-    // Process each account with pre-fetched data
-    const reports = await Promise.all(
-      targetAccounts.map((account) =>
-        getLedgerForAccount(account, params, priorBalances, periodLinesByAccount)
-      )
-    );
-
-    // If only one account requested, still return inside reports array for consistency
-    return NextResponse.json({
-      reports,
-    });
   });
 }

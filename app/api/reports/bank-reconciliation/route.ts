@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuthAppRouter, getQueryParams } from '@/lib/with-auth';
+import { success, errors } from '@/lib/api-response';
 
 // Get all transactions for a specific account
 async function getAccountTransactions(
@@ -43,23 +44,13 @@ export async function GET(request: NextRequest) {
         },
       });
       if (!bankAccount?.kodeAkun) {
-        return NextResponse.json(
-          {
-            error: 'Akun Bank tidak ditemukan. Silakan buat akun Bank terlebih dahulu.',
-          },
-          { status: 404 }
-        );
+        return errors.notFound('Akun Bank tidak ditemukan. Silakan buat akun Bank terlebih dahulu.');
       }
       bankCode = bankAccount.kodeAkun;
     }
 
     if (!bankCode) {
-      return NextResponse.json(
-        {
-          error: 'Akun Bank tidak ditemukan. Silakan buat akun Bank terlebih dahulu.',
-        },
-        { status: 404 }
-      );
+      return errors.notFound('Akun Bank tidak ditemukan. Silakan buat akun Bank terlebih dahulu.');
     }
 
     // Get bank account details
@@ -68,7 +59,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!bankAccount) {
-      return NextResponse.json({ error: 'Akun Bank tidak ditemukan' }, { status: 404 });
+      return errors.notFound('Akun Bank');
     }
 
     // Get all bank transactions
@@ -131,7 +122,7 @@ export async function GET(request: NextRequest) {
       orderBy: { tanggal: 'asc' },
     });
 
-    return NextResponse.json({
+    return success({
       bankAccount: {
         kodeAkun: bankAccount.kodeAkun,
         namaAkun: bankAccount.namaAkun,
@@ -165,6 +156,8 @@ export async function GET(request: NextRequest) {
         ),
         transactionCount: kasTransactions.length,
       },
+    }, {
+      message: 'Data rekonsiliasi bank berhasil diambil',
     });
   });
 }
