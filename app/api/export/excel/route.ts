@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 // Define types inline for Prisma v7 compatibility
 interface AccountRecord {
@@ -20,15 +21,6 @@ interface CashflowRecord {
 	debit: number;
 	kredit: number;
 }
-
-// Helper to format currency
-const formatCurrency = (amount: number) => {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
-};
 
 export async function GET(request: NextRequest) {
 	return withAuthAppRouter(
@@ -80,20 +72,20 @@ export async function GET(request: NextRequest) {
 							i + 1,
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						["", "", "Total Pendapatan", formatCurrency(totalRevenue)],
+						["", "", "Total Pendapatan", formatRupiah(totalRevenue)],
 						[""],
 						["BEBAN"],
 						...expenses.map((a, i) => [
 							i + 1,
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						["", "", "Total Beban", formatCurrency(totalExpense)],
+						["", "", "Total Beban", formatRupiah(totalExpense)],
 						[""],
-						["", "", "LABA/RUGI BERSIH", formatCurrency(labaRugi)],
+						["", "", "LABA/RUGI BERSIH", formatRupiah(labaRugi)],
 						[""],
 						[""],
 						["Dibuat oleh:", "", "Diperiksa oleh:", ""],
@@ -149,33 +141,33 @@ export async function GET(request: NextRequest) {
 							i + 1,
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						["", "", "Total Aset", formatCurrency(totalAssets)],
+						["", "", "Total Aset", formatRupiah(totalAssets)],
 						[""],
 						["KEWAJIBAN"],
 						...liabilities.map((a, i) => [
 							i + 1,
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						["", "", "Total Kewajiban", formatCurrency(totalLiabilities)],
+						["", "", "Total Kewajiban", formatRupiah(totalLiabilities)],
 						[""],
 						["EKUITAS"],
 						...equity.map((a, i) => [
 							i + 1,
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						["", "", "Total Ekuitas", formatCurrency(totalEquity)],
+						["", "", "Total Ekuitas", formatRupiah(totalEquity)],
 						[""],
 						[
 							"",
 							"",
 							"Total Kewajiban + Ekuitas",
-							formatCurrency(totalLiabilities + totalEquity),
+							formatRupiah(totalLiabilities + totalEquity),
 						],
 						[""],
 						[""],
@@ -224,8 +216,8 @@ export async function GET(request: NextRequest) {
 							new Date(cf.tanggal).toLocaleDateString("id-ID"),
 							cf.keterangan,
 							cf.kodeAkun,
-							cf.debit > 0 ? formatCurrency(cf.debit) : "-",
-							cf.kredit > 0 ? formatCurrency(cf.kredit) : "-",
+							cf.debit > 0 ? formatRupiah(cf.debit) : "-",
+							cf.kredit > 0 ? formatRupiah(cf.kredit) : "-",
 						]),
 						[""],
 						[
@@ -233,10 +225,10 @@ export async function GET(request: NextRequest) {
 							"",
 							"TOTAL",
 							"",
-							formatCurrency(totalDebit),
-							formatCurrency(totalKredit),
+							formatRupiah(totalDebit),
+							formatRupiah(totalKredit),
 						],
-						["", "", "SALDO AKHIR", "", "", formatCurrency(saldo)],
+						["", "", "SALDO AKHIR", "", "", formatRupiah(saldo)],
 						[""],
 						[""],
 						["Dibuat oleh:", "", "", "Diperiksa oleh:", "", ""],

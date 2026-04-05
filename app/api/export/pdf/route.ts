@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 interface AccountRecord {
 	id: string;
@@ -43,13 +44,6 @@ export async function GET(request: NextRequest) {
 
 				const doc = new jsPDF();
 				const pageWidth = doc.internal.pageSize.getWidth();
-
-				const formatCurrency = (amount: number) =>
-					new Intl.NumberFormat("id-ID", {
-						style: "currency",
-						currency: "IDR",
-						minimumFractionDigits: 0,
-					}).format(amount);
 
 				const addHeader = (title: string, startY: number = 15) => {
 					doc.setTextColor(0, 0, 0);
@@ -193,9 +187,9 @@ export async function GET(request: NextRequest) {
 							(i + 1).toString(),
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						foot: [["", "", "Total Pendapatan", formatCurrency(totalRevenue)]],
+						foot: [["", "", "Total Pendapatan", formatRupiah(totalRevenue)]],
 						...tableStyles,
 						columnStyles: {
 							0: { cellWidth: 12, halign: "center" },
@@ -217,9 +211,9 @@ export async function GET(request: NextRequest) {
 							(i + 1).toString(),
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						foot: [["", "", "Total Beban", formatCurrency(totalExpense)]],
+						foot: [["", "", "Total Beban", formatRupiah(totalExpense)]],
 						...tableStyles,
 						columnStyles: {
 							0: { cellWidth: 12, halign: "center" },
@@ -237,7 +231,7 @@ export async function GET(request: NextRequest) {
 					doc.setFont("helvetica", "bold");
 					doc.setTextColor(0, 0, 0);
 					doc.text("LABA/RUGI BERSIH:", 14, finalY2 + 8);
-					doc.text(formatCurrency(labaRugi), pageWidth - 14, finalY2 + 8, {
+					doc.text(formatRupiah(labaRugi), pageWidth - 14, finalY2 + 8, {
 						align: "right",
 					});
 
@@ -282,9 +276,9 @@ export async function GET(request: NextRequest) {
 							(i + 1).toString(),
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						foot: [["", "", "Total Aset", formatCurrency(totalAssets)]],
+						foot: [["", "", "Total Aset", formatRupiah(totalAssets)]],
 						...tableStyles,
 						columnStyles: {
 							0: { cellWidth: 12, halign: "center" },
@@ -306,10 +300,10 @@ export async function GET(request: NextRequest) {
 							(i + 1).toString(),
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
 						foot: [
-							["", "", "Total Kewajiban", formatCurrency(totalLiabilities)],
+							["", "", "Total Kewajiban", formatRupiah(totalLiabilities)],
 						],
 						...tableStyles,
 						columnStyles: {
@@ -332,9 +326,9 @@ export async function GET(request: NextRequest) {
 							(i + 1).toString(),
 							a.kodeAkun,
 							a.namaAkun,
-							formatCurrency(a.saldo),
+							formatRupiah(a.saldo),
 						]),
-						foot: [["", "", "Total Ekuitas", formatCurrency(totalEquity)]],
+						foot: [["", "", "Total Ekuitas", formatRupiah(totalEquity)]],
 						...tableStyles,
 						columnStyles: {
 							0: { cellWidth: 12, halign: "center" },
@@ -353,7 +347,7 @@ export async function GET(request: NextRequest) {
 					doc.setTextColor(0, 0, 0);
 					doc.text("TOTAL KEWAJIBAN + EKUITAS:", 14, finalY3 + 8);
 					doc.text(
-						formatCurrency(totalLiabilities + totalEquity),
+						formatRupiah(totalLiabilities + totalEquity),
 						pageWidth - 14,
 						finalY3 + 8,
 						{ align: "right" },

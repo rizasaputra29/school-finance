@@ -10,7 +10,8 @@ import {
 	Clock,
 	X,
 } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils/utils-core";
+import { formatShortDate } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import Link from "next/link";
 
 interface Reminder {
@@ -134,7 +135,7 @@ export function ReminderBell() {
 												</p>
 												{reminder.amount && (
 													<p className="text-xs font-medium text-gray-700 mt-1">
-														{formatCurrency(reminder.amount)}
+														{formatRupiah(reminder.amount)}
 													</p>
 												)}
 												{reminder.dueDate && (

@@ -7,11 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-	formatCurrency,
-	formatNumberInput,
-	parseFormattedNumber,
-} from "@/lib/utils/utils-core";
+import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
 	Wallet,
@@ -410,7 +407,7 @@ export default function AccountsPage() {
 										Total Saldo
 									</p>
 									<p className="text-lg font-bold text-slate-900 font-mono">
-										{formatCurrency(totalSaldo)}
+										{formatRupiah(totalSaldo)}
 									</p>
 								</div>
 							</div>
@@ -433,7 +430,7 @@ export default function AccountsPage() {
 											</div>
 											<div className="flex items-center justify-between sm:justify-end gap-4 pl-11 sm:pl-0">
 												<span className="font-semibold text-sm sm:text-base text-slate-900">
-													{formatCurrency(account.saldo)}
+													{formatRupiah(account.saldo)}
 												</span>
 												{isAdmin && (
 													<div className="flex gap-1">

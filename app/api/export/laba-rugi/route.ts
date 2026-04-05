@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 // Types for Prisma v7
 interface AccountRecord {
@@ -35,15 +36,6 @@ interface JsPDFWithAutoTable extends jsPDF {
 function getLastAutoTableFinalY(doc: jsPDF): number {
 	const typedDoc = doc as JsPDFWithAutoTable;
 	return typedDoc.lastAutoTable?.finalY ?? 0;
-}
-
-// Helper to format currency
-function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
 }
 
 // Helper to get period string
@@ -213,9 +205,9 @@ async function exportToPDF(
 			(i + 1).toString(),
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.saldo),
+			formatRupiah(a.saldo),
 		]),
-		foot: [["", "", "Total Pendapatan", formatCurrency(totalRevenue)]],
+		foot: [["", "", "Total Pendapatan", formatRupiah(totalRevenue)]],
 		...tableStyles,
 		columnStyles: {
 			0: { cellWidth: 12, halign: "center" },
@@ -238,9 +230,9 @@ async function exportToPDF(
 			(i + 1).toString(),
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.saldo),
+			formatRupiah(a.saldo),
 		]),
-		foot: [["", "", "Total Beban", formatCurrency(totalExpense)]],
+		foot: [["", "", "Total Beban", formatRupiah(totalExpense)]],
 		...tableStyles,
 		columnStyles: {
 			0: { cellWidth: 12, halign: "center" },
@@ -260,7 +252,7 @@ async function exportToPDF(
 	doc.setFont("helvetica", "bold");
 	doc.setTextColor(0, 0, 0);
 	doc.text("LABA/RUGI BERSIH:", 14, finalY2 + 8);
-	doc.text(formatCurrency(labaRugi), pageWidth - 14, finalY2 + 8, {
+	doc.text(formatRupiah(labaRugi), pageWidth - 14, finalY2 + 8, {
 		align: "right",
 	});
 
@@ -346,20 +338,20 @@ async function exportToExcel(
 			i + 1,
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.saldo),
+			formatRupiah(a.saldo),
 		]),
-		["", "", "Total Pendapatan", formatCurrency(totalRevenue)],
+		["", "", "Total Pendapatan", formatRupiah(totalRevenue)],
 		[""],
 		["BEBAN"],
 		...expenseItems.map((a, i) => [
 			i + 1,
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.saldo),
+			formatRupiah(a.saldo),
 		]),
-		["", "", "Total Beban", formatCurrency(totalExpense)],
+		["", "", "Total Beban", formatRupiah(totalExpense)],
 		[""],
-		["", "", "LABA/RUGI BERSIH", formatCurrency(labaRugi)],
+		["", "", "LABA/RUGI BERSIH", formatRupiah(labaRugi)],
 		[""],
 		[""],
 		["Dibuat oleh:", "", "Diperiksa oleh:", ""],

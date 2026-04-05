@@ -22,7 +22,8 @@ import {
 	TrendingUp,
 	TrendingDown,
 } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils/utils-core";
+import { formatShortDate } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 interface Cashflow {
 	id: string;
@@ -200,7 +201,7 @@ export default function ApprovePage() {
 									Total Pemasukan
 								</p>
 								<p className="text-2xl font-bold text-emerald-900">
-									{formatCurrency(totalDebit)}
+									{formatRupiah(totalDebit)}
 								</p>
 							</div>
 						</div>
@@ -218,7 +219,7 @@ export default function ApprovePage() {
 									Total Pengeluaran
 								</p>
 								<p className="text-2xl font-bold text-red-900">
-									{formatCurrency(totalKredit)}
+									{formatRupiah(totalKredit)}
 								</p>
 							</div>
 						</div>
@@ -277,10 +278,10 @@ export default function ApprovePage() {
 											</span>
 										</TableCell>
 										<TableCell className="text-emerald-600 text-right font-mono">
-											{cf.debit > 0 ? formatCurrency(cf.debit) : "-"}
+											{cf.debit > 0 ? formatRupiah(cf.debit) : "-"}
 										</TableCell>
 										<TableCell className="text-red-600 text-right font-mono">
-											{cf.kredit > 0 ? formatCurrency(cf.kredit) : "-"}
+											{cf.kredit > 0 ? formatRupiah(cf.kredit) : "-"}
 										</TableCell>
 										<TableCell>
 											<div className="flex items-center justify-center gap-2">
@@ -358,7 +359,7 @@ export default function ApprovePage() {
 									<p className="text-sm text-gray-500">Debet</p>
 									<p className="font-medium text-emerald-600">
 										{selectedCashflow.debit > 0
-											? formatCurrency(selectedCashflow.debit)
+											? formatRupiah(selectedCashflow.debit)
 											: "-"}
 									</p>
 								</div>
@@ -366,7 +367,7 @@ export default function ApprovePage() {
 									<p className="text-sm text-gray-500">Kredit</p>
 									<p className="font-medium text-red-600">
 										{selectedCashflow.kredit > 0
-											? formatCurrency(selectedCashflow.kredit)
+											? formatRupiah(selectedCashflow.kredit)
 											: "-"}
 									</p>
 								</div>

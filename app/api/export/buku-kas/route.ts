@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 // Types for Prisma v7
 interface CashflowRecord {
@@ -38,15 +39,6 @@ interface JsPDFWithAutoTable extends jsPDF {
 function getLastAutoTableFinalY(doc: jsPDF): number {
 	const typedDoc = doc as JsPDFWithAutoTable;
 	return typedDoc.lastAutoTable?.finalY ?? 0;
-}
-
-// Helper to format currency
-function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
 }
 
 // Helper to get period string
@@ -188,7 +180,7 @@ async function exportToPDF(
 	// Add opening balance
 	doc.setFontSize(10);
 	doc.setFont("helvetica", "normal");
-	doc.text(`Saldo Awal: ${formatCurrency(openingBalance)}`, 14, startY);
+	doc.text(`Saldo Awal: ${formatRupiah(openingBalance)}`, 14, startY);
 
 	const totalDebit = cashflows.reduce((sum, cf) => sum + cf.debit, 0);
 	const totalKredit = cashflows.reduce((sum, cf) => sum + cf.kredit, 0);
@@ -213,9 +205,9 @@ async function exportToPDF(
 			cf.tanggal.toLocaleDateString("id-ID"),
 			cf.keterangan,
 			cf.kodeAkun,
-			cf.debit > 0 ? formatCurrency(cf.debit) : "-",
-			cf.kredit > 0 ? formatCurrency(cf.kredit) : "-",
-			formatCurrency(cf.saldo),
+			cf.debit > 0 ? formatRupiah(cf.debit) : "-",
+			cf.kredit > 0 ? formatRupiah(cf.kredit) : "-",
+			formatRupiah(cf.saldo),
 		]),
 		foot: [
 			[
@@ -223,11 +215,11 @@ async function exportToPDF(
 				"",
 				"TOTAL",
 				"",
-				formatCurrency(totalDebit),
-				formatCurrency(totalKredit),
+				formatRupiah(totalDebit),
+				formatRupiah(totalKredit),
 				"",
 			],
-			["", "", "SALDO AKHIR", "", "", "", formatCurrency(saldoAkhir)],
+			["", "", "SALDO AKHIR", "", "", "", formatRupiah(saldoAkhir)],
 		],
 		...tableStyles,
 		columnStyles: {
@@ -313,16 +305,16 @@ async function exportToExcel(
 			"Saldo (Rp)",
 		],
 		[""],
-		["Saldo Awal", "", "", "", "", "", formatCurrency(openingBalance)],
+		["Saldo Awal", "", "", "", "", "", formatRupiah(openingBalance)],
 		[""],
 		...dataWithBalance.map((cf, i) => [
 			i + 1,
 			cf.tanggal.toLocaleDateString("id-ID"),
 			cf.keterangan,
 			cf.kodeAkun,
-			cf.debit > 0 ? formatCurrency(cf.debit) : "-",
-			cf.kredit > 0 ? formatCurrency(cf.kredit) : "-",
-			formatCurrency(cf.saldo),
+			cf.debit > 0 ? formatRupiah(cf.debit) : "-",
+			cf.kredit > 0 ? formatRupiah(cf.kredit) : "-",
+			formatRupiah(cf.saldo),
 		]),
 		[""],
 		[
@@ -330,11 +322,11 @@ async function exportToExcel(
 			"",
 			"TOTAL",
 			"",
-			formatCurrency(totalDebit),
-			formatCurrency(totalKredit),
+			formatRupiah(totalDebit),
+			formatRupiah(totalKredit),
 			"",
 		],
-		["", "", "SALDO AKHIR", "", "", "", formatCurrency(saldoAkhir)],
+		["", "", "SALDO AKHIR", "", "", "", formatRupiah(saldoAkhir)],
 		[""],
 		[""],
 		["Dibuat oleh:", "", "", "", "Diperiksa oleh:", "", ""],

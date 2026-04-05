@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { success } from "@/lib/api/api-response";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 // Type for piutang item
 interface PiutangAgingItem {
@@ -40,15 +41,6 @@ function getAgingCategory(daysOverdue: number): string {
 	if (daysOverdue <= 60) return "31-60 hari";
 	if (daysOverdue <= 90) return "61-90 hari";
 	return "90+ hari";
-}
-
-// Format currency
-function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
 }
 
 export async function GET(request: NextRequest) {
@@ -198,11 +190,11 @@ export async function GET(request: NextRequest) {
 						...counts,
 					},
 					formatted: {
-						totalPiutang: formatCurrency(summary.totalPiutang),
-						belumJatuhTempo: formatCurrency(summary.belumJatuhTempo),
-						aging30: formatCurrency(summary.aging30),
-						aging60: formatCurrency(summary.aging60),
-						aging90plus: formatCurrency(summary.aging90plus),
+						totalPiutang: formatRupiah(summary.totalPiutang),
+						belumJatuhTempo: formatRupiah(summary.belumJatuhTempo),
+						aging30: formatRupiah(summary.aging30),
+						aging60: formatRupiah(summary.aging60),
+						aging90plus: formatRupiah(summary.aging90plus),
 					},
 					filters: {
 						studentId: studentId || null,

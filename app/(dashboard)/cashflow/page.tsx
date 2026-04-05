@@ -28,12 +28,8 @@ import {
 	Pencil,
 	Trash2,
 } from "lucide-react";
-import {
-	formatCurrency,
-	formatShortDate,
-	formatNumberInput,
-	parseFormattedNumber,
-} from "@/lib/utils/utils-core";
+import { formatShortDate, formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -494,7 +490,7 @@ export default function CashflowPage() {
 								Total Pendapatan
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatCurrency(summary.totalDebit)}
+								{formatRupiah(summary.totalDebit)}
 							</p>
 						</div>
 					</CardContent>
@@ -510,7 +506,7 @@ export default function CashflowPage() {
 								Total Pengeluaran
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatCurrency(summary.totalKredit)}
+								{formatRupiah(summary.totalKredit)}
 							</p>
 						</div>
 					</CardContent>
@@ -528,7 +524,7 @@ export default function CashflowPage() {
 							<p
 								className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? "text-white" : "text-white"}`}
 							>
-								{formatCurrency(summary.saldo)}
+								{formatRupiah(summary.saldo)}
 							</p>
 						</div>
 					</CardContent>
@@ -679,10 +675,10 @@ export default function CashflowPage() {
 												{cf.kategori || "-"}
 											</TableCell>
 											<TableCell className="text-right font-semibold text-emerald-600">
-												{cf.debit > 0 ? formatCurrency(cf.debit) : "-"}
+												{cf.debit > 0 ? formatRupiah(cf.debit) : "-"}
 											</TableCell>
 											<TableCell className="text-right font-semibold text-red-600">
-												{cf.kredit > 0 ? formatCurrency(cf.kredit) : "-"}
+												{cf.kredit > 0 ? formatRupiah(cf.kredit) : "-"}
 											</TableCell>
 											<TableCell>
 												<Badge variant={cf.debit > 0 ? "income" : "expense"}>

@@ -15,7 +15,8 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { BookOpen, Send } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils/utils-core";
+import { formatShortDate } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 interface Account {
 	id: string;
@@ -265,7 +266,7 @@ export default function BukuBesarPage() {
 											<TableCell className="border-r"></TableCell>
 											<TableCell className="border-r"></TableCell>
 											<TableCell className="text-right border-r">
-												{formatCurrency(report.summary.openingBalance).replace(
+												{formatRupiah(report.summary.openingBalance).replace(
 													"Rp",
 													"",
 												)}

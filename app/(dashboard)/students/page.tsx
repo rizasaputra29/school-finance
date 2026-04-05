@@ -25,7 +25,7 @@ import {
 	Pencil,
 	Trash2,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -437,10 +437,10 @@ export default function StudentsPage() {
 											</TableCell>
 											<TableCell>{s.tahunMasuk}</TableCell>
 											<TableCell className="text-right">
-												{formatCurrency(s.totalTagihan)}
+												{formatRupiah(s.totalTagihan)}
 											</TableCell>
 											<TableCell className="text-right font-semibold text-emerald-600">
-												{formatCurrency(s.totalBayar)}
+												{formatRupiah(s.totalBayar)}
 											</TableCell>
 											<TableCell>
 												<Badge

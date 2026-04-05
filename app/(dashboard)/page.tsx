@@ -17,7 +17,8 @@ import {
 	ArrowUpRight,
 	ArrowDownRight,
 } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils/utils-core";
+import { formatDate } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import {
 	PieChart,
 	Pie,
@@ -213,7 +214,7 @@ export default function Dashboard() {
 									Total Saldo
 								</p>
 								<p className="text-xl md:text-2xl font-bold text-white">
-									{formatCurrency(summary.saldo)}
+									{formatRupiah(summary.saldo)}
 								</p>
 							</div>
 						</div>
@@ -229,7 +230,7 @@ export default function Dashboard() {
 									Pendapatan
 								</p>
 								<p className="text-base md:text-xl font-bold text-gray-900 mt-1 truncate">
-									{formatCurrency(summary.totalDebit)}
+									{formatRupiah(summary.totalDebit)}
 								</p>
 							</div>
 							<div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-green-50 flex items-center justify-center shrink-0">
@@ -248,7 +249,7 @@ export default function Dashboard() {
 									Pengeluaran
 								</p>
 								<p className="text-base md:text-xl font-bold text-gray-900 mt-1 truncate">
-									{formatCurrency(summary.totalKredit)}
+									{formatRupiah(summary.totalKredit)}
 								</p>
 							</div>
 							<div className="h-9 w-9 md:h-11 md:w-11 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
@@ -321,7 +322,7 @@ export default function Dashboard() {
 												))}
 											</Pie>
 											<Tooltip
-												formatter={(value) => formatCurrency(Number(value))}
+												formatter={(value) => formatRupiah(Number(value))}
 												contentStyle={{
 													fontSize: "12px",
 													borderRadius: "8px",
@@ -368,7 +369,7 @@ export default function Dashboard() {
 												}}
 											/>
 											<Tooltip
-												formatter={(value) => formatCurrency(Number(value))}
+												formatter={(value) => formatRupiah(Number(value))}
 												contentStyle={{
 													fontSize: "12px",
 													borderRadius: "8px",
@@ -506,7 +507,7 @@ export default function Dashboard() {
 										className={`font-semibold text-xs shrink-0 ml-2 ${tx.debit > 0 ? "text-gray-900" : "text-gray-500"}`}
 									>
 										{tx.debit > 0 ? "+" : "-"}{" "}
-										{formatCurrency(tx.debit > 0 ? tx.debit : tx.kredit)}
+										{formatRupiah(tx.debit > 0 ? tx.debit : tx.kredit)}
 									</p>
 								</div>
 							))}

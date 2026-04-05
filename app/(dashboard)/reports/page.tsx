@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { FileSpreadsheet, FileText, Download, Printer } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 interface AccountReportItem {
 	kodeAkun: string;
@@ -288,7 +288,7 @@ export default function ReportsPage() {
 															{a.namaAkun}
 														</TableCell>
 														<TableCell className="py-1 text-right font-mono w-40">
-															{formatCurrency(a.jumlah)}
+															{formatRupiah(a.jumlah)}
 														</TableCell>
 													</TableRow>
 												))}
@@ -297,7 +297,7 @@ export default function ReportsPage() {
 														Total Pendapatan
 													</TableCell>
 													<TableCell className="py-2 text-right font-mono">
-														{formatCurrency(totalRevenue)}
+														{formatRupiah(totalRevenue)}
 													</TableCell>
 												</TableRow>
 											</TableBody>
@@ -320,7 +320,7 @@ export default function ReportsPage() {
 															{a.namaAkun}
 														</TableCell>
 														<TableCell className="py-1 text-right font-mono w-40">
-															{formatCurrency(a.jumlah)}
+															{formatRupiah(a.jumlah)}
 														</TableCell>
 													</TableRow>
 												))}
@@ -329,7 +329,7 @@ export default function ReportsPage() {
 														Total Beban
 													</TableCell>
 													<TableCell className="py-2 text-right font-mono">
-														{formatCurrency(totalExpense)}
+														{formatRupiah(totalExpense)}
 													</TableCell>
 												</TableRow>
 											</TableBody>
@@ -344,7 +344,7 @@ export default function ReportsPage() {
 											</span>
 											<span className="text-lg font-bold font-mono text-gray-900">
 												{labaRugi >= 0 ? "" : "("}
-												{formatCurrency(Math.abs(labaRugi))}
+												{formatRupiah(Math.abs(labaRugi))}
 												{labaRugi >= 0 ? "" : ")"}
 											</span>
 										</div>
@@ -422,7 +422,7 @@ export default function ReportsPage() {
 																{a.namaAkun}
 															</TableCell>
 															<TableCell className="py-1 text-right font-mono w-40">
-																{formatCurrency(Math.abs(a.jumlah || 0))}
+																{formatRupiah(Math.abs(a.jumlah || 0))}
 															</TableCell>
 														</TableRow>
 													))}
@@ -432,7 +432,7 @@ export default function ReportsPage() {
 											<div className="border-t-2 border-gray-800 font-bold pt-2 flex justify-between items-center">
 												<span>TOTAL AKTIVA</span>
 												<span className="font-mono">
-													{formatCurrency(totalAssets)}
+													{formatRupiah(totalAssets)}
 												</span>
 											</div>
 										</div>
@@ -460,7 +460,7 @@ export default function ReportsPage() {
 																{a.namaAkun}
 															</TableCell>
 															<TableCell className="py-1 text-right font-mono w-40">
-																{formatCurrency(Math.abs(a.jumlah || 0))}
+																{formatRupiah(Math.abs(a.jumlah || 0))}
 															</TableCell>
 														</TableRow>
 													))}
@@ -481,7 +481,7 @@ export default function ReportsPage() {
 													Total Kewajiban
 												</span>
 												<span className="font-semibold font-mono text-sm">
-													{formatCurrency(Math.abs(totalLiabilities))}
+													{formatRupiah(Math.abs(totalLiabilities))}
 												</span>
 											</div>
 										</div>
@@ -502,7 +502,7 @@ export default function ReportsPage() {
 																{a.namaAkun}
 															</TableCell>
 															<TableCell className="py-1 text-right font-mono w-40">
-																{formatCurrency(Math.abs(a.jumlah || 0))}
+																{formatRupiah(Math.abs(a.jumlah || 0))}
 															</TableCell>
 														</TableRow>
 													))}
@@ -513,7 +513,7 @@ export default function ReportsPage() {
 													Total Ekuitas
 												</span>
 												<span className="font-semibold font-mono text-sm">
-													{formatCurrency(Math.abs(totalEquity))}
+													{formatRupiah(Math.abs(totalEquity))}
 												</span>
 											</div>
 										</div>
@@ -523,7 +523,7 @@ export default function ReportsPage() {
 												TOTAL PASIVA
 											</span>
 											<span className="text-lg font-bold font-mono text-gray-900">
-												{formatCurrency(
+												{formatRupiah(
 													Math.abs(totalLiabilities + totalEquity),
 												)}
 											</span>

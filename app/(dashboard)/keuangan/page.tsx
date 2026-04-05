@@ -16,7 +16,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Wallet, Building2, ArrowRightLeft, BookOpen } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Account {
@@ -199,7 +199,7 @@ export default function KeuanganPage() {
 							</CardHeader>
 							<CardContent>
 								<span className="text-2xl font-bold text-gray-900">
-									{kasAccount ? formatCurrency(kasAccount.saldo) : "Rp 0"}
+									{kasAccount ? formatRupiah(kasAccount.saldo) : "Rp 0"}
 								</span>
 							</CardContent>
 						</Card>
@@ -211,7 +211,7 @@ export default function KeuanganPage() {
 							</CardHeader>
 							<CardContent>
 								<span className="text-2xl font-bold text-gray-900">
-									{bankAccount ? formatCurrency(bankAccount.saldo) : "Rp 0"}
+									{bankAccount ? formatRupiah(bankAccount.saldo) : "Rp 0"}
 								</span>
 							</CardContent>
 						</Card>
@@ -408,7 +408,7 @@ export default function KeuanganPage() {
 															</div>
 														</TableCell>
 														<TableCell className="text-right font-medium">
-															{formatCurrency(amount)}
+															{formatRupiah(amount)}
 														</TableCell>
 													</TableRow>
 												);
@@ -465,7 +465,7 @@ export default function KeuanganPage() {
 													</TableCell>
 													<TableCell>{acc.namaAkun}</TableCell>
 													<TableCell className="text-right font-medium">
-														{formatCurrency(acc.saldo)}
+														{formatRupiah(acc.saldo)}
 													</TableCell>
 												</TableRow>
 											))}

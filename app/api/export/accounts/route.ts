@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 interface AccountRecord {
 	id: string;
@@ -10,15 +11,6 @@ interface AccountRecord {
 	namaAkun: string;
 	tipeAkun: string;
 	saldo: number;
-}
-
-// Helper function to format currency
-function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
 }
 
 async function generateExcel(): Promise<{ buffer: Buffer; filename: string }> {
@@ -33,14 +25,14 @@ async function generateExcel(): Promise<{ buffer: Buffer; filename: string }> {
 		account.kodeAkun,
 		account.namaAkun,
 		account.tipeAkun,
-		account.saldo ? formatCurrency(account.saldo) : "",
+		account.saldo ? formatRupiah(account.saldo) : "",
 	]);
 
 	// Add totals row
 	const totalSaldo = accounts.reduce((sum, a) => sum + a.saldo, 0);
 
 	if (excelRows.length > 0) {
-		excelRows.push(["", "", "TOTAL", "", formatCurrency(totalSaldo)]);
+		excelRows.push(["", "", "TOTAL", "", formatRupiah(totalSaldo)]);
 	}
 
 	// Create workbook

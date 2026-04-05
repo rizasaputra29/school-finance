@@ -25,7 +25,7 @@ import {
 	CheckCircle,
 	Clock,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -293,7 +293,7 @@ export default function PaymentPage() {
 					<CardContent className="pt-4">
 						<div className="text-sm text-gray-500">Rata-rata per Tagihan</div>
 						<div className="text-2xl font-bold">
-							{billings.length > 0 ? formatCurrency(averageBilling) : "-"}
+							{billings.length > 0 ? formatRupiah(averageBilling) : "-"}
 						</div>
 					</CardContent>
 				</Card>
@@ -400,7 +400,7 @@ export default function PaymentPage() {
 														: "-"}
 												</TableCell>
 												<TableCell className="text-right">
-													{formatCurrency(billing.jumlah)}
+													{formatRupiah(billing.jumlah)}
 												</TableCell>
 												<TableCell>{getStatusBadge(billing)}</TableCell>
 												<TableCell className="text-center">
@@ -483,7 +483,7 @@ export default function PaymentPage() {
 										{selectedBilling.student.nis}
 									</div>
 									<div className="text-lg font-bold mt-2">
-										Total Tagihan: {formatCurrency(selectedBilling.jumlah)}
+										Total Tagihan: {formatRupiah(selectedBilling.jumlah)}
 									</div>
 									{selectedBilling.isOverdue && (
 										<div className="text-sm text-red-600 mt-1 flex items-center">
@@ -505,7 +505,7 @@ export default function PaymentPage() {
 											setPaymentForm((prev) => ({
 												...prev,
 												jumlahBayar: value
-													? formatCurrency(parseInt(value))
+													? formatRupiah(parseInt(value))
 													: "",
 											}));
 										}}

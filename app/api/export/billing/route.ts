@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 // Types for Prisma v7
 interface BillingRecord {
@@ -36,15 +37,6 @@ interface JsPDFWithAutoTable extends jsPDF {
 function getLastAutoTableFinalY(doc: jsPDF): number {
 	const typedDoc = doc as JsPDFWithAutoTable;
 	return typedDoc.lastAutoTable?.finalY ?? 0;
-}
-
-// Helper to format currency
-function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
 }
 
 // Helper to get period string
@@ -173,7 +165,7 @@ async function exportToPDF(
 			b.student.kelas,
 			b.jenisBiaya,
 			b.periodeBulan,
-			formatCurrency(b.jumlah),
+			formatRupiah(b.jumlah),
 			b.statusBayar,
 		]),
 		...tableStyles,
@@ -209,9 +201,9 @@ async function exportToPDF(
 		],
 		body: [
 			[
-				formatCurrency(summary.totalTagihan),
-				formatCurrency(summary.totalLunas),
-				formatCurrency(summary.totalBelumLunas),
+				formatRupiah(summary.totalTagihan),
+				formatRupiah(summary.totalLunas),
+				formatRupiah(summary.totalBelumLunas),
 				summary.countLunas.toString(),
 				summary.countBelumLunas.toString(),
 			],

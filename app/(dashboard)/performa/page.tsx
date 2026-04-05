@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import {
 	BarChart,
 	Bar,
@@ -67,7 +67,7 @@ function CustomTooltipRp({
 			<p className="text-sm font-medium text-gray-700 mb-1">{label}</p>
 			{payload.map((p, i) => (
 				<p key={i} className="text-sm" style={{ color: p.color }}>
-					{p.name}: {formatCurrency(p.value)}
+					{p.name}: {formatRupiah(p.value)}
 				</p>
 			))}
 		</div>
@@ -152,7 +152,7 @@ export default function PerformaPage() {
 						<div className="flex items-center gap-2">
 							<TrendingUp className="h-5 w-5 text-green-500" />
 							<span className="text-xl font-bold text-green-700">
-								{formatCurrency(summary.totalPendapatan)}
+								{formatRupiah(summary.totalPendapatan)}
 							</span>
 						</div>
 					</CardContent>
@@ -167,7 +167,7 @@ export default function PerformaPage() {
 						<div className="flex items-center gap-2">
 							<TrendingDown className="h-5 w-5 text-red-500" />
 							<span className="text-xl font-bold text-red-700">
-								{formatCurrency(summary.totalBeban)}
+								{formatRupiah(summary.totalBeban)}
 							</span>
 						</div>
 					</CardContent>
@@ -188,7 +188,7 @@ export default function PerformaPage() {
 							<span
 								className={`text-xl font-bold ${isProfit ? "text-blue-700" : "text-amber-700"}`}
 							>
-								{formatCurrency(Math.abs(summary.netProfit))}
+								{formatRupiah(Math.abs(summary.netProfit))}
 							</span>
 						</div>
 					</CardContent>
@@ -309,7 +309,7 @@ export default function PerformaPage() {
 											))}
 										</Pie>
 										<Tooltip
-											formatter={(value?: number) => formatCurrency(value || 0)}
+											formatter={(value?: number) => formatRupiah(value || 0)}
 										/>
 									</PieChart>
 								</ResponsiveContainer>
@@ -359,7 +359,7 @@ export default function PerformaPage() {
 											))}
 										</Pie>
 										<Tooltip
-											formatter={(value?: number) => formatCurrency(value || 0)}
+											formatter={(value?: number) => formatRupiah(value || 0)}
 										/>
 									</PieChart>
 								</ResponsiveContainer>

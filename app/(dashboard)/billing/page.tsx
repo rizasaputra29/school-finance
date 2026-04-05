@@ -26,12 +26,8 @@ import {
 	Clock,
 	CreditCard,
 } from "lucide-react";
-import {
-	formatCurrency,
-	formatShortDate,
-	formatNumberInput,
-	parseFormattedNumber,
-} from "@/lib/utils/utils-core";
+import { formatShortDate, formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -462,7 +458,7 @@ export default function BillingPage() {
 								Total Tagihan
 							</p>
 							<p className="text-sm md:text-xl font-bold text-white truncate">
-								{formatCurrency(summary.totalTagihan)}
+								{formatRupiah(summary.totalTagihan)}
 							</p>
 						</div>
 					</CardContent>
@@ -478,7 +474,7 @@ export default function BillingPage() {
 								Belum Lunas
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatCurrency(summary.totalBelumLunas)}
+								{formatRupiah(summary.totalBelumLunas)}
 							</p>
 							<p className="text-[10px] text-gray-400 mt-0.5 md:mt-1 truncate">
 								{summary.countBelumLunas} tagihan
@@ -497,7 +493,7 @@ export default function BillingPage() {
 								Lunas
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatCurrency(summary.totalLunas)}
+								{formatRupiah(summary.totalLunas)}
 							</p>
 							<p className="text-[10px] text-gray-400 mt-0.5 md:mt-1 truncate">
 								{summary.countLunas} tagihan
@@ -614,7 +610,7 @@ export default function BillingPage() {
 											<TableCell>{b.jenisBiaya}</TableCell>
 											<TableCell>{b.periodeBulan}</TableCell>
 											<TableCell className="text-right font-semibold">
-												{formatCurrency(b.jumlah)}
+												{formatRupiah(b.jumlah)}
 											</TableCell>
 											<TableCell>
 												<Badge
@@ -715,7 +711,7 @@ export default function BillingPage() {
 										{selectedBilling.periodeBulan}
 									</p>
 									<p className="mt-2 text-lg font-bold text-slate-900">
-										{formatCurrency(selectedBilling.jumlah)}
+										{formatRupiah(selectedBilling.jumlah)}
 									</p>
 								</div>
 								<p className="text-sm text-slate-500">

@@ -17,7 +17,8 @@ import {
 	Send,
 	DollarSign,
 } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils/utils-core";
+import { formatShortDate } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import Link from "next/link";
 
 interface Reminder {
@@ -225,7 +226,7 @@ export default function ReminderPage() {
 													<div className="flex items-center gap-4 mt-1">
 														{reminder.amount && (
 															<p className="text-sm font-medium text-gray-900">
-																{formatCurrency(reminder.amount)}
+																{formatRupiah(reminder.amount)}
 															</p>
 														)}
 														{reminder.dueDate && (

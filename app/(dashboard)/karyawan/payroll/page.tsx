@@ -24,7 +24,7 @@ import {
 	Clock,
 	Plus,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Employee {
@@ -380,7 +380,7 @@ export default function PayrollPage() {
 						<div className="flex items-center gap-2">
 							<Wallet className="h-5 w-5 text-blue-500" />
 							<span className="text-xl font-bold text-gray-900">
-								{formatCurrency(summary.totalJumlah)}
+								{formatRupiah(summary.totalJumlah)}
 							</span>
 						</div>
 					</CardContent>
@@ -491,7 +491,7 @@ export default function PayrollPage() {
 											</TableCell>
 											<TableCell>{p.periode}</TableCell>
 											<TableCell className="text-right font-medium">
-												{formatCurrency(p.jumlah)}
+												{formatRupiah(p.jumlah)}
 											</TableCell>
 											<TableCell>
 												<span

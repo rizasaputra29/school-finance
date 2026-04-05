@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 
 interface AccountRecord {
 	id: string;
@@ -30,14 +31,6 @@ interface JsPDFWithAutoTable extends jsPDF {
 function getLastAutoTableFinalY(doc: jsPDF): number {
 	const typedDoc = doc as JsPDFWithAutoTable;
 	return typedDoc.lastAutoTable?.finalY ?? 0;
-}
-
-function formatCurrency(amount: number): string {
-	return new Intl.NumberFormat("id-ID", {
-		style: "currency",
-		currency: "IDR",
-		minimumFractionDigits: 0,
-	}).format(amount);
 }
 
 function getPeriodString(bulan?: string, tahun?: string): string {
@@ -236,9 +229,9 @@ async function exportToPDF(
 			(i + 1).toString(),
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.jumlah),
+			formatRupiah(a.jumlah),
 		]),
-		foot: [["", "", "Total Aset", formatCurrency(totalAset)]],
+		foot: [["", "", "Total Aset", formatRupiah(totalAset)]],
 		...tableStyles,
 		columnStyles: {
 			0: { cellWidth: 12, halign: "center" },
@@ -260,9 +253,9 @@ async function exportToPDF(
 			(i + 1).toString(),
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.jumlah),
+			formatRupiah(a.jumlah),
 		]),
-		foot: [["", "", "Total Kewajiban", formatCurrency(totalKewajiban)]],
+		foot: [["", "", "Total Kewajiban", formatRupiah(totalKewajiban)]],
 		...tableStyles,
 		columnStyles: {
 			0: { cellWidth: 12, halign: "center" },
@@ -285,11 +278,11 @@ async function exportToPDF(
 				(i + 1).toString(),
 				a.kodeAkun,
 				a.namaAkun,
-				formatCurrency(a.jumlah),
+				formatRupiah(a.jumlah),
 			]),
-			["", "", "Laba/Rugi Berjalan", formatCurrency(labaRugi)],
+			["", "", "Laba/Rugi Berjalan", formatRupiah(labaRugi)],
 		],
-		foot: [["", "", "Total Ekuitas", formatCurrency(totalEkuitas)]],
+		foot: [["", "", "Total Ekuitas", formatRupiah(totalEkuitas)]],
 		...tableStyles,
 		columnStyles: {
 			0: { cellWidth: 12, halign: "center" },
@@ -308,7 +301,7 @@ async function exportToPDF(
 	doc.setTextColor(0, 0, 0);
 	doc.text("TOTAL KEWAJIBAN + EKUITAS:", 14, finalY3 + 8);
 	doc.text(
-		formatCurrency(totalKewajiban + totalEkuitas),
+		formatRupiah(totalKewajiban + totalEkuitas),
 		pageWidth - 14,
 		finalY3 + 8,
 		{ align: "right" },
@@ -408,34 +401,34 @@ async function exportToExcel(
 			i + 1,
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.jumlah),
+			formatRupiah(a.jumlah),
 		]),
-		["", "", "Total Aset", formatCurrency(totalAset)],
+		["", "", "Total Aset", formatRupiah(totalAset)],
 		[""],
 		["KEWAJIBAN"],
 		...kewajibanData.map((a, i) => [
 			i + 1,
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.jumlah),
+			formatRupiah(a.jumlah),
 		]),
-		["", "", "Total Kewajiban", formatCurrency(totalKewajiban)],
+		["", "", "Total Kewajiban", formatRupiah(totalKewajiban)],
 		[""],
 		["EKUITAS"],
 		...ekuitasData.map((a, i) => [
 			i + 1,
 			a.kodeAkun,
 			a.namaAkun,
-			formatCurrency(a.jumlah),
+			formatRupiah(a.jumlah),
 		]),
-		["", "", "Laba/Rugi Berjalan", formatCurrency(labaRugi)],
-		["", "", "Total Ekuitas", formatCurrency(totalEkuitas)],
+		["", "", "Laba/Rugi Berjalan", formatRupiah(labaRugi)],
+		["", "", "Total Ekuitas", formatRupiah(totalEkuitas)],
 		[""],
 		[
 			"",
 			"",
 			"Total Kewajiban + Ekuitas",
-			formatCurrency(totalKewajiban + totalEkuitas),
+			formatRupiah(totalKewajiban + totalEkuitas),
 		],
 		[""],
 		[""],

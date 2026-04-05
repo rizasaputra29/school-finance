@@ -27,7 +27,7 @@ import {
 	UserCheck,
 	UserX,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils/utils-core";
+import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -525,7 +525,7 @@ export default function KaryawanPage() {
 											</TableCell>
 											<TableCell className="font-medium">{emp.nama}</TableCell>
 											<TableCell>{emp.jabatan}</TableCell>
-											<TableCell>{formatCurrency(emp.gajiPokok)}</TableCell>
+											<TableCell>{formatRupiah(emp.gajiPokok)}</TableCell>
 											<TableCell>
 												<span
 													className={`px-2 py-1 text-xs font-medium rounded-full ${emp.status === "Active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
