@@ -29,7 +29,7 @@ import {
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Student {
@@ -99,7 +99,8 @@ export default function BillingPage() {
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 
 	// Debounce search term to avoid excessive API calls
-	const debouncedSearchTerm = useDebounce(searchTerm, 300);
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
+	const [debouncedStudentSearch] = useDebounce(studentSearch, 200);
 	const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
 	const [selectedBilling, setSelectedBilling] = useState<Billing | null>(null);
 	const [error, setError] = useState("");
@@ -294,19 +295,19 @@ export default function BillingPage() {
 											/>
 											{studentSearch && (
 												<div className="absolute z-10 left-0 right-0 mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
-													{students
-														.filter(
-															(s) =>
-																s.nama
-																	.toLowerCase()
-																	.includes(studentSearch.toLowerCase()) ||
-																s.nis
-																	.toLowerCase()
-																	.includes(studentSearch.toLowerCase()) ||
-																s.kelas
-																	.toLowerCase()
-																	.includes(studentSearch.toLowerCase()),
-														)
+											{students
+												.filter(
+													(s) =>
+														s.nama
+															.toLowerCase()
+															.includes(debouncedStudentSearch.toLowerCase()) ||
+														s.nis
+															.toLowerCase()
+															.includes(debouncedStudentSearch.toLowerCase()) ||
+														s.kelas
+															.toLowerCase()
+															.includes(debouncedStudentSearch.toLowerCase()),
+												)
 														.slice(0, 20)
 														.map((s) => (
 															<button
@@ -329,15 +330,15 @@ export default function BillingPage() {
 																</span>
 															</button>
 														))}
-													{students.filter(
-														(s) =>
-															s.nama
-																.toLowerCase()
-																.includes(studentSearch.toLowerCase()) ||
-															s.nis
-																.toLowerCase()
-																.includes(studentSearch.toLowerCase()),
-													).length === 0 && (
+											{students.filter(
+													(s) =>
+														s.nama
+															.toLowerCase()
+															.includes(debouncedStudentSearch.toLowerCase()) ||
+														s.nis
+															.toLowerCase()
+															.includes(debouncedStudentSearch.toLowerCase()),
+												).length === 0 && (
 														<p className="px-3 py-2 text-sm text-gray-500">
 															Tidak ada siswa ditemukan
 														</p>

@@ -28,7 +28,7 @@ import {
 	UserX,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Employee {
@@ -86,7 +86,7 @@ export default function KaryawanPage() {
 	});
 	const [loading, setLoading] = useState(true);
 	const [search, setSearch] = useState("");
-	const debouncedSearch = useDebounce(search, 400);
+	const [debouncedSearch] = useDebounce(search, 400);
 
 	// Dialog states
 	const [isCreateOpen, setIsCreateOpen] = useState(false);

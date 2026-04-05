@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatMonthYear } from "@/lib/utils/utils-date";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Student {
@@ -98,7 +98,7 @@ export default function PaymentPage() {
 	const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
 	// Debounce search
-	const debouncedSearchTerm = useDebounce(searchTerm, 300);
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
 
 	// Fetch billings
 	const fetchBillings = useCallback(async () => {

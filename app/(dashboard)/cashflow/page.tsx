@@ -31,7 +31,7 @@ import {
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Cashflow {
@@ -98,7 +98,7 @@ export default function CashflowPage() {
 	const [endDate, setEndDate] = useState("");
 
 	// Debounce search term to avoid excessive API calls
-	const debouncedSearchTerm = useDebounce(searchTerm, 300);
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
 
 	// Dialog States
 
@@ -110,6 +110,7 @@ export default function CashflowPage() {
 	const [formData, setFormData] = useState(INITIAL_FORM);
 	const [error, setError] = useState("");
 	const [accountSearch, setAccountSearch] = useState("");
+	const [debouncedAccountSearch] = useDebounce(accountSearch, 200);
 	const [showAccountDropdown, setShowAccountDropdown] = useState(false);
 	const fetchAccounts = useCallback(async () => {
 		try {
@@ -307,20 +308,20 @@ export default function CashflowPage() {
 						/>
 						{showAccountDropdown && (
 							<div className="absolute z-10 left-0 right-0 mt-1 max-h-64 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
-								{accounts
-									.filter(
-										(acc) =>
-											accountSearch === "" ||
-											acc.kodeAkun
-												.toLowerCase()
-												.includes(accountSearch.toLowerCase()) ||
-											acc.namaAkun
-												.toLowerCase()
-												.includes(accountSearch.toLowerCase()) ||
-											acc.tipeAkun
-												.toLowerCase()
-												.includes(accountSearch.toLowerCase()),
-									)
+							{accounts
+								.filter(
+									(acc) =>
+										debouncedAccountSearch === "" ||
+										acc.kodeAkun
+											.toLowerCase()
+											.includes(debouncedAccountSearch.toLowerCase()) ||
+										acc.namaAkun
+											.toLowerCase()
+											.includes(debouncedAccountSearch.toLowerCase()) ||
+										acc.tipeAkun
+											.toLowerCase()
+											.includes(debouncedAccountSearch.toLowerCase()),
+								)
 									.map((acc) => (
 										<button
 											key={acc.id}
@@ -347,13 +348,13 @@ export default function CashflowPage() {
 									))}
 								{accounts.filter(
 									(acc) =>
-										accountSearch === "" ||
+										debouncedAccountSearch === "" ||
 										acc.kodeAkun
 											.toLowerCase()
-											.includes(accountSearch.toLowerCase()) ||
+											.includes(debouncedAccountSearch.toLowerCase()) ||
 										acc.namaAkun
 											.toLowerCase()
-											.includes(accountSearch.toLowerCase()),
+											.includes(debouncedAccountSearch.toLowerCase()),
 								).length === 0 && (
 									<p className="px-3 py-2 text-sm text-gray-500">
 										Tidak ada akun ditemukan

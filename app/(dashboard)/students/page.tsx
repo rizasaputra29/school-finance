@@ -26,7 +26,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Student {
@@ -81,7 +81,7 @@ export default function StudentsPage() {
 	const [showInactive, setShowInactive] = useState(false);
 
 	// Debounce search term to avoid excessive API calls
-	const debouncedSearchTerm = useDebounce(searchTerm, 300);
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
 
 	// Dialog states
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
