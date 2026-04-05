@@ -7,13 +7,13 @@ import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
 import {
 	validateTransaction,
-	formatPeriode,
 	roundAmount,
 	isAmountEqual,
 	type TransactionData,
 	type TransactionEntry,
 	type PeriodInfo,
 } from "@/lib/accounting/accounting-validation";
+import { formatDate as formatPeriode } from "@/lib/utils/utils-date";
 import { invalidateReportsCache } from "@/lib/utils/utils-cache";
 
 // Validation Schemas

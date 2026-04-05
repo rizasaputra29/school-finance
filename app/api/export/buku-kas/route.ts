@@ -7,6 +7,7 @@ import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateFull, formatDateShort, formatPeriodRange } from "@/lib/utils/utils-date";
 
 // Types for Prisma v7
 interface CashflowRecord {
@@ -44,16 +45,8 @@ function getLastAutoTableFinalY(doc: jsPDF): number {
 // Helper to get period string
 function getPeriodString(startDate?: Date, endDate?: Date): string {
 	if (startDate && endDate) {
-		const start = startDate.toLocaleDateString("id-ID", {
-			day: "numeric",
-			month: "long",
-			year: "numeric",
-		});
-		const end = endDate.toLocaleDateString("id-ID", {
-			day: "numeric",
-			month: "long",
-			year: "numeric",
-		});
+		const periodRange = formatPeriodRange(startDate, endDate);
+		const [start, end] = periodRange.split(" - ");
 		return `${start} - ${end}`;
 	}
 	return "";
@@ -83,11 +76,7 @@ async function exportToPDF(
 ): Promise<Buffer> {
 	const doc = new jsPDF();
 	const pageWidth = doc.internal.pageSize.getWidth();
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+const currentDate = formatDateFull(new Date());
 	const periodStr = getPeriodString(startDate, endDate);
 
 	// Calculate running balance
@@ -202,7 +191,7 @@ async function exportToPDF(
 		],
 		body: dataWithBalance.map((cf, i) => [
 			(i + 1).toString(),
-			cf.tanggal.toLocaleDateString("id-ID"),
+			formatDateShort(cf.tanggal),
 			cf.keterangan,
 			cf.kodeAkun,
 			cf.debit > 0 ? formatRupiah(cf.debit) : "-",
@@ -267,11 +256,7 @@ async function exportToExcel(
 	endDate?: Date,
 ): Promise<Buffer> {
 	const periodStr = getPeriodString(startDate, endDate);
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+const currentDate = formatDateFull(new Date());
 
 	const workbook = XLSX.utils.book_new();
 
@@ -309,7 +294,7 @@ async function exportToExcel(
 		[""],
 		...dataWithBalance.map((cf, i) => [
 			i + 1,
-			cf.tanggal.toLocaleDateString("id-ID"),
+			formatDateShort(cf.tanggal),
 			cf.keterangan,
 			cf.kodeAkun,
 			cf.debit > 0 ? formatRupiah(cf.debit) : "-",

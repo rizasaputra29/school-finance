@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatDateFull } from "@/lib/utils/utils-date";
 
 interface StudentRecord {
 	id: string;
@@ -40,11 +41,7 @@ async function generateExcel(): Promise<{ buffer: Buffer; filename: string }> {
 
 	const workbook = XLSX.utils.book_new();
 
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+	const currentDate = formatDateFull(new Date());
 
 	const headerInfo = [
 		["LAPORAN DATA SISWA"],

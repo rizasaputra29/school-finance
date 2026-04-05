@@ -17,7 +17,7 @@ import {
 	ArrowUpRight,
 	ArrowDownRight,
 } from "lucide-react";
-import { formatDate } from "@/lib/utils/utils-core";
+import { formatDateFull as formatDate } from "@/lib/utils/utils-date";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import {
 	PieChart,

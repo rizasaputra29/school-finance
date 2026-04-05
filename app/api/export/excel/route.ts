@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateFull, formatDateShort } from "@/lib/utils/utils-date";
 
 // Define types inline for Prisma v7 compatibility
 interface AccountRecord {
@@ -29,11 +30,7 @@ export async function GET(request: NextRequest) {
 			try {
 				const query = getQueryParams(request);
 				const { type } = query;
-				const currentDate = new Date().toLocaleDateString("id-ID", {
-					day: "numeric",
-					month: "long",
-					year: "numeric",
-				});
+				const currentDate = formatDateFull(new Date());
 
 				// Get all data
 				const accounts = (await prisma.account.findMany({
@@ -213,7 +210,7 @@ export async function GET(request: NextRequest) {
 						],
 						...cashflows.map((cf, i) => [
 							i + 1,
-							new Date(cf.tanggal).toLocaleDateString("id-ID"),
+							formatDateShort(cf.tanggal),
 							cf.keterangan,
 							cf.kodeAkun,
 							cf.debit > 0 ? formatRupiah(cf.debit) : "-",

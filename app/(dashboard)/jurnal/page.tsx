@@ -15,7 +15,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { BookOpen, Send } from "lucide-react";
-import { formatShortDate } from "@/lib/utils/utils-core";
+import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 
 interface Account {
 	id: string;

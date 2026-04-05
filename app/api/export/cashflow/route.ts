@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { formatDateFull, formatDateShort } from "@/lib/utils/utils-date";
 
 // Define types inline for Prisma v7 compatibility
 interface CashflowRecord {
@@ -115,7 +116,7 @@ async function generateExcel(params: {
 		const namaAkun = cf.account?.namaAkun || accountMap.get(cf.kodeAkun) || "";
 		return {
 			No: index + 1 + skip,
-			Tanggal: new Date(cf.tanggal).toLocaleDateString("id-ID"),
+			Tanggal: formatDateShort(cf.tanggal),
 			"Kode Akun": cf.kodeAkun,
 			"Nama Akun": namaAkun,
 			Keterangan: cf.keterangan,
@@ -144,11 +145,7 @@ async function generateExcel(params: {
 	const workbook = XLSX.utils.book_new();
 
 	// Create header info
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+	const currentDate = formatDateFull(new Date());
 
 	const headerInfo = [
 		["LAPORAN BUKU KAS"],
@@ -159,9 +156,9 @@ async function generateExcel(params: {
 
 	if (startDate || endDate) {
 		const dateRange = [
-			startDate ? new Date(startDate).toLocaleDateString("id-ID") : "Awal",
+			startDate ? formatDateShort(new Date(startDate)) : "Awal",
 			"sampai",
-			endDate ? new Date(endDate).toLocaleDateString("id-ID") : "Sekarang",
+			endDate ? formatDateShort(new Date(endDate)) : "Sekarang",
 		].join(" ");
 		headerInfo.push([dateRange]);
 		headerInfo.push([]);

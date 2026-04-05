@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { FileSpreadsheet, FileText, Download, Printer } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateFull } from "@/lib/utils/utils-date";
 
 interface AccountReportItem {
 	kodeAkun: string;
@@ -163,14 +164,7 @@ export default function ReportsPage() {
 		[neracaData],
 	);
 
-	const formatReportDate = (dateStr: string) => {
-		const date = new Date(dateStr);
-		return date.toLocaleDateString("id-ID", {
-			day: "numeric",
-			month: "long",
-			year: "numeric",
-		});
-	};
+
 
 	if (isLoading) {
 		return (
@@ -266,7 +260,7 @@ export default function ReportsPage() {
 										LAPORAN LABA RUGI
 									</h2>
 									<p className="mt-2 text-sm text-gray-600">
-										Per {formatReportDate(reportDate)}
+										Per {formatDateFull(reportDate)}
 									</p>
 								</div>
 
@@ -398,7 +392,7 @@ export default function ReportsPage() {
 										NERACA
 									</h2>
 									<p className="mt-2 text-sm text-gray-600">
-										Per {formatReportDate(reportDate)}
+										Per {formatDateFull(reportDate)}
 									</p>
 								</div>
 

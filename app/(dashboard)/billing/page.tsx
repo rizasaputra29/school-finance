@@ -26,7 +26,8 @@ import {
 	Clock,
 	CreditCard,
 } from "lucide-react";
-import { formatShortDate, formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
+import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
+import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";

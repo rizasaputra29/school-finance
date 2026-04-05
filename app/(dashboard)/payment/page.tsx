@@ -26,6 +26,7 @@ import {
 	Clock,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatMonthYear } from "@/lib/utils/utils-date";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -390,14 +391,9 @@ export default function PaymentPage() {
 												</TableCell>
 												<TableCell>{billing.jenisBiaya}</TableCell>
 												<TableCell>
-													{billing.periodeBulan
-														? new Date(
-																billing.periodeBulan + "-01",
-															).toLocaleDateString("id-ID", {
-																month: "long",
-																year: "numeric",
-															})
-														: "-"}
+{billing.periodeBulan
+												? formatMonthYear(new Date(billing.periodeBulan + "-01"))
+												: "-"}
 												</TableCell>
 												<TableCell className="text-right">
 													{formatRupiah(billing.jumlah)}

@@ -20,6 +20,7 @@ import {
 } from "@/lib/import/import-validator";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { parseExcelDate } from "@/lib/utils/utils-date";
 
 // ============================================
 // Type Definitions
@@ -54,10 +55,6 @@ interface AccountRow {
 // Pure Helper Functions
 // ============================================
 
-function excelDateToJSDate(excelDate: number): Date {
-	return new Date((excelDate - 25569) * 86400 * 1000);
-}
-
 function createImportResult(): ImportResult {
 	return {
 		inserted: 0,
@@ -70,7 +67,7 @@ function createImportResult(): ImportResult {
 
 function parseCashflowDate(value: string | number | undefined): Date | null {
 	if (value === undefined || value === null) return null;
-	if (typeof value === "number") return excelDateToJSDate(value);
+	if (typeof value === "number") return parseExcelDate(value);
 	const date = new Date(value);
 	return isNaN(date.getTime()) ? null : date;
 }

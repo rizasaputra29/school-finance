@@ -7,6 +7,7 @@ import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateFull } from "@/lib/utils/utils-date";
 
 // Types for Prisma v7
 interface BillingRecord {
@@ -63,11 +64,7 @@ async function exportToPDF(
 ): Promise<Buffer> {
 	const doc = new jsPDF();
 	const pageWidth = doc.internal.pageSize.getWidth();
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+	const currentDate = formatDateFull(new Date());
 	const periodStr = getPeriodString(periodeBulan);
 
 	// Helper function to add header
@@ -251,11 +248,7 @@ async function exportToExcel(
 	periodeBulan?: string,
 ): Promise<Buffer> {
 	const periodStr = getPeriodString(periodeBulan);
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+	const currentDate = formatDateFull(new Date());
 
 	const workbook = XLSX.utils.book_new();
 

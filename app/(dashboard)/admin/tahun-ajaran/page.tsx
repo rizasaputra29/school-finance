@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { Plus, Pencil, Check, Archive } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { formatDateCompact } from '@/lib/utils/utils-date';
 
 interface AcademicYear {
   id: string;
@@ -25,11 +26,6 @@ const INITIAL_FORM = {
   tanggalMulai: '',
   tanggalSelesai: '',
 };
-
-function formatDate(dateStr: string) {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 export default function AcademicYearPage() {
   const { isAdmin } = useAuth();
@@ -302,7 +298,7 @@ export default function AcademicYearPage() {
                     <tr key={year.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium">{year.tahunAjaran}</td>
                       <td className="px-4 py-3 text-gray-600">
-                        {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
+                        {formatDateCompact(year.tanggalMulai)} - {formatDateCompact(year.tanggalSelesai)}
                       </td>
                       <td className="px-4 py-3">
                         {year.isActive ? (
@@ -371,7 +367,7 @@ export default function AcademicYearPage() {
                     <tr key={year.id} className="border-b bg-gray-50/30">
                       <td className="px-4 py-3 font-medium text-gray-600">{year.tahunAjaran}</td>
                       <td className="px-4 py-3 text-gray-500">
-                        {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
+                        {formatDateCompact(year.tanggalMulai)} - {formatDateCompact(year.tanggalSelesai)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className="text-gray-500">Diarsipkan</Badge>

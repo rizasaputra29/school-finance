@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateFull } from "@/lib/utils/utils-date";
 
 interface AccountRecord {
 	id: string;
@@ -39,11 +40,7 @@ async function generateExcel(): Promise<{ buffer: Buffer; filename: string }> {
 	const workbook = XLSX.utils.book_new();
 
 	// Create header info
-	const currentDate = new Date().toLocaleDateString("id-ID", {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	});
+	const currentDate = formatDateFull(new Date());
 
 	const headerInfo = [
 		["LAPORAN DATA AKUN"],

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Wallet, Building2, ArrowRightLeft, BookOpen } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateShort } from "@/lib/utils/utils-date";
 import * as Dialog from "@radix-ui/react-dialog";
 
 interface Account {
@@ -398,7 +399,7 @@ export default function KeuanganPage() {
 												return (
 													<TableRow key={m.id} className="hover:bg-gray-50">
 														<TableCell className="text-sm">
-															{new Date(m.tanggal).toLocaleDateString("id-ID")}
+															{formatDateShort(m.tanggal)}
 														</TableCell>
 														<TableCell>
 															<div className="text-sm">{m.keterangan}</div>

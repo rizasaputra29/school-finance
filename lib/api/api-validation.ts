@@ -2,6 +2,7 @@ import { z, ZodError } from "zod";
 import type { NextApiResponse } from "next";
 import type { AuthenticatedRequest } from "../auth/auth-middleware";
 import { ErrorCodes } from "./api-errors";
+import { formatDateShort } from "@/lib/utils/utils-date";
 
 /**
  * Validation utility for API routes
@@ -612,7 +613,7 @@ export async function smartValidateTransaction(
 			duplicateWarning = {
 				type: "DUPLICATE",
 				field: "transaction",
-				message: `Transaksi疑似 duplikat dengan ${existing.reference} pada ${new Date(existing.tanggal).toLocaleDateString("id-ID")}`,
+				message: `Transaksi疑似 duplikat dengan ${existing.reference} pada ${formatDateShort(existing.tanggal)}`,
 				severity: "high",
 			};
 		}

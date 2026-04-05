@@ -10,7 +10,7 @@ import {
 	Clock,
 	X,
 } from "lucide-react";
-import { formatShortDate } from "@/lib/utils/utils-core";
+import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import Link from "next/link";
 

@@ -11,10 +11,8 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
-import {
-	formatPeriode,
-	roundAmount,
-} from "@/lib/accounting/accounting-validation";
+import { roundAmount } from "@/lib/accounting/accounting-validation";
+import { formatDate as formatPeriode } from "@/lib/utils/utils-date";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 

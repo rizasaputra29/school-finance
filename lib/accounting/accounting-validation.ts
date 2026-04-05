@@ -73,30 +73,6 @@ export function isAmountEqual(a: number, b: number, precision: number = ROUNDING
   return roundAmount(a, precision) === roundAmount(b, precision);
 }
 
-/**
- * Format period string from date
- */
-export function formatPeriode(date: Date): string {
-  const tahun = date.getFullYear();
-  const bulan = String(date.getMonth() + 1).padStart(2, '0');
-  return `${tahun}-${bulan}`;
-}
-
-/**
- * Parse period string to year and month
- */
-export function parsePeriode(periode: string): { tahun: number; bulan: number } | null {
-  const match = periode.match(/^(\d{4})-(\d{2})$/);
-  if (!match) return null;
-  
-  const tahun = parseInt(match[1], 10);
-  const bulan = parseInt(match[2], 10);
-  
-  if (bulan < 1 || bulan > 12 || tahun < 2000 || tahun > 2100) return null;
-  
-  return { tahun, bulan };
-}
-
 // ============================================================================
 // Validation Functions (Pure Functions)
 // ============================================================================
@@ -737,8 +713,6 @@ export function validateReportConsistency(
 const validationEngine = {
   roundAmount,
   isAmountEqual,
-  formatPeriode,
-  parsePeriode,
   validateTransaction,
   validateBulkImport,
   validateReportConsistency,

@@ -4,6 +4,7 @@ import autoTable from "jspdf-autotable";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { formatDateFull } from "@/lib/utils/utils-date";
 
 interface AccountRecord {
 	id: string;
@@ -36,11 +37,7 @@ export async function GET(request: NextRequest) {
 			try {
 				const query = getQueryParams(request);
 				const { type } = query;
-				const currentDate = new Date().toLocaleDateString("id-ID", {
-					day: "numeric",
-					month: "long",
-					year: "numeric",
-				});
+				const currentDate = formatDateFull(new Date());
 
 				const doc = new jsPDF();
 				const pageWidth = doc.internal.pageSize.getWidth();
