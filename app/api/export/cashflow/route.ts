@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
-import { withAuthAppRouter, getQueryParams } from "@/lib/with-auth";
-import { handlePrismaErrorResponse } from "@/lib/prisma-errors";
+import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
+import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 
 // Define types inline for Prisma v7 compatibility
 interface CashflowRecord {

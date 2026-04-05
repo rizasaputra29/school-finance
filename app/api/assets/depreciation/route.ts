@@ -4,489 +4,500 @@
  * Double-entry: Debit "Beban Penyusutan", Credit "Akumulasi Penyusutan"
  */
 
-import { NextRequest } from 'next/server';
-import { z } from 'zod';
-import { Prisma } from '@prisma/client';
-import prisma from '@/lib/prisma';
-import { withAuthAppRouter } from '@/lib/with-auth';
-import { success, errors } from '@/lib/api-response';
-import { handlePrismaErrorResponse } from '@/lib/prisma-errors';
+import { NextRequest } from "next/server";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
+import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
+import { success, errors } from "@/lib/api/api-response";
+import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import {
-  calculateDepreciation,
-  buildDepreciationJournalEntries,
-  filterDepreciableAssets,
-  type AssetDepreciationData,
-  type DepreciationCalculation,
-} from '@/lib/accounting/depreciation';
+	calculateDepreciation,
+	buildDepreciationJournalEntries,
+	filterDepreciableAssets,
+	type AssetDepreciationData,
+	type DepreciationCalculation,
+} from "@/lib/accounting/accounting-depreciation";
 
 // Validation schema for manual depreciation trigger
 const depreciateSchema = z.object({
-  year: z.number().int().min(2000).max(2100).optional(),
-  assetId: z.string().optional(),
-  force: z.boolean().optional().default(false),
+	year: z.number().int().min(2000).max(2100).optional(),
+	assetId: z.string().optional(),
+	force: z.boolean().optional().default(false),
 });
 
 // Response types
 interface AssetWithDepreciation extends AssetDepreciationData {
-  depreciation?: DepreciationCalculation;
+	depreciation?: DepreciationCalculation;
 }
 
 interface DepreciationApiResponse {
-  success: boolean;
-  year: number;
-  assetsProcessed: number;
-  totalDepreciation: number;
-  message: string;
-  details?: {
-    assets: AssetWithDepreciation[];
-    entries: Array<{
-      kodeAkun: string;
-      debit: number;
-      kredit: number;
-      keterangan: string;
-    }>;
-  };
+	success: boolean;
+	year: number;
+	assetsProcessed: number;
+	totalDepreciation: number;
+	message: string;
+	details?: {
+		assets: AssetWithDepreciation[];
+		entries: Array<{
+			kodeAkun: string;
+			debit: number;
+			kredit: number;
+			keterangan: string;
+		}>;
+	};
 }
 
 /**
  * Get all accounts needed for depreciation
  */
 async function getDepreciationAccounts() {
-  const accounts = await prisma.account.findMany({
-    where: {
-      OR: [
-        { namaAkun: { contains: 'Beban Penyusutan', mode: 'insensitive' } },
-        { namaAkun: { contains: 'Akumulasi Penyusutan', mode: 'insensitive' } },
-      ],
-    },
-  });
+	const accounts = await prisma.account.findMany({
+		where: {
+			OR: [
+				{ namaAkun: { contains: "Beban Penyusutan", mode: "insensitive" } },
+				{ namaAkun: { contains: "Akumulasi Penyusutan", mode: "insensitive" } },
+			],
+		},
+	});
 
-  return accounts;
+	return accounts;
 }
 
 /**
  * Find or create the required depreciation accounts
  */
 async function findOrCreateDepreciationAccounts() {
-  let accounts = await getDepreciationAccounts();
+	let accounts = await getDepreciationAccounts();
 
-  // If accounts don't exist, create them
-  if (accounts.length < 2) {
-    const bebanPenyusutan = accounts.find((a) =>
-      a.namaAkun.toLowerCase().includes('beban')
-    );
-    const akumulasi = accounts.find((a) =>
-      a.namaAkun.toLowerCase().includes('akumulasi')
-    );
+	// If accounts don't exist, create them
+	if (accounts.length < 2) {
+		const bebanPenyusutan = accounts.find((a) =>
+			a.namaAkun.toLowerCase().includes("beban"),
+		);
+		const akumulasi = accounts.find((a) =>
+			a.namaAkun.toLowerCase().includes("akumulasi"),
+		);
 
-    if (!bebanPenyusutan) {
-      await prisma.account.create({
-        data: {
-          kodeAkun: '600',
-          namaAkun: 'Beban Penyusutan Aktiva Tetap',
-          tipeAkun: 'Expense',
-          saldo: 0,
-        },
-      });
-    }
+		if (!bebanPenyusutan) {
+			await prisma.account.create({
+				data: {
+					kodeAkun: "600",
+					namaAkun: "Beban Penyusutan Aktiva Tetap",
+					tipeAkun: "Expense",
+					saldo: 0,
+				},
+			});
+		}
 
-    if (!akumulasi) {
-      await prisma.account.create({
-        data: {
-          kodeAkun: '111',
-          namaAkun: 'Akumulasi Penyusutan Aktiva Tetap',
-          tipeAkun: 'Asset',
-          saldo: 0,
-        },
-      });
-    }
+		if (!akumulasi) {
+			await prisma.account.create({
+				data: {
+					kodeAkun: "111",
+					namaAkun: "Akumulasi Penyusutan Aktiva Tetap",
+					tipeAkun: "Asset",
+					saldo: 0,
+				},
+			});
+		}
 
-    // Refresh accounts list
-    accounts = await getDepreciationAccounts();
-  }
+		// Refresh accounts list
+		accounts = await getDepreciationAccounts();
+	}
 
-  const bebanCode = accounts.find(
-    (a) =>
-      a.tipeAkun === 'Expense' &&
-      a.namaAkun.toLowerCase().includes('penyusutan')
-  );
-  const akumulasiCode = accounts.find(
-    (a) =>
-      a.tipeAkun === 'Asset' &&
-      a.namaAkun.toLowerCase().includes('akumulasi')
-  );
+	const bebanCode = accounts.find(
+		(a) =>
+			a.tipeAkun === "Expense" &&
+			a.namaAkun.toLowerCase().includes("penyusutan"),
+	);
+	const akumulasiCode = accounts.find(
+		(a) =>
+			a.tipeAkun === "Asset" && a.namaAkun.toLowerCase().includes("akumulasi"),
+	);
 
-  return {
-    bebanPenyusutanCode: bebanCode?.kodeAkun || '600',
-    akumulasiPenyusutanCode: akumulasiCode?.kodeAkun || '111',
-  };
+	return {
+		bebanPenyusutanCode: bebanCode?.kodeAkun || "600",
+		akumulasiPenyusutanCode: akumulasiCode?.kodeAkun || "111",
+	};
 }
 
 /**
  * Get all assets for depreciation calculation
  */
 async function getAllAssets(): Promise<AssetDepreciationData[]> {
-  const assets = await prisma.asset.findMany({
-    where: { status: 'Active' },
-    include: { account: true },
-    orderBy: { tanggalPerolehan: 'asc' },
-  });
+	const assets = await prisma.asset.findMany({
+		where: { status: "Active" },
+		include: { account: true },
+		orderBy: { tanggalPerolehan: "asc" },
+	});
 
-  return assets.map((asset) => ({
-    id: asset.id,
-    kodeAkun: asset.kodeAkun,
-    nama: asset.nama,
-    kategori: asset.kategori,
-    tanggalPerolehan: asset.tanggalPerolehan,
-    hargaPerolehan: asset.hargaPerolehan,
-    umurTeknis: asset.umurTeknis,
-    nilaiResidu: asset.nilaiResidu,
-    isTanah: asset.isTanah,
-    status: asset.status,
-  }));
+	return assets.map((asset) => ({
+		id: asset.id,
+		kodeAkun: asset.kodeAkun,
+		nama: asset.nama,
+		kategori: asset.kategori,
+		tanggalPerolehan: asset.tanggalPerolehan,
+		hargaPerolehan: asset.hargaPerolehan,
+		umurTeknis: asset.umurTeknis,
+		nilaiResidu: asset.nilaiResidu,
+		isTanah: asset.isTanah,
+		status: asset.status,
+	}));
 }
 
 /**
  * Check if depreciation for a given year has already been processed
  */
 async function isDepreciationAlreadyProcessed(year: number): Promise<boolean> {
-  const existingEntry = await prisma.journalEntry.findFirst({
-    where: {
-      reference: 'depreciation',
-      tanggal: {
-        gte: new Date(year, 0, 1),
-        lte: new Date(year, 11, 31),
-      },
-    },
-  });
-  return !!existingEntry;
+	const existingEntry = await prisma.journalEntry.findFirst({
+		where: {
+			reference: "depreciation",
+			tanggal: {
+				gte: new Date(year, 0, 1),
+				lte: new Date(year, 11, 31),
+			},
+		},
+	});
+	return !!existingEntry;
 }
 
 /**
  * Process depreciation for a single asset or all assets
  */
 async function processDepreciation(
-  year: number,
-  assetId?: string,
-  force: boolean = false
+	year: number,
+	assetId?: string,
+	force: boolean = false,
 ): Promise<DepreciationApiResponse> {
-  // Check if depreciation already processed for this year
-  const alreadyProcessed = await isDepreciationAlreadyProcessed(year);
-  
-  if (alreadyProcessed && !force) {
-    return {
-      success: true,
-      year,
-      assetsProcessed: 0,
-      totalDepreciation: 0,
-      message: `Depreciation for year ${year} already processed. Use force: true to reprocess.`,
-      details: {
-        assets: [],
-        entries: [],
-      },
-    };
-  }
+	// Check if depreciation already processed for this year
+	const alreadyProcessed = await isDepreciationAlreadyProcessed(year);
 
-  // Get depreciation account codes
-  const { bebanPenyusutanCode, akumulasiPenyusutanCode } =
-    await findOrCreateDepreciationAccounts();
+	if (alreadyProcessed && !force) {
+		return {
+			success: true,
+			year,
+			assetsProcessed: 0,
+			totalDepreciation: 0,
+			message: `Depreciation for year ${year} already processed. Use force: true to reprocess.`,
+			details: {
+				assets: [],
+				entries: [],
+			},
+		};
+	}
 
-  // Get all active assets
-  let assets = await getAllAssets();
+	// Get depreciation account codes
+	const { bebanPenyusutanCode, akumulasiPenyusutanCode } =
+		await findOrCreateDepreciationAccounts();
 
-  // Filter by assetId if specified
-  if (assetId) {
-    assets = assets.filter((a) => a.id === assetId);
-  }
+	// Get all active assets
+	let assets = await getAllAssets();
 
-  // Filter out land assets (they don't depreciate)
-  const depreciableAssets = filterDepreciableAssets(assets);
+	// Filter by assetId if specified
+	if (assetId) {
+		assets = assets.filter((a) => a.id === assetId);
+	}
 
-  if (depreciableAssets.length === 0) {
-    return {
-      success: true,
-      year,
-      assetsProcessed: 0,
-      totalDepreciation: 0,
-      message: 'No depreciable assets found',
-      details: {
-        assets: [],
-        entries: [],
-      },
-    };
-  }
+	// Filter out land assets (they don't depreciate)
+	const depreciableAssets = filterDepreciableAssets(assets);
 
-  // Calculate depreciation for each asset
-  const assetsWithDepreciation: AssetWithDepreciation[] = [];
-  const allEntries: Array<{
-    kodeAkun: string;
-    debit: number;
-    kredit: number;
-    keterangan: string;
-  }> = [];
-  let totalDepreciation = 0;
-  let assetsProcessed = 0;
+	if (depreciableAssets.length === 0) {
+		return {
+			success: true,
+			year,
+			assetsProcessed: 0,
+			totalDepreciation: 0,
+			message: "No depreciable assets found",
+			details: {
+				assets: [],
+				entries: [],
+			},
+		};
+	}
 
-  for (const asset of depreciableAssets) {
-    const calc = calculateDepreciation(asset, year);
+	// Calculate depreciation for each asset
+	const assetsWithDepreciation: AssetWithDepreciation[] = [];
+	const allEntries: Array<{
+		kodeAkun: string;
+		debit: number;
+		kredit: number;
+		keterangan: string;
+	}> = [];
+	let totalDepreciation = 0;
+	let assetsProcessed = 0;
 
-    const assetWithDepreciation: AssetWithDepreciation = {
-      ...asset,
-      depreciation: calc || undefined,
-    };
+	for (const asset of depreciableAssets) {
+		const calc = calculateDepreciation(asset, year);
 
-    assetsWithDepreciation.push(assetWithDepreciation);
+		const assetWithDepreciation: AssetWithDepreciation = {
+			...asset,
+			depreciation: calc || undefined,
+		};
 
-    // Generate journal entries if there's depreciation for this year
-    if (calc && calc.currentYearDepreciation > 0) {
-      const entries = buildDepreciationJournalEntries(
-        asset.nama,
-        calc.currentYearDepreciation,
-        year,
-        bebanPenyusutanCode,
-        akumulasiPenyusutanCode
-      );
+		assetsWithDepreciation.push(assetWithDepreciation);
 
-      allEntries.push(...entries);
-      totalDepreciation += calc.currentYearDepreciation;
-      assetsProcessed++;
-    }
-  }
+		// Generate journal entries if there's depreciation for this year
+		if (calc && calc.currentYearDepreciation > 0) {
+			const entries = buildDepreciationJournalEntries(
+				asset.nama,
+				calc.currentYearDepreciation,
+				year,
+				bebanPenyusutanCode,
+				akumulasiPenyusutanCode,
+			);
 
-  // If no depreciation entries generated, return early
-  if (allEntries.length === 0) {
-    return {
-      success: true,
-      year,
-      assetsProcessed: 0,
-      totalDepreciation: 0,
-      message: 'No depreciation to process - all assets fully depreciated',
-      details: {
-        assets: assetsWithDepreciation,
-        entries: [],
-      },
-    };
-  }
+			allEntries.push(...entries);
+			totalDepreciation += calc.currentYearDepreciation;
+			assetsProcessed++;
+		}
+	}
 
-  // Create journal entries in database
-  try {
-    await prisma.$transaction(async (tx) => {
-      // Create journal entry header
-      const journalEntry = await tx.journalEntry.create({
-        data: {
-          tanggal: new Date(year, 11, 31), // End of year
-          keterangan: `Penyusutan Aktiva Tetap Tahun ${year}`,
-          reference: 'depreciation',
-        },
-      });
+	// If no depreciation entries generated, return early
+	if (allEntries.length === 0) {
+		return {
+			success: true,
+			year,
+			assetsProcessed: 0,
+			totalDepreciation: 0,
+			message: "No depreciation to process - all assets fully depreciated",
+			details: {
+				assets: assetsWithDepreciation,
+				entries: [],
+			},
+		};
+	}
 
-      // Create journal entry lines using createMany for better performance
-      const journalLineData = allEntries.map(entry => ({
-        journalEntryId: journalEntry.id,
-        kodeAkun: entry.kodeAkun,
-        debit: entry.debit,
-        kredit: entry.kredit,
-      }));
-      
-      await tx.journalEntryLine.createMany({
-        data: journalLineData,
-      });
+	// Create journal entries in database
+	try {
+		await prisma.$transaction(async (tx) => {
+			// Create journal entry header
+			const journalEntry = await tx.journalEntry.create({
+				data: {
+					tanggal: new Date(year, 11, 31), // End of year
+					keterangan: `Penyusutan Aktiva Tetap Tahun ${year}`,
+					reference: "depreciation",
+				},
+			});
 
-      // Fetch accounts needed for balance updates
-      const entryKodeAkuns = [...new Set(allEntries.map(e => e.kodeAkun))];
-      const accounts = await tx.account.findMany({
-        where: { kodeAkun: { in: entryKodeAkuns } },
-      });
-      const accountMap = new Map(accounts.map(a => [a.kodeAkun, a]));
+			// Create journal entry lines using createMany for better performance
+			const journalLineData = allEntries.map((entry) => ({
+				journalEntryId: journalEntry.id,
+				kodeAkun: entry.kodeAkun,
+				debit: entry.debit,
+				kredit: entry.kredit,
+			}));
 
-      // Update account balances in parallel
-      const accountUpdates = allEntries.map(entry => {
-        const account = accountMap.get(entry.kodeAkun);
-        if (!account) return null;
+			await tx.journalEntryLine.createMany({
+				data: journalLineData,
+			});
 
-        const isDebitNormal = ['Asset', 'Expense'].includes(account.tipeAkun);
-        let saldoChange = 0;
+			// Fetch accounts needed for balance updates
+			const entryKodeAkuns = [...new Set(allEntries.map((e) => e.kodeAkun))];
+			const accounts = await tx.account.findMany({
+				where: { kodeAkun: { in: entryKodeAkuns } },
+			});
+			const accountMap = new Map(accounts.map((a) => [a.kodeAkun, a]));
 
-        if (isDebitNormal) {
-          saldoChange = entry.debit - entry.kredit;
-        } else {
-          saldoChange = entry.kredit - entry.debit;
-        }
+			// Update account balances in parallel
+			const accountUpdates = allEntries
+				.map((entry) => {
+					const account = accountMap.get(entry.kodeAkun);
+					if (!account) return null;
 
-        return tx.account.update({
-          where: { kodeAkun: entry.kodeAkun },
-          data: {
-            saldo: { increment: saldoChange },
-          },
-        });
-      }).filter(Boolean);
+					const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
+					let saldoChange = 0;
 
-      await Promise.all(accountUpdates);
+					if (isDebitNormal) {
+						saldoChange = entry.debit - entry.kredit;
+					} else {
+						saldoChange = entry.kredit - entry.debit;
+					}
 
-      // Create cashflow entries using createMany for better performance
-      const cashflowData: Prisma.CashflowCreateManyInput[] = allEntries.map(entry => {
-        const isBankAccount =
-          entry.kodeAkun.startsWith('111') || entry.kodeAkun === '102';
-        const source = isBankAccount ? 'bank' : 'kas';
+					return tx.account.update({
+						where: { kodeAkun: entry.kodeAkun },
+						data: {
+							saldo: { increment: saldoChange },
+						},
+					});
+				})
+				.filter(Boolean);
 
-        return {
-          tanggal: new Date(year, 11, 31),
-          keterangan: entry.keterangan,
-          kodeAkun: entry.kodeAkun,
-          kategori: 'penyusutan',
-          debit: entry.debit,
-          kredit: entry.kredit,
-          source,
-        };
-      });
-      
-      await tx.cashflow.createMany({
-        data: cashflowData,
-      });
-    });
+			await Promise.all(accountUpdates);
 
-    return {
-      success: true,
-      year,
-      assetsProcessed,
-      totalDepreciation,
-      message: `Depreciation processed for ${assetsProcessed} asset(s)`,
-      details: {
-        assets: assetsWithDepreciation,
-        entries: allEntries,
-      },
-    };
-  } catch (error) {
-    console.error('Depreciation transaction error:', error);
-    throw error;
-  }
+			// Create cashflow entries using createMany for better performance
+			const cashflowData: Prisma.CashflowCreateManyInput[] = allEntries.map(
+				(entry) => {
+					const isBankAccount =
+						entry.kodeAkun.startsWith("111") || entry.kodeAkun === "102";
+					const source = isBankAccount ? "bank" : "kas";
+
+					return {
+						tanggal: new Date(year, 11, 31),
+						keterangan: entry.keterangan,
+						kodeAkun: entry.kodeAkun,
+						kategori: "penyusutan",
+						debit: entry.debit,
+						kredit: entry.kredit,
+						source,
+					};
+				},
+			);
+
+			await tx.cashflow.createMany({
+				data: cashflowData,
+			});
+		});
+
+		return {
+			success: true,
+			year,
+			assetsProcessed,
+			totalDepreciation,
+			message: `Depreciation processed for ${assetsProcessed} asset(s)`,
+			details: {
+				assets: assetsWithDepreciation,
+				entries: allEntries,
+			},
+		};
+	} catch (error) {
+		console.error("Depreciation transaction error:", error);
+		throw error;
+	}
 }
 
 export async function GET(request: NextRequest) {
-  return withAuthAppRouter(request, async () => {
-    try {
-      const { searchParams } = new URL(request.url);
-      const queryYear = searchParams.get('year');
-      const assetId = searchParams.get('assetId');
-      const year = queryYear
-        ? parseInt(queryYear, 10)
-        : new Date().getFullYear();
+	return withAuthAppRouter(
+		request,
+		async () => {
+			try {
+				const { searchParams } = new URL(request.url);
+				const queryYear = searchParams.get("year");
+				const assetId = searchParams.get("assetId");
+				const year = queryYear
+					? parseInt(queryYear, 10)
+					: new Date().getFullYear();
 
-      // Get depreciation account codes
-      const { bebanPenyusutanCode, akumulasiPenyusutanCode } =
-        await findOrCreateDepreciationAccounts();
+				// Get depreciation account codes
+				const { bebanPenyusutanCode, akumulasiPenyusutanCode } =
+					await findOrCreateDepreciationAccounts();
 
-      // Get assets
-      let assets = await getAllAssets();
+				// Get assets
+				let assets = await getAllAssets();
 
-      if (assetId) {
-        assets = assets.filter((a) => a.id === assetId);
-      }
+				if (assetId) {
+					assets = assets.filter((a) => a.id === assetId);
+				}
 
-      // Calculate depreciation for each asset
-      const assetsWithDepreciation = assets.map((asset) => {
-        const calc = calculateDepreciation(asset, year);
-        return {
-          ...asset,
-          depreciation: calc,
-          isDepreciable: !asset.isTanah && asset.status === 'Active',
-        };
-      });
+				// Calculate depreciation for each asset
+				const assetsWithDepreciation = assets.map((asset) => {
+					const calc = calculateDepreciation(asset, year);
+					return {
+						...asset,
+						depreciation: calc,
+						isDepreciable: !asset.isTanah && asset.status === "Active",
+					};
+				});
 
-      // Get account info
-      const bebanAccount = await prisma.account.findUnique({
-        where: { kodeAkun: bebanPenyusutanCode },
-      });
-      const akumulasiAccount = await prisma.account.findUnique({
-        where: { kodeAkun: akumulasiPenyusutanCode },
-      });
+				// Get account info
+				const bebanAccount = await prisma.account.findUnique({
+					where: { kodeAkun: bebanPenyusutanCode },
+				});
+				const akumulasiAccount = await prisma.account.findUnique({
+					where: { kodeAkun: akumulasiPenyusutanCode },
+				});
 
-      // Calculate totals
-      const depreciableAssets = assetsWithDepreciation.filter(
-        (a) => a.isDepreciable
-      );
-      const totalAcquisition = depreciableAssets.reduce(
-        (sum, a) => sum + a.hargaPerolehan,
-        0
-      );
-      const totalCurrentDepreciation = depreciableAssets.reduce(
-        (sum, a) => sum + (a.depreciation?.currentYearDepreciation || 0),
-        0
-      );
-      const totalAccumulated = depreciableAssets.reduce(
-        (sum, a) => sum + (a.depreciation?.accumulatedDepreciation || 0),
-        0
-      );
-      const totalRemainingLife = depreciableAssets.reduce(
-        (sum, a) => sum + (a.depreciation?.remainingUsefulLife || 0),
-        0
-      );
+				// Calculate totals
+				const depreciableAssets = assetsWithDepreciation.filter(
+					(a) => a.isDepreciable,
+				);
+				const totalAcquisition = depreciableAssets.reduce(
+					(sum, a) => sum + a.hargaPerolehan,
+					0,
+				);
+				const totalCurrentDepreciation = depreciableAssets.reduce(
+					(sum, a) => sum + (a.depreciation?.currentYearDepreciation || 0),
+					0,
+				);
+				const totalAccumulated = depreciableAssets.reduce(
+					(sum, a) => sum + (a.depreciation?.accumulatedDepreciation || 0),
+					0,
+				);
+				const totalRemainingLife = depreciableAssets.reduce(
+					(sum, a) => sum + (a.depreciation?.remainingUsefulLife || 0),
+					0,
+				);
 
-      return success(assetsWithDepreciation, {
-        message: 'Depreciation data retrieved successfully',
-        meta: {
-          year,
-          accounts: {
-            bebanPenyusutan: {
-              kodeAkun: bebanPenyusutanCode,
-              namaAkun: bebanAccount?.namaAkun,
-              tipeAkun: bebanAccount?.tipeAkun,
-            },
-            akumulasiPenyusutan: {
-              kodeAkun: akumulasiPenyusutanCode,
-              namaAkun: akumulasiAccount?.namaAkun,
-              tipeAkun: akumulasiAccount?.tipeAkun,
-            },
-          },
-          summary: {
-            totalAssets: assets.length,
-            depreciableAssets: depreciableAssets.length,
-            totalAcquisition,
-            totalCurrentYearDepreciation: totalCurrentDepreciation,
-            totalAccumulatedDepreciation: totalAccumulated,
-            totalRemainingUsefulLife: totalRemainingLife,
-          },
-        },
-      });
-    } catch (error) {
-      console.error('Depreciation API error:', error);
-      return handlePrismaErrorResponse(error);
-    }
-  }, { requireAdmin: true });
+				return success(assetsWithDepreciation, {
+					message: "Depreciation data retrieved successfully",
+					meta: {
+						year,
+						accounts: {
+							bebanPenyusutan: {
+								kodeAkun: bebanPenyusutanCode,
+								namaAkun: bebanAccount?.namaAkun,
+								tipeAkun: bebanAccount?.tipeAkun,
+							},
+							akumulasiPenyusutan: {
+								kodeAkun: akumulasiPenyusutanCode,
+								namaAkun: akumulasiAccount?.namaAkun,
+								tipeAkun: akumulasiAccount?.tipeAkun,
+							},
+						},
+						summary: {
+							totalAssets: assets.length,
+							depreciableAssets: depreciableAssets.length,
+							totalAcquisition,
+							totalCurrentYearDepreciation: totalCurrentDepreciation,
+							totalAccumulatedDepreciation: totalAccumulated,
+							totalRemainingUsefulLife: totalRemainingLife,
+						},
+					},
+				});
+			} catch (error) {
+				console.error("Depreciation API error:", error);
+				return handlePrismaErrorResponse(error);
+			}
+		},
+		{ requireAdmin: true },
+	);
 }
 
 export async function POST(request: NextRequest) {
-  return withAuthAppRouter(request, async () => {
-    try {
-      const body = await request.json();
-      
-      // Validate request body
-      const validationResult = depreciateSchema.safeParse(body);
-      if (!validationResult.success) {
-        return errors.validation(
-          validationResult.error.errors.map((err) => ({
-            field: err.path.join('.'),
-            message: err.message,
-          }))
-        );
-      }
+	return withAuthAppRouter(
+		request,
+		async () => {
+			try {
+				const body = await request.json();
 
-      const { year, assetId, force } = validationResult.data;
+				// Validate request body
+				const validationResult = depreciateSchema.safeParse(body);
+				if (!validationResult.success) {
+					return errors.validation(
+						validationResult.error.errors.map((err) => ({
+							field: err.path.join("."),
+							message: err.message,
+						})),
+					);
+				}
 
-      // Default to current year if not specified
-      const targetYear = year || new Date().getFullYear();
+				const { year, assetId, force } = validationResult.data;
 
-      // Process depreciation
-      const result = await processDepreciation(targetYear, assetId, force);
+				// Default to current year if not specified
+				const targetYear = year || new Date().getFullYear();
 
-      if (!result.success) {
-        return errors.badRequest(result.message);
-      }
+				// Process depreciation
+				const result = await processDepreciation(targetYear, assetId, force);
 
-      return success(result, { message: result.message });
-    } catch (error) {
-      console.error('Depreciation API error:', error);
-      return handlePrismaErrorResponse(error);
-    }
-  }, { requireAdmin: true });
+				if (!result.success) {
+					return errors.badRequest(result.message);
+				}
+
+				return success(result, { message: result.message });
+			} catch (error) {
+				console.error("Depreciation API error:", error);
+				return handlePrismaErrorResponse(error);
+			}
+		},
+		{ requireAdmin: true },
+	);
 }

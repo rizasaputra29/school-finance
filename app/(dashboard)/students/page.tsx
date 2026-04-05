@@ -25,7 +25,7 @@ import {
 	Pencil,
 	Trash2,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils/utils-core";
 import { useDebounce } from "@/hooks/use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 
@@ -134,7 +134,8 @@ export default function StudentsPage() {
 			body: JSON.stringify(formData),
 		}).then(async (res) => {
 			const result = await res.json();
-			if (!result.success) throw new Error(result.error?.message || "Gagal menambah siswa");
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal menambah siswa");
 			return result;
 		});
 
@@ -164,7 +165,8 @@ export default function StudentsPage() {
 			body: JSON.stringify(formData),
 		}).then(async (res) => {
 			const result = await res.json();
-			if (!result.success) throw new Error(result.error?.message || "Gagal mengupdate siswa");
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal mengupdate siswa");
 			return result;
 		});
 
@@ -195,7 +197,8 @@ export default function StudentsPage() {
 				return { success: true, data: selectedStudent };
 			}
 			const result = await res.json();
-			if (!result.success) throw new Error(result.error?.message || "Gagal menghapus siswa");
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal menghapus siswa");
 			return result;
 		});
 
@@ -365,7 +368,7 @@ export default function StudentsPage() {
 								>
 									Belum Lunas
 								</Button>
-								</div>
+							</div>
 							<label className="flex items-center gap-2 text-xs md:text-sm text-gray-600 whitespace-nowrap">
 								<input
 									type="checkbox"
@@ -490,10 +493,7 @@ export default function StudentsPage() {
 						<div className="mt-4 flex items-center justify-between">
 							<p className="text-sm text-slate-500">
 								Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
-								{Math.min(
-									pagination.page * pagination.limit,
-									pagination.total,
-								)}{" "}
+								{Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
 								dari {pagination.total} siswa
 							</p>
 							<div className="flex gap-2">
