@@ -37,16 +37,16 @@ export async function GET(request: NextRequest) {
     const periodeBulan = searchParams.get('periodeBulan');
     const jenisBiaya = searchParams.get('jenisBiaya');
     const search = searchParams.get('search');
-    
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const where: Record<string, unknown> = {};
-    
+
     if (studentId) where.studentId = studentId;
     if (statusBayar) where.statusBayar = statusBayar;
     if (periodeBulan) where.periodeBulan = periodeBulan;
     if (jenisBiaya) where.jenisBiaya = jenisBiaya;
-    
+
     // Search by student name, NIS, or jenisBiaya
     if (search) {
       where.OR = [
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return withAuthAppRouter(request, async () => {
     const ip = getClientIp(request);
-    
+
     // Rate limiting for create operations
     const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
     if (!rateLimitResult.success) {
@@ -160,9 +160,9 @@ export async function POST(request: NextRequest) {
     // Validate request body
     const validationErrors = validateBody(body, createBillingSchema);
     if (validationErrors) {
-      return errors.validation(validationErrors.map(err => ({ 
-        field: err.field, 
-        message: err.message 
+      return errors.validation(validationErrors.map(err => ({
+        field: err.field,
+        message: err.message
       })));
     }
 
@@ -233,5 +233,5 @@ export async function POST(request: NextRequest) {
       const { status, code, message } = handlePrismaError(err);
       return error(message, code, { status });
     }
-  });
+  }, { requireAdmin: true });
 }

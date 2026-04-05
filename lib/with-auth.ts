@@ -85,23 +85,35 @@ export async function withAuthAppRouter(
   options: WithAuthOptions = {}
 ): Promise<NextResponse> {
   const user = await getAuthUser(request);
-  
+
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: 'Sesi tidak valid. Silakan login kembali.' }
+    }, { status: 401 });
   }
-  
+
   if (options.requireOwner && user.role !== 'owner') {
-    return NextResponse.json({ error: 'Forbidden - Owner only' }, { status: 403 });
+    return NextResponse.json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Akses ditolak - memerlukan hak owner' }
+    }, { status: 403 });
   }
-  
+
   if (options.requireAdmin && user.role !== 'owner' && user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden - Admin only' }, { status: 403 });
+    return NextResponse.json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Akses ditolak - memerlukan hak admin' }
+    }, { status: 403 });
   }
-  
+
   if (options.action && !hasPermission(user, options.action)) {
-    return NextResponse.json({ error: 'Forbidden - Insufficient permissions' }, { status: 403 });
+    return NextResponse.json({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'Akses ditolak - izin tidak mencukupi' }
+    }, { status: 403 });
   }
-  
+
   return handler(user);
 }
 

@@ -75,88 +75,93 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  return withAuthAppRouter(request, async () => {
+  return withAuthAppRouter(request, async (user) => {
     try {
-      const ip = getClientIp(request);
-
-      // Rate limiting for create operations
-      const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
-      if (!rateLimitResult.success) {
-        return errors.rateLimit(formatRateLimitError(rateLimitResult));
+      // Check admin role
+      if (user.role !== 'owner' && user.role !== 'admin') {
+        return errors.forbidden('Akses ditolak - memerlukan hak admin');
       }
 
-      // Check for idempotency key in headers
-      const headers: Record<string, string | string[] | undefined> = {};
-      for (const [key, value] of request.headers.entries()) {
-        headers[key] = value;
+    const ip = getClientIp(request);
+
+    // Rate limiting for create operations
+    const rateLimitResult = rateLimit(`create:${ip}`, RATE_LIMITS.create);
+    if (!rateLimitResult.success) {
+      return errors.rateLimit(formatRateLimitError(rateLimitResult));
+    }
+
+    // Check for idempotency key in headers
+    const headers: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of request.headers.entries()) {
+      headers[key] = value;
+    }
+    const idempotencyKey = getIdempotencyKeyFromRequest({ headers });
+    if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+      // Check if this request was already processed
+      const cachedResult = getIdempotencyResult(idempotencyKey);
+      if (cachedResult !== null) {
+        // Return cached result - this is an idempotent response
+        return success(cachedResult, {
+          message: 'Account created successfully (cached)',
+          status: 201,
+        });
       }
-      const idempotencyKey = getIdempotencyKeyFromRequest({ headers });
-      if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
-        // Check if this request was already processed
-        const cachedResult = getIdempotencyResult(idempotencyKey);
-        if (cachedResult !== null) {
-          // Return cached result - this is an idempotent response
-          return success(cachedResult, {
-            message: 'Account created successfully (cached)',
-            status: 201,
-          });
-        }
-      }
+    }
 
-      // Parse and validate request body
-      const body = await request.json();
-      const validationResult = createAccountSchema.safeParse(body);
+    // Parse and validate request body
+    const body = await request.json();
+    const validationResult = createAccountSchema.safeParse(body);
 
-      if (!validationResult.success) {
-        const validationErrors = validationResult.error.errors.map(e => ({
-          field: e.path.join('.'),
-          message: e.message,
-        }));
-        return errors.validation(validationErrors);
-      }
+    if (!validationResult.success) {
+      const validationErrors = validationResult.error.errors.map(e => ({
+        field: e.path.join('.'),
+        message: e.message,
+      }));
+      return errors.validation(validationErrors);
+    }
 
-      const { kodeAkun, namaAkun, tipeAkun, kategori, saldo } = validationResult.data;
+    const { kodeAkun, namaAkun, tipeAkun, kategori, saldo } = validationResult.data;
 
-      // Validate bank account (only one allowed)
-      const bankValidation = await validateBankAccount(kodeAkun, kategori);
-      if (!bankValidation.valid) {
-        return errors.validation([{
-          field: 'kodeAkun',
-          message: bankValidation.error || 'Invalid bank account',
-        }]);
-      }
+    // Validate bank account (only one allowed)
+    const bankValidation = await validateBankAccount(kodeAkun, kategori);
+    if (!bankValidation.valid) {
+      return errors.validation([{
+        field: 'kodeAkun',
+        message: bankValidation.error || 'Invalid bank account',
+      }]);
+    }
 
-      // Check for duplicate kodeAkun
-      const existing = await prisma.account.findUnique({
-        where: { kodeAkun },
-      });
-      if (existing) {
-        return errors.conflict('Kode akun sudah ada');
-      }
+    // Check for duplicate kodeAkun
+    const existing = await prisma.account.findUnique({
+      where: { kodeAkun },
+    });
+    if (existing) {
+      return errors.conflict('Kode akun sudah ada');
+    }
 
-      const account = await prisma.account.create({
-        data: {
-          kodeAkun,
-          namaAkun,
-          tipeAkun,
-          kategori: kategori || null,
-          saldo: typeof saldo === 'string' ? parseFloat(saldo) || 0 : saldo || 0,
-        },
-      });
+    const account = await prisma.account.create({
+      data: {
+        kodeAkun,
+        namaAkun,
+        tipeAkun,
+        kategori: kategori || null,
+        saldo: typeof saldo === 'string' ? parseFloat(saldo) || 0 : saldo || 0,
+      },
+    });
 
-      // Cache the result for idempotency
-      if (idempotencyKey) {
-        setIdempotencyResult(idempotencyKey, account);
-      }
+    // Cache the result for idempotency
+    if (idempotencyKey) {
+      setIdempotencyResult(idempotencyKey, account);
+    }
 
-      // Invalidate accounts cache to reflect new data
-      invalidateAccountsCache();
+    // Invalidate accounts cache to reflect new data
+    invalidateAccountsCache();
 
-      return success(account, {
-        message: 'Account created successfully',
-        status: 201,
-      });
-    } catch (error) {
+    return success(account, {
+      message: 'Account created successfully',
+      status: 201,
+    });
+  } catch (error) {
       console.error('Accounts API error:', error);
       if (error instanceof Error && error.name === 'SyntaxError') {
         return errors.badRequest('Invalid JSON in request body');

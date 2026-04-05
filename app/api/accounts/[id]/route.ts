@@ -28,72 +28,72 @@ export async function PATCH(
     try {
       const { id } = await params;
 
-      // Task 32: System Account Protection - check isSystem before update
-      // First, get the account to check if it's a system account
-      const existingAccount = await prisma.account.findFirst({
-        where: { OR: [{ id }, { kodeAkun: id }] },
-      });
+    // Task 32: System Account Protection - check isSystem before update
+    // First, get the account to check if it's a system account
+    const existingAccount = await prisma.account.findFirst({
+      where: { OR: [{ id }, { kodeAkun: id }] },
+    });
 
-      if (existingAccount?.isSystem) {
-        return errors.forbidden(
-          `Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`
-        );
+    if (existingAccount?.isSystem) {
+      return errors.forbidden(
+        `Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`
+      );
+    }
+
+    // Check for idempotency key in headers (for PATCH)
+    const headers: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of request.headers.entries()) {
+      headers[key] = value;
+    }
+    const idempotencyKey = getIdempotencyKeyFromRequest({ headers });
+
+    // Check for idempotency - return cached result if same request
+    if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
+      const cachedResult = getIdempotencyResult(idempotencyKey);
+      if (cachedResult !== null) {
+        return success(cachedResult, {
+          message: 'Account updated successfully (cached)',
+        });
       }
+    }
 
-      // Check for idempotency key in headers (for PATCH)
-      const headers: Record<string, string | string[] | undefined> = {};
-      for (const [key, value] of request.headers.entries()) {
-        headers[key] = value;
+    const body: AccountUpdateBody = await request.json();
+    const { namaAkun, tipeAkun, saldo } = body;
+
+    const data: Prisma.AccountUpdateInput = {};
+    if (namaAkun) data.namaAkun = namaAkun;
+
+    // Task 32: Prevent changing account type for system accounts
+    if (tipeAkun) {
+      // Check if trying to change type (not allowed for any account with transactions)
+      if (existingAccount && existingAccount.tipeAkun !== tipeAkun) {
+        return errors.validation([{
+          field: 'tipeAkun',
+          message: 'Tidak dapat mengubah tipe akun. Akun dengan transaksi tidak bisa diganti tipe.',
+        }]);
       }
-      const idempotencyKey = getIdempotencyKeyFromRequest({ headers });
+      data.tipeAkun = tipeAkun;
+    }
 
-      // Check for idempotency - return cached result if same request
-      if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
-        const cachedResult = getIdempotencyResult(idempotencyKey);
-        if (cachedResult !== null) {
-          return success(cachedResult, {
-            message: 'Account updated successfully (cached)',
-          });
-        }
-      }
+    if (saldo !== undefined) data.saldo = typeof saldo === 'string' ? parseFloat(saldo) : saldo;
 
-      const body: AccountUpdateBody = await request.json();
-      const { namaAkun, tipeAkun, saldo } = body;
+    const updatedAccount = await prisma.account.update({
+      where: { id },
+      data,
+    });
 
-      const data: Prisma.AccountUpdateInput = {};
-      if (namaAkun) data.namaAkun = namaAkun;
+    // Cache result for idempotency
+    if (idempotencyKey) {
+      setIdempotencyResult(idempotencyKey, updatedAccount);
+    }
 
-      // Task 32: Prevent changing account type for system accounts
-      if (tipeAkun) {
-        // Check if trying to change type (not allowed for any account with transactions)
-        if (existingAccount && existingAccount.tipeAkun !== tipeAkun) {
-          return errors.validation([{
-            field: 'tipeAkun',
-            message: 'Tidak dapat mengubah tipe akun. Akun dengan transaksi tidak bisa diganti tipe.',
-          }]);
-        }
-        data.tipeAkun = tipeAkun;
-      }
+    // Invalidate cache
+    invalidateAccountsCache();
 
-      if (saldo !== undefined) data.saldo = typeof saldo === 'string' ? parseFloat(saldo) : saldo;
-
-      const updatedAccount = await prisma.account.update({
-        where: { id },
-        data,
-      });
-
-      // Cache result for idempotency
-      if (idempotencyKey) {
-        setIdempotencyResult(idempotencyKey, updatedAccount);
-      }
-
-      // Invalidate cache
-      invalidateAccountsCache();
-
-      return success(updatedAccount, {
-        message: 'Account updated successfully',
-      });
-    } catch (error) {
+    return success(updatedAccount, {
+      message: 'Account updated successfully',
+    });
+  } catch (error) {
       console.error('Account API Error:', error);
       // Prisma error P2025: Record to update not found.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
