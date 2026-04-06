@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
+import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull, formatDateShort } from "@/lib/utils/utils-date";
 
@@ -268,10 +269,7 @@ export async function GET(request: NextRequest) {
 				});
 			} catch (error) {
 				console.error("Export Excel error:", error);
-				return NextResponse.json(
-					{ error: "Gagal mengexport data" },
-					{ status: 500 },
-				);
+				return handlePrismaErrorResponse(error);
 			}
 		},
 		{ requireAdmin: true },

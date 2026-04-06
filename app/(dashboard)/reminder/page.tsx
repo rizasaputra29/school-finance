@@ -61,6 +61,21 @@ const categoryConfig = {
 	},
 };
 
+const getIconColorClass = (type: string): string => {
+	switch (type) {
+		case "hutang":
+			return "text-red-600";
+		case "penyusutan":
+			return "text-amber-600";
+		case "piutang":
+			return "text-blue-600";
+		case "payroll":
+			return "text-purple-600";
+		default:
+			return "text-gray-600";
+	}
+};
+
 export default function ReminderPage() {
 	const router = useRouter();
 	const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -139,7 +154,7 @@ export default function ReminderPage() {
 									<div
 										className={`flex h-10 w-10 items-center justify-center rounded-full ${config.bgColor}`}
 									>
-										<Icon className={`h-5 w-5 text-${config.color}-600`} />
+										<Icon className={`h-5 w-5 ${getIconColorClass(type)}`} />
 									</div>
 									<div>
 										<p className="text-sm text-gray-600">{config.label}</p>
@@ -195,7 +210,7 @@ export default function ReminderPage() {
 							<Card key={type} className={config.borderColor}>
 								<CardHeader className={`${config.bgColor} border-b`}>
 									<div className="flex items-center gap-2">
-										<Icon className={`h-5 w-5 text-${config.color}-600`} />
+										<Icon className={`h-5 w-5 ${getIconColorClass(type)}`} />
 										<CardTitle className="text-lg">{config.label}</CardTitle>
 										<span className="ml-auto text-sm text-gray-500">
 											{items.length} item

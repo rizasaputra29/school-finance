@@ -117,7 +117,7 @@ export default function BukuBesarPage() {
 				return;
 			}
 
-			setReports(result.data.reports || []);
+			setReports(result.data || []);
 			setReportParam({
 				start: startDate,
 				end: endDate,

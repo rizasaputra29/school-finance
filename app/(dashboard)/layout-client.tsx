@@ -42,7 +42,7 @@ export default function DashboardLayoutClient({
 				richColors
 				closeButton
 				duration={3000}
-				className="**:data-sonner-toaster:sm:bottom-4! **:data-sonner-toaster:sm:right-4! **:data-sonner-toaster:top-4! **:data-sonner-toaster:bottom-auto! **:data-sonner-toaster:left-1/2! **:data-sonner-toaster:-translate-x-1/2! sm:**:data-sonner-toaster:top-auto! sm:**:data-sonner-toaster:left-auto! sm:**:data-sonner-toaster:translate-x-0!"
+				className="[&_[data-sonner-toaster]]:top-4![&_[data-sonner-toaster]]:bottom-auto![&_[data-sonner-toaster]]:left-1/2![&_[data-sonner-toaster]]:-translate-x-1/2! sm:[&_[data-sonner-toaster]]:top-auto! sm:[&_[data-sonner-toaster]]:left-auto! sm:[&_[data-sonner-toaster]]:translate-x-0! sm:[&_[data-sonner-toaster]]:bottom-4! sm:[&_[data-sonner-toaster]]:right-4!"
 			/>
 		</SidebarProvider>
 	);
