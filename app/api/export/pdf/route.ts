@@ -4,31 +4,16 @@ import autoTable from "jspdf-autotable";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { AccountRecord, CashflowRecord } from "@/types/export-records";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull } from "@/lib/utils/utils-date";
 
-interface AccountRecord {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-	saldo: number;
-}
-
-interface CashflowRecord {
-	id: string;
-	tanggal: Date;
-	kodeAkun: string;
-	debit: number;
-	kredit: number;
-}
-
-interface JsPDFWithAutoTable extends jsPDF {
+interface JsPDFWithLocalAutoTable extends jsPDF {
 	lastAutoTable?: { finalY: number };
 }
 
 function getLastAutoTableFinalY(doc: jsPDF): number {
-	return (doc as JsPDFWithAutoTable).lastAutoTable?.finalY ?? 0;
+	return (doc as JsPDFWithLocalAutoTable).lastAutoTable?.finalY ?? 0;
 }
 
 export async function GET(request: NextRequest) {

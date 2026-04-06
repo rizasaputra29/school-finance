@@ -28,29 +28,8 @@ import {
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Student {
-	id: string;
-	nis: string;
-	nama: string;
-	jenisKelamin: string | null;
-	kelas: string;
-	tahunMasuk: number;
-	tahunAjaran: string | null;
-	namaOrtu: string | null;
-	noTelp: string | null;
-	statusBayar: string;
-	status: string;
-	totalTagihan: number;
-	totalBayar: number;
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
+import type { Student } from "@/types/student";
+import type { Pagination } from "@/types/pagination";
 
 // Class options matching Excel structure
 const KELAS_OPTIONS = ["PLAYGROUP", "KINDERGARTEN"];

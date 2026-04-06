@@ -6,17 +6,12 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { BillingRecord as BaseBillingRecord } from "@/types/export-records";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull } from "@/lib/utils/utils-date";
 
-// Types for Prisma v7
-interface BillingRecord {
-	id: string;
-	studentId: string;
-	jenisBiaya: string;
-	periodeBulan: string;
-	jumlah: number;
-	statusBayar: string;
+// Extended type with additional fields for this route
+interface BillingRecord extends BaseBillingRecord {
 	catatan: string | null;
 	createdAt: Date;
 	student: {

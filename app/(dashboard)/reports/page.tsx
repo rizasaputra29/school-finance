@@ -11,24 +11,7 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { FileSpreadsheet, FileText, Download, Printer } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull } from "@/lib/utils/utils-date";
-
-interface AccountReportItem {
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun?: string;
-	jumlah: number;
-	kategori?: string;
-}
-
-interface ReportSummary {
-	totalAset?: number;
-	totalKewajiban?: number;
-	totalEkuitas?: number;
-	totalPendapatan?: number;
-	totalBeban?: number;
-	labaRugi?: number;
-	isPositive?: boolean;
-}
+import type { AccountReportItem, ReportSummary } from "@/types/reports";
 
 export default function ReportsPage() {
 	const [neracaData, setNeracaData] = useState<{

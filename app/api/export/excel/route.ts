@@ -3,26 +3,9 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { AccountRecord, CashflowRecord } from "@/types/export-records";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull, formatDateShort } from "@/lib/utils/utils-date";
-
-// Define types inline for Prisma v7 compatibility
-interface AccountRecord {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-	saldo: number;
-}
-
-interface CashflowRecord {
-	id: string;
-	tanggal: Date;
-	keterangan: string;
-	kodeAkun: string;
-	debit: number;
-	kredit: number;
-}
 
 export async function GET(request: NextRequest) {
 	return withAuthAppRouter(

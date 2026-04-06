@@ -33,37 +33,10 @@ import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core"
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Cashflow {
-	id: string;
-	tanggal: string;
-	keterangan: string;
-	kodeAkun: string;
-	kategori: string | null;
-	debit: number;
-	kredit: number;
-	referenceId: string | null;
-}
-
-interface Account {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
-
-interface Summary {
-	totalDebit: number;
-	totalKredit: number;
-	saldo: number;
-}
+import type { Cashflow } from "@/types/cashflow";
+import type { Account } from "@/types/account";
+import type { Pagination } from "@/types/pagination";
+import type { CashflowSummary as Summary } from "@/types/summary";
 
 const INITIAL_FORM = {
 	tanggal: new Date().toISOString().split("T")[0],
@@ -524,9 +497,9 @@ export default function CashflowPage() {
 								Saldo Akhir
 							</p>
 							<p
-								className={`text-sm md:text-xl font-bold truncate ${summary.saldo >= 0 ? "text-white" : "text-white"}`}
+								className={`text-sm md:text-xl font-bold truncate ${(summary.saldo ?? 0) >= 0 ? "text-white" : "text-white"}`}
 							>
-								{formatRupiah(summary.saldo)}
+								{formatRupiah(summary.saldo ?? 0)}
 							</p>
 						</div>
 					</CardContent>

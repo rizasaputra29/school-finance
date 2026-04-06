@@ -26,33 +26,8 @@ import {
 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Employee {
-	id: string;
-	nip: string;
-	nama: string;
-	jabatan: string;
-	gajiPokok: number;
-}
-
-interface PayrollRecord {
-	id: string;
-	employeeId: string;
-	employee: { nip: string; nama: string; jabatan: string };
-	periode: string;
-	jenisPembayaran: string;
-	jumlah: number;
-	tanggalBayar: string | null;
-	status: string;
-	keterangan: string | null;
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
+import type { EmployeeMinimal as Employee, PayrollRecord } from "@/types/employee";
+import type { Pagination } from "@/types/pagination";
 
 const JENIS_OPTIONS = ["Gaji", "Tunjangan", "Bonus"];
 
@@ -140,7 +115,7 @@ export default function PayrollPage() {
 		(employeeId: string, jenisPembayaran: string) => {
 			if (jenisPembayaran === "Gaji" && employeeId) {
 				const emp = employees.find((e) => e.id === employeeId);
-				if (emp && emp.gajiPokok > 0) {
+				if (emp && (emp.gajiPokok ?? 0) > 0) {
 					return String(emp.gajiPokok);
 				}
 			}
@@ -491,7 +466,7 @@ export default function PayrollPage() {
 											</TableCell>
 											<TableCell>{p.periode}</TableCell>
 											<TableCell className="text-right font-medium">
-												{formatRupiah(p.jumlah)}
+												{formatRupiah(p.jumlah ?? 0)}
 											</TableCell>
 											<TableCell>
 												<span

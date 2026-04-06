@@ -19,26 +19,8 @@ import { Wallet, Building2, ArrowRightLeft, BookOpen } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateShort } from "@/lib/utils/utils-date";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Account {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-	saldo: number;
-}
-
-interface MutasiEntry {
-	id: string;
-	tanggal: string;
-	keterangan: string;
-	entries: Array<{
-		kodeAkun: string;
-		debit: number;
-		kredit: number;
-		account: { namaAkun: string; kodeAkun: string };
-	}>;
-}
+import type { Account } from "@/types/account";
+import type { MutasiEntry } from "@/types/keuangan";
 
 type TabType = "kas-bank" | "akun";
 

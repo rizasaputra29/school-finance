@@ -17,37 +17,8 @@ import {
 import { BookOpen, Send } from "lucide-react";
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-
-interface Account {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-}
-
-interface BukuBesarEntry {
-	id: string;
-	tanggal: string;
-	keterangan: string;
-	reference: string | null;
-	debit: number;
-	kredit: number;
-	saldo: number;
-}
-
-interface ReportData {
-	account: {
-		kodeAkun: string;
-		namaAkun: string;
-		tipeAkun: string;
-	};
-	data: BukuBesarEntry[];
-	summary: {
-		openingBalance: number;
-		totalDebit: number;
-		totalKredit: number;
-		endingBalance: number;
-	};
-}
+import type { AccountSimple as Account } from "@/types/account";
+import type { BukuBesarReportData as ReportData } from "@/types/buku-besar";
 
 export default function BukuBesarPage() {
 	const [accounts, setAccounts] = useState<Account[]>([]);

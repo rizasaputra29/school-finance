@@ -20,15 +20,7 @@ import {
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import Link from "next/link";
-
-interface Reminder {
-	id: string;
-	type: "hutang" | "penyusutan" | "piutang" | "payroll";
-	title: string;
-	description: string;
-	amount?: number;
-	dueDate?: string;
-}
+import type { Reminder } from "@/types/reminder";
 
 const categoryConfig = {
 	hutang: {

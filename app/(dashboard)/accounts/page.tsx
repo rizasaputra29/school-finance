@@ -20,14 +20,7 @@ import {
 	Pencil,
 	Trash2,
 } from "lucide-react";
-
-interface Account {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-	saldo: number;
-}
+import type { Account } from "@/types/account";
 
 const accountTypeConfig: Record<
 	string,

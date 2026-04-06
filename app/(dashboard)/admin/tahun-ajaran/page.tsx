@@ -11,15 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Plus, Pencil, Check, Archive } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { formatDateCompact } from '@/lib/utils/utils-date';
-
-interface AcademicYear {
-  id: string;
-  tahunAjaran: string;
-  tanggalMulai: string;
-  tanggalSelesai: string;
-  isActive: boolean;
-  isArchived: boolean;
-}
+import type { AcademicYear } from '@/types/academic-year';
 
 const INITIAL_FORM = {
   tahunAjaran: '',

@@ -16,23 +16,8 @@ import {
 } from "@/components/ui/table";
 import { BookOpen, Send } from "lucide-react";
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
-
-interface Account {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-}
-
-interface JurnalLine {
-	id: string;
-	tanggal: string;
-	kodeAkun: string;
-	namaAkun: string;
-	debit: number;
-	kredit: number;
-	keterangan: string;
-	reference: string | null;
-}
+import type { AccountSimple as Account } from "@/types/account";
+import type { JurnalLine } from "@/types/jurnal";
 
 export default function JurnalPage() {
 	const [accounts, setAccounts] = useState<Account[]>([]);

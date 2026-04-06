@@ -3,17 +3,14 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { StudentRecord as BaseStudentRecord } from "@/types/export-records";
 import { formatDateFull } from "@/lib/utils/utils-date";
 
-interface StudentRecord {
-	id: string;
-	nis: string;
-	nama: string;
-	kelas: string;
+// Extended type with additional fields for this route
+interface StudentRecord extends BaseStudentRecord {
 	tahunMasuk: number;
 	namaOrtu: string | null;
 	noTelp: string | null;
-	statusBayar: string;
 	status: string;
 }
 

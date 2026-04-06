@@ -29,41 +29,9 @@ import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatMonthYear } from "@/lib/utils/utils-date";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Student {
-	id: string;
-	nis: string;
-	nama: string;
-	kelas: string;
-	totalTagihan: number;
-	totalBayar: number;
-}
-
-interface Billing {
-	id: string;
-	studentId: string;
-	student: Student;
-	jenisBiaya: string;
-	periodeBulan: string;
-	jumlah: number;
-	statusBayar: string;
-	tanggalBayar: string | null;
-	catatan: string | null;
-	isOverdue: boolean;
-	createdAt: string;
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
-
-interface Summary {
-	totalUnpaid: number;
-	totalOverdue: number;
-}
+import type { Billing } from "@/types/billing";
+import type { Pagination } from "@/types/pagination";
+import type { PaymentSummary as Summary } from "@/types/summary";
 
 export default function PaymentPage() {
 	const { isAdmin } = useAuth();

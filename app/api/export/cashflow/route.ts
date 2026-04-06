@@ -3,25 +3,8 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { AccountRecord, CashflowRecord } from "@/types/export-records";
 import { formatDateFull, formatDateShort } from "@/lib/utils/utils-date";
-
-// Define types inline for Prisma v7 compatibility
-interface CashflowRecord {
-	id: string;
-	tanggal: Date;
-	keterangan: string;
-	kodeAkun: string;
-	debit: number;
-	kredit: number;
-	account?: {
-		namaAkun: string;
-	};
-}
-
-interface AccountRecord {
-	kodeAkun: string;
-	namaAkun: string;
-}
 
 async function generateExcel(params: {
 	startDate?: string;

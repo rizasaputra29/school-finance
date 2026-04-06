@@ -3,16 +3,9 @@ import * as XLSX from "xlsx";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { AccountRecord } from "@/types/export-records";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull } from "@/lib/utils/utils-date";
-
-interface AccountRecord {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-	saldo: number;
-}
 
 async function generateExcel(): Promise<{ buffer: Buffer; filename: string }> {
 	// Fetch all accounts ordered by kodeAkun

@@ -31,46 +31,7 @@ import {
 	Legend,
 	ResponsiveContainer,
 } from "recharts";
-
-interface CashflowItem {
-	id: string;
-	tanggal: string;
-	debit: number;
-	kredit: number;
-}
-
-interface ChartData {
-	pieChart: {
-		name: string;
-		value: number;
-		color: string;
-	}[];
-	barChart: {
-		bulan: string;
-		pendapatan: number;
-		beban: number;
-	}[];
-}
-
-interface DashboardData {
-	summary: {
-		totalDebit: number;
-		totalKredit: number;
-		saldo: number;
-		totalStudents: number;
-		lunasCount: number;
-		belumLunasCount: number;
-	};
-	cashflows: CashflowItem[];
-	recentTransactions: {
-		id: string;
-		tanggal: string;
-		keterangan: string;
-		kodeAkun: string;
-		debit: number;
-		kredit: number;
-	}[];
-}
+import type { ChartData, DashboardData } from "@/types/dashboard";
 
 export default function Dashboard() {
 	const [data, setData] = useState<DashboardData | null>(null);

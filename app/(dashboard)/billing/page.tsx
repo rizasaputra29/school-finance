@@ -31,40 +31,10 @@ import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core"
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Student {
-	id: string;
-	nis: string;
-	nama: string;
-	kelas: string;
-}
-
-interface Billing {
-	id: string;
-	studentId: string;
-	student: Student;
-	jenisBiaya: string;
-	periodeBulan: string;
-	jumlah: number;
-	statusBayar: string;
-	tanggalBayar: string | null;
-	catatan: string | null;
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
-
-interface Summary {
-	totalTagihan: number;
-	totalBelumLunas: number;
-	totalLunas: number;
-	countBelumLunas: number;
-	countLunas: number;
-}
+import type { StudentMinimal as Student } from "@/types/student";
+import type { Billing } from "@/types/billing";
+import type { Pagination } from "@/types/pagination";
+import type { BillingSummary as Summary } from "@/types/summary";
 
 const JENIS_BIAYA = [
 	"Pendaftaran",

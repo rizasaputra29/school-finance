@@ -24,23 +24,8 @@ import {
 } from "lucide-react";
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-
-interface Cashflow {
-	id: string;
-	tanggal: string;
-	keterangan: string;
-	kodeAkun: string;
-	kategori: string | null;
-	debit: number;
-	kredit: number;
-	status: string;
-	createdAt: string;
-}
-
-interface Account {
-	kodeAkun: string;
-	namaAkun: string;
-}
+import type { Cashflow } from "@/types/cashflow";
+import type { AccountMinimal as Account } from "@/types/account";
 
 export default function ApprovePage() {
 	const { isAdmin } = useAuth();

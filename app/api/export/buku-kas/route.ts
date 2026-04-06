@@ -6,17 +6,12 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import type { CashflowRecord as BaseCashflowRecord } from "@/types/export-records";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { formatDateFull, formatDateShort, formatPeriodRange } from "@/lib/utils/utils-date";
 
-// Types for Prisma v7
-interface CashflowRecord {
-	id: string;
-	tanggal: Date;
-	keterangan: string;
-	kodeAkun: string;
-	debit: number;
-	kredit: number;
+// Extended type with kategori for this route
+interface CashflowRecord extends BaseCashflowRecord {
 	kategori: string | null;
 }
 

@@ -30,27 +30,8 @@ import {
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Employee {
-	id: string;
-	nip: string;
-	nama: string;
-	jabatan: string;
-	jenisKelamin: string | null;
-	noTelp: string | null;
-	alamat: string | null;
-	tanggalMasuk: string;
-	gajiPokok: number;
-	status: string;
-	_count: { payrolls: number };
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
+import type { Employee } from "@/types/employee";
+import type { Pagination } from "@/types/pagination";
 
 const JABATAN_OPTIONS = [
 	"Guru",
