@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,19 +10,20 @@ model Account {
   id                String             @id @default(cuid())
   kodeAkun          String             @unique
   namaAkun          String
-  tipeAkun          String // Asset, Liability, Equity, Revenue, Expense
-  kategori          String? // Bank, Kas, etc. for asset categorization
+  tipeAkun          String
+  kategori          String?
   saldo             Float              @default(0)
-  isSystem          Boolean            @default(false) // System account (protected from deletion/type change)
-  isContra          Boolean            @default(false) // Contra account (e.g., Akumulasi Penyusutan)
-  normalBalance     String             @default("debit") // 'debit' | 'kredit' - normal balance direction
-  isSystemProtected Boolean            @default(false) // System account protection (legacy, use isSystem)
-  allowNegative     Boolean            @default(false) // Allow negative balance override
+  isSystem          Boolean            @default(false)
+  isContra          Boolean            @default(false)
+  normalBalance     String             @default("debit")
+  isSystemProtected Boolean            @default(false)
+  allowNegative     Boolean            @default(false)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
-  cashflows         Cashflow[]
   assets            Asset[]
+  cashflows         Cashflow[]
   debts             Debt[]
+  Inventory         Inventory[]
   journalEntryLines JournalEntryLine[]
 
   @@index([tipeAkun])
@@ -38,14 +36,14 @@ model Student {
   id           String        @id @default(cuid())
   nis          String        @unique
   nama         String
-  jenisKelamin String? // L/P
+  jenisKelamin String?
   kelas        String
   tahunMasuk   Int
   tahunAjaran  String?
   namaOrtu     String?
   noTelp       String?
-  statusBayar  String // Lunas, Belum Lunas
-  status       String        @default("Active") // Active, Inactive
+  statusBayar  String
+  status       String        @default("Active")
   totalTagihan Float         @default(0)
   totalBayar   Float         @default(0)
   createdAt    DateTime      @default(now())
@@ -63,19 +61,19 @@ model Student {
 model Billing {
   id             String        @id @default(cuid())
   studentId      String
-  student        Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   academicYearId String?
-  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
-  jenisBiaya     String // SPP, Uang Pangkal, Seragam, Buku
-  periodeBulan   String // Format: YYYY-MM
+  jenisBiaya     String
+  periodeBulan   String
   jumlah         Float
-  statusBayar    String        @default("Belum Lunas") // Lunas, Belum Lunas
+  statusBayar    String        @default("Belum Lunas")
   tanggalBayar   DateTime?
   catatan        String?
   cashflowId     String?       @unique
-  cashflow       Cashflow?     @relation(fields: [cashflowId], references: [id], onDelete: Cascade)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
+  cashflow       Cashflow?     @relation(fields: [cashflowId], references: [id], onDelete: Cascade)
+  student        Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   installments   Installment[]
 
   @@unique([studentId, jenisBiaya, periodeBulan])
@@ -91,22 +89,22 @@ model Billing {
 
 model Cashflow {
   id          String   @id @default(cuid())
-  version     Int      @default(1) // Optimistic locking
+  version     Int      @default(1)
   tanggal     DateTime
   keterangan  String
   kodeAkun    String
-  account     Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
   kategori    String?
   debit       Float    @default(0)
   kredit      Float    @default(0)
-  source      String? // 'kas' | 'bank' - source of funds
-  referenceId String? // Link to billing_id (optional backwards link, but relation is on Billing)
-  billing     Billing?
-  status      String   @default("draft") // draft, approved, posted
-  periode     String? // Format: YYYY-MM for period tracking
-  isReversed  Boolean  @default(false) // Soft delete / reversal
+  source      String?
+  referenceId String?
+  status      String   @default("draft")
+  periode     String?
+  isReversed  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  billing     Billing?
+  account     Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
 
   @@index([tanggal])
   @@index([kodeAkun])
@@ -117,64 +115,64 @@ model Cashflow {
   @@index([periode, status])
 }
 
-// Asset Model - For fixed assets tracking
 model Asset {
-  id               String   @id @default(cuid())
-  kodeAkun         String
-  account          Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
-  nama             String
-  kategori         String // Peralatan, Kendaraan, Bangunan, Tanah
-  lokasi           String?
-  tanggalPerolehan DateTime
-  hargaPerolehan   Float
-  umurTeknis       Int // in years: 5, 10, or custom
-  nilaiResidu      Float    @default(0)
-  isTanah          Boolean  @default(false) // Tanah tidak disusutkan
-  status           String   @default("Active")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                       String   @id @default(cuid())
+  kodeAkun                 String
+  nama                     String
+  kategori                 String
+  lokasi                   String?
+  tanggalPerolehan         DateTime
+  hargaPerolehan           Float
+  umurTeknis               Int
+  nilaiResidu              Float    @default(0)
+  isTanah                  Boolean  @default(false)
+  status                   String   @default("Active")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  alreadyDepreciatedAmount Float    @default(0)
+  alreadyDepreciatedYears  Int      @default(0)
+  sisaUmurTeknis           Int?
+  account                  Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
 
   @@index([kodeAkun])
   @@index([kategori])
   @@index([status])
 }
 
-// Debt (Hutang) Model - For tracking liabilities/debts
 model Debt {
   id                String   @id @default(cuid())
   kodeAkun          String
-  account           Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
   nama              String
   kreditur          String?
   jumlahAwal        Float
   jumlahSisa        Float
-  tenor             Int // bulan
+  tenor             Int
   tanggalMulai      DateTime
   tanggalJatuhTempo DateTime
   cicilanPerBulan   Float
-  status            String   @default("Aktif") // Aktif, Lunas
+  status            String   @default("Aktif")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  account           Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
 
   @@index([kodeAkun])
   @@index([status])
   @@index([tanggalJatuhTempo])
 }
 
-// Installment (Cicilan) Model - For student payment installments
 model Installment {
   id                String    @id @default(cuid())
   studentId         String
-  student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
   billingId         String?
-  billing           Billing?  @relation(fields: [billingId], references: [id], onDelete: SetNull)
   cicilanKe         Int
   jumlah            Float
   tanggalJatuhTempo DateTime
   tanggalBayar      DateTime?
-  status            String    @default("Belum Bayar") // Belum Bayar, Bayar, Jatuh Tempo
+  status            String    @default("Belum Bayar")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  billing           Billing?  @relation(fields: [billingId], references: [id])
+  student           Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
   @@index([billingId])
@@ -185,10 +183,9 @@ model Installment {
   @@index([tanggalJatuhTempo, status])
 }
 
-// AcademicYear (Tahun Ajaran) Model
 model AcademicYear {
   id             String    @id @default(cuid())
-  tahunAjaran    String    @unique // e.g., "2025/2026"
+  tahunAjaran    String    @unique
   tanggalMulai   DateTime
   tanggalSelesai DateTime
   isActive       Boolean   @default(false)
@@ -198,59 +195,52 @@ model AcademicYear {
   billings       Billing[]
 }
 
-// JournalEntry - For double-entry bookkeeping verification
 model JournalEntry {
-  id         String    @id @default(cuid())
-  tanggal    DateTime
-  keterangan String
-  reference  String? // link to cashflow/billing/etc
-  status     String    @default("draft") // draft, approved, posted
-  version    Int       @default(1) // Optimistic locking
-  postedAt   DateTime?
-  postedBy   String?
+  id             String             @id @default(cuid())
+  tanggal        DateTime
+  keterangan     String
+  reference      String?            @unique
+  status         String             @default("draft")
+  version        Int                @default(1)
+  postedAt       DateTime?
+  postedBy       String?
+  isBackdated    Boolean            @default(false)
+  originalPeriod String?
+  adjustmentType String             @default("regular")
+  backdatedBy    String?
+  backdatedAt    DateTime?
+  reason         String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  entries        JournalEntryLine[]
+  payroll        Payroll?
 
-  // Backdated entry tracking
-  isBackdated    Boolean   @default(false) // Flag for past date entries
-  originalPeriod String? // Original period when backdated (YYYY-MM)
-  adjustmentType String    @default("regular") // 'regular' | 'adjusting' - type of entry
-  backdatedBy    String? // User who created backdated entry
-  backdatedAt    DateTime? // When backdated entry was created
-  reason         String? // Reason for backdated entry (for adjustments)
-
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  entries   JournalEntryLine[]
-  payroll   Payroll?
-
-  @@unique([reference])
   @@index([tanggal])
   @@index([status])
   @@index([isBackdated])
 }
 
-// JournalEntryLine - Individual debit/credit lines for journal entries
 model JournalEntryLine {
   id             String       @id @default(cuid())
   journalEntryId String
-  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   kodeAkun       String
-  account        Account      @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
   debit          Float        @default(0)
   kredit         Float        @default(0)
-  version        Int          @default(1) // Optimistic locking
+  version        Int          @default(1)
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account        Account      @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
 
   @@index([kodeAkun])
   @@index([journalEntryId])
 }
 
-// Period - For period management (bulan/tahun)
 model Period {
   id           String    @id @default(cuid())
-  kode         String    @unique // Format: YYYY-MM
-  nama         String // e.g., "Januari 2025"
+  kode         String    @unique
+  nama         String
   tahun        Int
   bulan        Int
-  status       String    @default("open") // open, closed, archived
+  status       String    @default("open")
   tanggalMulai DateTime
   tanggalAkhir DateTime
   closedAt     DateTime?
@@ -267,12 +257,11 @@ model Period {
   @@index([tanggalAkhir])
 }
 
-// Snapshot - For data freeze and reports
 model Snapshot {
   id          String   @id @default(cuid())
-  periode     String // Format: YYYY-MM
-  tipe        String // neraca, labarugi, cashflow
-  data        Json // Snapshot of report data
+  periode     String
+  tipe        String
+  data        Json
   totalDebit  Float
   totalKredit Float
   createdAt   DateTime @default(now())
@@ -282,15 +271,14 @@ model Snapshot {
   @@index([periode])
 }
 
-// Notification - For system notifications
 model Notification {
   id          String   @id @default(cuid())
-  tipe        String // approval_request, piutang_jatuh_tempo, hutang_jatuh_tempo
+  tipe        String
   judul       String
   pesan       String
   isRead      Boolean  @default(false)
   userId      String?
-  referenceId String? // Link to related entity
+  referenceId String?
   createdAt   DateTime @default(now())
 
   @@index([userId])
@@ -298,18 +286,17 @@ model Notification {
   @@index([tipe])
 }
 
-// Employee (Karyawan) Model
 model Employee {
   id           String    @id @default(cuid())
   nip          String    @unique
   nama         String
-  jabatan      String // Guru, Staff, Kepala Sekolah, etc.
-  jenisKelamin String? // L/P
+  jabatan      String
+  jenisKelamin String?
   noTelp       String?
   alamat       String?
   tanggalMasuk DateTime
   gajiPokok    Float     @default(0)
-  status       String    @default("Active") // Active, Inactive
+  status       String    @default("Active")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   payrolls     Payroll[]
@@ -318,32 +305,30 @@ model Employee {
   @@index([jabatan])
 }
 
-// Payroll (Gaji/Tunjangan/Bonus) Model
 model Payroll {
   id              String        @id @default(cuid())
   employeeId      String
-  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  periode         String // YYYY-MM
-  jenisPembayaran String // Gaji, Tunjangan, Bonus
+  periode         String
+  jenisPembayaran String
   jumlah          Float
   keterangan      String?
   tanggalBayar    DateTime?
-  status          String        @default("Belum Bayar") // Belum Bayar, Lunas
+  status          String        @default("Belum Bayar")
   journalEntryId  String?       @unique
-  journalEntry    JournalEntry? @relation(fields: [journalEntryId], references: [id])
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  employee        Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  journalEntry    JournalEntry? @relation(fields: [journalEntryId], references: [id])
 
   @@unique([employeeId, periode, jenisPembayaran])
   @@index([periode])
   @@index([status])
 }
 
-// AuditTrail - For audit logging
 model AuditTrail {
   id        String   @id @default(cuid())
-  action    String // create, update, delete, approve, post, reopen
-  entity    String // cashflow, journal, period, etc.
+  action    String
+  entity    String
   entityId  String
   oldData   Json?
   newData   Json?
@@ -355,45 +340,34 @@ model AuditTrail {
   @@index([createdAt])
 }
 
-// ============================================================================
-// BETTER AUTH MODELS
-// ============================================================================
-
 model User {
-  id                    String    @id @default(cuid())
-  email                 String    @unique
-  name                  String?
-  emailVerified         Boolean   @default(false)
-  image                 String?
-  
-  // RBAC Fields
-  role                  String    @default("user") // owner | admin | user
-  department            String?
-  
-  // Relations
-  sessions              Session[]
-  accounts              AuthAccount[]
-  
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String?
+  emailVerified Boolean       @default(false)
+  image         String?
+  role          String        @default("user")
+  department    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  accounts      AuthAccount[]
+  sessions      Session[]
+
   @@index([email])
   @@index([role])
 }
 
 model Session {
-  id                    String    @id
-  userId                String
-  token                 String    @unique
-  expiresAt             DateTime
-  ipAddress             String?
-  userAgent             String?
-  
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  
+  id        String   @id
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([token])
 }
@@ -410,24 +384,40 @@ model AuthAccount {
   scope                 String?
   idToken               String?
   password              String?
-  
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([providerId, accountId])
   @@index([userId])
 }
 
 model Verification {
-  id                    String    @id
-  identifier            String
-  value                 String
-  expiresAt             DateTime
-  
-  createdAt             DateTime  @default(now())
-  
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
   @@index([identifier])
   @@index([expiresAt])
+}
+
+model Inventory {
+  id          String   @id @default(cuid())
+  kodeAkun    String
+  nama        String
+  kategori    String
+  jumlahAwal  Int
+  jumlahSisa  Int
+  hargaSatuan Float
+  tanggalBeli DateTime
+  status      String   @default("Aktif")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [kodeAkun], references: [kodeAkun], onDelete: Cascade)
+
+  @@index([kategori])
+  @@index([kodeAkun])
+  @@index([status])
 }

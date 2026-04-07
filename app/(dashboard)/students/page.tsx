@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,32 +25,11 @@ import {
 	Pencil,
 	Trash2,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
-import { useDebounce } from "@/hooks/use-debounce";
+import { formatRupiah } from "@/lib/utils/utils-currency";
+import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
-
-interface Student {
-	id: string;
-	nis: string;
-	nama: string;
-	jenisKelamin: string | null;
-	kelas: string;
-	tahunMasuk: number;
-	tahunAjaran: string | null;
-	namaOrtu: string | null;
-	noTelp: string | null;
-	statusBayar: string;
-	status: string;
-	totalTagihan: number;
-	totalBayar: number;
-}
-
-interface Pagination {
-	page: number;
-	limit: number;
-	total: number;
-	totalPages: number;
-}
+import type { Student } from "@/types/student";
+import type { Pagination } from "@/types/pagination";
 
 // Class options matching Excel structure
 const KELAS_OPTIONS = ["PLAYGROUP", "KINDERGARTEN"];
@@ -80,7 +60,7 @@ export default function StudentsPage() {
 	const [showInactive, setShowInactive] = useState(false);
 
 	// Debounce search term to avoid excessive API calls
-	const debouncedSearchTerm = useDebounce(searchTerm, 300);
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
 
 	// Dialog states
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -101,13 +81,17 @@ export default function StudentsPage() {
 					url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
 
 				const res = await fetch(url);
-				if (res.ok) {
-					const data = await res.json();
-					setStudents(data.data);
-					setPagination(data.pagination);
+				const result = await res.json();
+				if (!result.success) {
+					toast.error(result.error?.message || "Gagal memuat data siswa");
+					setIsLoading(false);
+					return;
 				}
+				setStudents(result.data);
+				setPagination(result.meta.pagination);
 			} catch (error) {
 				console.error("Failed to fetch students:", error);
+				toast.error("Terjadi kesalahan saat memuat data siswa");
 			} finally {
 				setIsLoading(false);
 			}
@@ -122,26 +106,31 @@ export default function StudentsPage() {
 	const handleCreate = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setError("");
-		try {
-			const res = await fetch("/api/students", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(formData),
-			});
 
-			const data = await res.json();
-			if (!res.ok) {
-				setError(data.error || "Gagal menambah siswa");
-				return;
-			}
+		const promise = fetch("/api/students", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(formData),
+		}).then(async (res) => {
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal menambah siswa");
+			return result;
+		});
 
-			setIsCreateOpen(false);
-			setFormData(INITIAL_FORM);
-			fetchData(pagination.page);
-		} catch (error) {
-			console.error("Failed to create student:", error);
-			setError("Terjadi kesalahan");
-		}
+		toast.promise(promise, {
+			loading: "Menambahkan siswa...",
+			success: (result) => {
+				setIsCreateOpen(false);
+				setFormData(INITIAL_FORM);
+				fetchData(pagination.page);
+				return `Siswa ${result.data.nama} berhasil ditambahkan`;
+			},
+			error: (err) => {
+				setError(err.message);
+				return err.message;
+			},
+		});
 	};
 
 	const handleEdit = async (e: React.FormEvent) => {
@@ -149,45 +138,59 @@ export default function StudentsPage() {
 		if (!selectedStudent) return;
 		setError("");
 
-		try {
-			const res = await fetch(`/api/students/${selectedStudent.id}`, {
-				method: "PATCH",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(formData),
-			});
+		const promise = fetch(`/api/students/${selectedStudent.id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(formData),
+		}).then(async (res) => {
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal mengupdate siswa");
+			return result;
+		});
 
-			const data = await res.json();
-			if (!res.ok) {
-				setError(data.error || "Gagal mengupdate siswa");
-				return;
-			}
-
-			setIsEditOpen(false);
-			setSelectedStudent(null);
-			setFormData(INITIAL_FORM);
-			fetchData(pagination.page);
-		} catch (error) {
-			console.error("Failed to update student:", error);
-			setError("Terjadi kesalahan");
-		}
+		toast.promise(promise, {
+			loading: "Mengupdate data siswa...",
+			success: (result) => {
+				setIsEditOpen(false);
+				setSelectedStudent(null);
+				setFormData(INITIAL_FORM);
+				fetchData(pagination.page);
+				return `Siswa ${result.data.nama} berhasil diupdate`;
+			},
+			error: (err) => {
+				setError(err.message);
+				return err.message;
+			},
+		});
 	};
 
 	const handleDelete = async () => {
 		if (!selectedStudent) return;
 
-		try {
-			const res = await fetch(`/api/students/${selectedStudent.id}`, {
-				method: "DELETE",
-			});
+		const promise = fetch(`/api/students/${selectedStudent.id}`, {
+			method: "DELETE",
+		}).then(async (res) => {
+			// Handle 204 No Content for DELETE
+			if (res.status === 204) {
+				return { success: true, data: selectedStudent };
+			}
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal menghapus siswa");
+			return result;
+		});
 
-			if (res.ok) {
+		toast.promise(promise, {
+			loading: "Menghapus siswa...",
+			success: (result) => {
 				setIsDeleteOpen(false);
 				setSelectedStudent(null);
 				fetchData(pagination.page);
-			}
-		} catch (error) {
-			console.error("Failed to delete student:", error);
-		}
+				return `Siswa ${result.data?.nama || selectedStudent.nama} berhasil dihapus`;
+			},
+			error: (err) => err.message,
+		});
 	};
 
 	const openEditDialog = (student: Student) => {
@@ -344,7 +347,7 @@ export default function StudentsPage() {
 								>
 									Belum Lunas
 								</Button>
-								</div>
+							</div>
 							<label className="flex items-center gap-2 text-xs md:text-sm text-gray-600 whitespace-nowrap">
 								<input
 									type="checkbox"
@@ -413,10 +416,10 @@ export default function StudentsPage() {
 											</TableCell>
 											<TableCell>{s.tahunMasuk}</TableCell>
 											<TableCell className="text-right">
-												{formatCurrency(s.totalTagihan)}
+												{formatRupiah(s.totalTagihan)}
 											</TableCell>
 											<TableCell className="text-right font-semibold text-emerald-600">
-												{formatCurrency(s.totalBayar)}
+												{formatRupiah(s.totalBayar)}
 											</TableCell>
 											<TableCell>
 												<Badge
@@ -469,10 +472,7 @@ export default function StudentsPage() {
 						<div className="mt-4 flex items-center justify-between">
 							<p className="text-sm text-slate-500">
 								Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
-								{Math.min(
-									pagination.page * pagination.limit,
-									pagination.total,
-								)}{" "}
+								{Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
 								dari {pagination.total} siswa
 							</p>
 							<div className="flex gap-2">

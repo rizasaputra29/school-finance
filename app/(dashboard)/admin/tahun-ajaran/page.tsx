@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,26 +10,14 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
 import { Plus, Pencil, Check, Archive } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
-
-interface AcademicYear {
-  id: string;
-  tahunAjaran: string;
-  tanggalMulai: string;
-  tanggalSelesai: string;
-  isActive: boolean;
-  isArchived: boolean;
-}
+import { formatDateCompact } from '@/lib/utils/utils-date';
+import type { AcademicYear } from '@/types/academic-year';
 
 const INITIAL_FORM = {
   tahunAjaran: '',
   tanggalMulai: '',
   tanggalSelesai: '',
 };
-
-function formatDate(dateStr: string) {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-}
 
 export default function AcademicYearPage() {
   const { isAdmin } = useAuth();
@@ -47,12 +36,15 @@ export default function AcademicYearPage() {
   const fetchData = async () => {
     try {
       const res = await fetch('/api/academic-year?includeArchived=true');
-      if (res.ok) {
-        const data = await res.json();
-        setAcademicYears(data.data || []);
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error?.message || 'Gagal memuat data tahun ajaran');
+        return;
       }
+      setAcademicYears(result.data || []);
     } catch (error) {
       console.error('Failed to fetch academic years:', error);
+      toast.error('Terjadi kesalahan saat memuat data tahun ajaran');
     } finally {
       setIsLoading(false);
     }
@@ -62,26 +54,29 @@ export default function AcademicYearPage() {
     e.preventDefault();
     setError('');
 
-    try {
-      const res = await fetch('/api/academic-year', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+    const promise = fetch('/api/academic-year', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal membuat tahun ajaran');
+      return result;
+    });
 
-      const data = await res.json();
-
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Membuat tahun ajaran...',
+      success: (result) => {
         setIsCreateOpen(false);
         setFormData(INITIAL_FORM);
         fetchData();
-      } else {
-        setError(data.error || 'Gagal membuat tahun ajaran');
-      }
-    } catch (error) {
-      console.error('Failed to create academic year:', error);
-      setError('Terjadi kesalahan');
-    }
+        return `Tahun ajaran ${result.data.tahunAjaran} berhasil dibuat`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -89,65 +84,76 @@ export default function AcademicYearPage() {
     if (!selectedYear) return;
     setError('');
 
-    try {
-      const res = await fetch(`/api/academic-year?id=${selectedYear.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+    const promise = fetch(`/api/academic-year?id=${selectedYear.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal mengupdate tahun ajaran');
+      return result;
+    });
 
-      const data = await res.json();
-
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Mengupdate tahun ajaran...',
+      success: (result) => {
         setIsEditOpen(false);
         setSelectedYear(null);
         setFormData(INITIAL_FORM);
         fetchData();
-      } else {
-        setError(data.error || 'Gagal mengupdate tahun ajaran');
-      }
-    } catch (error) {
-      console.error('Failed to update academic year:', error);
-      setError('Terjadi kesalahan');
-    }
+        return `Tahun ajaran ${result.data.tahunAjaran} berhasil diupdate`;
+      },
+      error: (err) => {
+        setError(err.message);
+        return err.message;
+      },
+    });
   };
 
   const handleSetActive = async (id: string) => {
-    try {
-      const res = await fetch(`/api/academic-year?id=${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: true }),
-      });
+    const promise = fetch(`/api/academic-year?id=${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: true }),
+    }).then(async (res) => {
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal mengaktifkan tahun ajaran');
+      return result;
+    });
 
-      if (res.ok) {
+    toast.promise(promise, {
+      loading: 'Mengaktifkan tahun ajaran...',
+      success: (result) => {
         fetchData();
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Gagal mengaktifkan tahun ajaran');
-      }
-    } catch (error) {
-      console.error('Failed to set active:', error);
-    }
+        return `Tahun ajaran ${result.data.tahunAjaran} berhasil diaktifkan`;
+      },
+      error: (err) => err.message,
+    });
   };
 
-  const handleArchive = async (id: string) => {
+  const handleArchive = async (id: string, tahunAjaran: string) => {
     if (!confirm('Apakah Anda yakin ingin mengarsipkan tahun ajaran ini?')) return;
 
-    try {
-      const res = await fetch(`/api/academic-year?id=${id}`, {
-        method: 'DELETE',
-      });
-
-      if (res.ok) {
-        fetchData();
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Gagal mengarsipkan tahun ajaran');
+    const promise = fetch(`/api/academic-year?id=${id}`, {
+      method: 'DELETE',
+    }).then(async (res) => {
+      // Handle 204 No Content for DELETE
+      if (res.status === 204) {
+        return { success: true, data: { tahunAjaran } };
       }
-    } catch (error) {
-      console.error('Failed to archive:', error);
-    }
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal mengarsipkan tahun ajaran');
+      return result;
+    });
+
+    toast.promise(promise, {
+      loading: 'Mengarsipkan tahun ajaran...',
+      success: (result) => {
+        fetchData();
+        return `Tahun ajaran ${result.data?.tahunAjaran || tahunAjaran} berhasil diarsipkan`;
+      },
+      error: (err) => err.message,
+    });
   };
 
   const openEditDialog = (year: AcademicYear) => {
@@ -284,7 +290,7 @@ export default function AcademicYearPage() {
                     <tr key={year.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium">{year.tahunAjaran}</td>
                       <td className="px-4 py-3 text-gray-600">
-                        {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
+                        {formatDateCompact(year.tanggalMulai)} - {formatDateCompact(year.tanggalSelesai)}
                       </td>
                       <td className="px-4 py-3">
                         {year.isActive ? (
@@ -316,7 +322,7 @@ export default function AcademicYearPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleArchive(year.id)}
+                            onClick={() => handleArchive(year.id, year.tahunAjaran)}
                             title="Arsipkan"
                           >
                             <Archive className="h-4 w-4 text-gray-500" />
@@ -353,7 +359,7 @@ export default function AcademicYearPage() {
                     <tr key={year.id} className="border-b bg-gray-50/30">
                       <td className="px-4 py-3 font-medium text-gray-600">{year.tahunAjaran}</td>
                       <td className="px-4 py-3 text-gray-500">
-                        {formatDate(year.tanggalMulai)} - {formatDate(year.tanggalSelesai)}
+                        {formatDateCompact(year.tanggalMulai)} - {formatDateCompact(year.tanggalSelesai)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className="text-gray-500">Diarsipkan</Badge>

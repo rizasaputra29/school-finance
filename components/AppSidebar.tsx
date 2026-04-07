@@ -1,6 +1,6 @@
 import Link from "next/link"
 import Image from "next/image"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import { useState, useEffect } from "react"
 import {
@@ -116,6 +116,7 @@ function isActive(pathname: string, item: NavItem): boolean {
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, isAdmin, logout } = useAuth()
   const { state, toggleSidebar } = useSidebar()
   const isExpanded = state === "expanded"
@@ -352,7 +353,11 @@ export function AppSidebar() {
                     </span>
                   </div>
                   <button
-                    onClick={logout}
+                    onClick={async (e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      await logout()
+                    }}
                     className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all"
                   >
                     <LogOut className="h-4 w-4" />
@@ -361,18 +366,13 @@ export function AppSidebar() {
               )}
             </div>
           ) : (
-            <SidebarMenuButton
-              asChild
-              className="h-10 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            <button
+              onClick={() => router.push('/login')}
+              className={`w-full h-10 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-100 flex items-center gap-3 ${isExpanded ? 'px-3 justify-start' : 'justify-center'}`}
             >
-              <Link 
-                href="/login" 
-                className={`flex items-center gap-3 ${isExpanded ? 'px-3 justify-start' : 'justify-center'}`}
-              >
-                <LogIn className="h-5 w-5 shrink-0 text-gray-700" />
-                {isExpanded && <span className="truncate">Login</span>}
-              </Link>
-            </SidebarMenuButton>
+              <LogIn className="h-5 w-5 shrink-0 text-gray-700" />
+              {isExpanded && <span className="truncate">Login</span>}
+            </button>
           )}
         </SidebarFooter>
       </Sidebar>

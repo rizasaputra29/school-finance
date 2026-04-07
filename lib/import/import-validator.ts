@@ -4,6 +4,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import { parseExcelDate } from '@/lib/utils/utils-date';
 
 // ============================================
 // Type Definitions
@@ -504,13 +505,6 @@ export async function runWithTransaction<T>(
 // ============================================
 
 /**
- * Convert Excel serial date to JavaScript Date
- */
-export function excelDateToJSDate(excelDate: number): Date {
-  return new Date((excelDate - 25569) * 86400 * 1000);
-}
-
-/**
  * Parse value to appropriate type
  */
 export function parseValue(value: unknown, type: string): unknown {
@@ -523,7 +517,7 @@ export function parseValue(value: unknown, type: string): unknown {
       return String(value);
     case 'date':
       if (value instanceof Date) return value;
-      if (typeof value === 'number') return excelDateToJSDate(value);
+      if (typeof value === 'number') return parseExcelDate(value);
       return new Date(String(value));
     default:
       return value;
