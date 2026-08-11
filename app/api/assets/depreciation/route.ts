@@ -151,11 +151,7 @@ async function getAllAssets(): Promise<AssetDepreciationData[]> {
 async function isDepreciationAlreadyProcessed(year: number): Promise<boolean> {
 	const existingEntry = await prisma.journalEntry.findFirst({
 		where: {
-			reference: "depreciation",
-			tanggal: {
-				gte: new Date(year, 0, 1),
-				lte: new Date(year, 11, 31),
-			},
+			reference: `depreciation-${year}`,
 		},
 	});
 	return !!existingEntry;
@@ -275,7 +271,8 @@ async function processDepreciation(
 				data: {
 					tanggal: new Date(year, 11, 31), // End of year
 					keterangan: `Penyusutan Aktiva Tetap Tahun ${year}`,
-					reference: "depreciation",
+					reference: `depreciation-${year}`,
+					status: "posted",
 				},
 			});
 
@@ -323,6 +320,47 @@ async function processDepreciation(
 				.filter(Boolean);
 
 			await Promise.all(accountUpdates);
+
+			// Update AccountBalance snapshots for the depreciation year
+			const academicYearForDepreciation =
+				await tx.academicYear.findFirst({
+					where: {
+						tanggalMulai: { lte: new Date(year, 11, 31) },
+						tanggalSelesai: { gte: new Date(year, 0, 1) },
+					},
+				});
+
+			if (academicYearForDepreciation) {
+				const balanceData = allEntries.map((entry) => {
+					const account = accountMap.get(entry.kodeAkun);
+					const isDebitNormal =
+						account && ["Asset", "Expense"].includes(account.tipeAkun);
+					const saldoChange = isDebitNormal
+						? entry.debit - entry.kredit
+						: entry.kredit - entry.debit;
+
+					return {
+						kodeAkun: entry.kodeAkun,
+						academicYearId: academicYearForDepreciation.id,
+						saldo: saldoChange,
+					};
+				});
+
+				for (const data of balanceData) {
+					await tx.accountBalance
+						.upsert({
+							where: {
+								kodeAkun_academicYearId: {
+									kodeAkun: data.kodeAkun,
+									academicYearId: data.academicYearId,
+								},
+							},
+							update: { saldo: { increment: data.saldo } },
+							create: data,
+						})
+						.catch(() => {});
+				}
+			}
 
 			// Create cashflow entries using createMany for better performance
 			const cashflowData: Prisma.CashflowCreateManyInput[] = allEntries.map(

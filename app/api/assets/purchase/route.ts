@@ -44,8 +44,8 @@ const purchaseSchema = z.object({
 	nama: z.string().min(1, "Nama item wajib diisi"),
 	kategori: z.string().min(1, "Kategori wajib diisi"),
 	jumlah: z.number().positive("Jumlah harus lebih dari 0"),
-	kodeAkun: z.string().optional(), // Specific account code if provided
-	metodePembayaran: z.enum(["kas", "bank"]).default("kas"),
+	kodeAkun: z.string().min(1, "Kode akun wajib dipilih dari COA"),
+	kodeAkunPembayaran: z.string().min(1, "Kode akun pembayaran wajib dipilih dari COA"),
 	lokasi: z.string().optional(),
 	umurTeknis: z.number().int().min(0).max(50).optional(), // Years for depreciation
 	nilaiResidu: z.number().min(0).optional().default(0),
@@ -86,113 +86,6 @@ interface PurchaseResponse {
 }
 
 /**
- * Find cash or bank account for payment
- */
-async function findPaymentAccount(
-	tx: PrismaTransactionClient,
-	metodePembayaran: "kas" | "bank",
-): Promise<string | null> {
-	const account = await tx.account.findFirst({
-		where: {
-			tipeAkun: "Asset",
-			OR:
-				metodePembayaran === "bank"
-					? [{ namaAkun: { contains: "Bank", mode: "insensitive" } }]
-					: [{ namaAkun: { contains: "Kas", mode: "insensitive" } }],
-		},
-	});
-	return account?.kodeAkun || null;
-}
-
-/**
- * Find or create asset account based on category
- */
-async function findOrCreateAssetAccount(
-	tx: PrismaTransactionClient,
-	kategori: string,
-): Promise<string> {
-	// Map category to typical account code
-	const categoryAccountMap: Record<string, { kode: string; nama: string }> = {
-		Peralatan: { kode: "1501", nama: "Peralatan" },
-		Kendaraan: { kode: "1502", nama: "Kendaraan" },
-		Bangunan: { kode: "1503", nama: "Bangunan" },
-		Tanah: { kode: "1504", nama: "Tanah" },
-		Supplies: { kode: "1601", nama: "Perlengkapan" },
-		Services: { kode: "6101", nama: "Beban Jasa" },
-		Maintenance: { kode: "6201", nama: "Beban Perawatan" },
-		Perlengkapan: { kode: "1601", nama: "Perlengkapan" },
-		Jasa: { kode: "6101", nama: "Beban Jasa" },
-		Perawatan: { kode: "6201", nama: "Beban Perawatan" },
-	};
-
-	const mapping = categoryAccountMap[kategori];
-	if (!mapping) {
-		throw new Error(`Kategori tidak valid: ${kategori}`);
-	}
-
-	// Try to find existing account
-	let account = await tx.account.findUnique({
-		where: { kodeAkun: mapping.kode },
-	});
-
-	if (!account) {
-		// Create the account
-		const isAssetCategory = ASSET_CATEGORIES.includes(kategori);
-		account = await tx.account.create({
-			data: {
-				kodeAkun: mapping.kode,
-				namaAkun: mapping.nama,
-				tipeAkun: isAssetCategory ? "Asset" : "Expense",
-				saldo: 0,
-			},
-		});
-	}
-
-	return account.kodeAkun;
-}
-
-/**
- * Find expense account for non-asset purchases
- */
-async function findExpenseAccount(
-	tx: PrismaTransactionClient,
-	kategori: string,
-): Promise<string> {
-	// Find existing expense account or use default
-	const categoryExpenseMap: Record<string, { kode: string; nama: string }> = {
-		Supplies: { kode: "1601", nama: "Beban Perlengkapan" },
-		Perlengkapan: { kode: "1601", nama: "Beban Perlengkapan" },
-		Services: { kode: "6101", nama: "Beban Jasa" },
-		Jasa: { kode: "6101", nama: "Beban Jasa" },
-		Maintenance: { kode: "6201", nama: "Beban Perawatan" },
-		Perawatan: { kode: "6201", nama: "Beban Perawatan" },
-	};
-
-	const mapping = categoryExpenseMap[kategori];
-	if (!mapping) {
-		throw new Error(`Kategori expense tidak valid: ${kategori}`);
-	}
-
-	let account = await tx.account.findUnique({
-		where: { kodeAkun: mapping.kode },
-	});
-
-	if (!account) {
-		// Create the expense account
-		account = await tx.account.create({
-			data: {
-				kodeAkun: mapping.kode,
-				namaAkun: mapping.nama,
-				tipeAkun: "Expense",
-				saldo: 0,
-			},
-		});
-	}
-
-	return account.kodeAkun;
-}
-
-/**
  * Determine if category is an asset or expense
  */
 function isAssetCategory(kategori: string): boolean {
@@ -209,8 +102,8 @@ async function processPurchase(
 		nama: string;
 		kategori: string;
 		jumlah: number;
-		kodeAkun?: string;
-		metodePembayaran: "kas" | "bank";
+		kodeAkun: string;
+		kodeAkunPembayaran: string;
 		lokasi?: string;
 		umurTeknis?: number;
 		nilaiResidu?: number;
@@ -219,27 +112,24 @@ async function processPurchase(
 ): Promise<PurchaseResponse["data"]> {
 	const isAsset = isAssetCategory(data.kategori);
 
-	// Find payment account (Kas or Bank)
-	const paymentAccountCode = await findPaymentAccount(
-		tx,
-		data.metodePembayaran,
-	);
-	if (!paymentAccountCode) {
-		throw new Error("Akun Kas/Bank tidak ditemukan");
+	// Validate payment account exists and is an Asset account
+	const paymentAccountCode = data.kodeAkunPembayaran;
+	const paymentAccount = await tx.account.findUnique({
+		where: { kodeAkun: paymentAccountCode },
+	});
+	if (!paymentAccount) {
+		throw new Error(
+			`Akun pembayaran dengan kode ${paymentAccountCode} tidak ditemukan`,
+		);
+	}
+	if (paymentAccount.tipeAkun !== "Asset") {
+		throw new Error(
+			`Akun pembayaran ${paymentAccountCode} harus bertipe Asset`,
+		);
 	}
 
-	// Get the target account (asset or expense)
-	let targetAccountCode: string;
-	if (data.kodeAkun) {
-		// Use provided account code
-		targetAccountCode = data.kodeAkun;
-	} else if (isAsset) {
-		targetAccountCode = await findOrCreateAssetAccount(tx, data.kategori);
-	} else {
-		targetAccountCode = await findExpenseAccount(tx, data.kategori);
-	}
-
-	// Verify target account exists
+	// Get the target account from COA
+	const targetAccountCode = data.kodeAkun;
 	const targetAccount = await tx.account.findUnique({
 		where: { kodeAkun: targetAccountCode },
 	});
@@ -248,7 +138,24 @@ async function processPurchase(
 		throw new Error(`Akun dengan kode ${targetAccountCode} tidak ditemukan`);
 	}
 
+	// Validate target account type matches purchase type
+	if (isAsset && targetAccount.tipeAkun !== "Asset") {
+		throw new Error(
+			`Akun ${targetAccountCode} harus bertipe Asset untuk pembelian aktiva`,
+		);
+	}
+	if (!isAsset && targetAccount.tipeAkun !== "Expense") {
+		throw new Error(
+			`Akun ${targetAccountCode} harus bertipe Expense untuk pembelian beban`,
+		);
+	}
+
 	// Build double-entry transactions
+	const transactionKeterangan =
+		data.keterangan ||
+		(isAsset
+			? `Pembelian Aktiva: ${data.nama}`
+			: `Pembelian Beban: ${data.nama}`);
 	const entries = isAsset
 		? [
 				// Asset purchase: Debit Aset, Credit Kas/Bank
@@ -256,13 +163,13 @@ async function processPurchase(
 					kodeAkun: targetAccountCode,
 					debit: data.jumlah,
 					kredit: 0,
-					keterangan: `${data.nama} - Pembelian ${data.kategori}`,
+					keterangan: transactionKeterangan,
 				},
 				{
 					kodeAkun: paymentAccountCode,
 					debit: 0,
 					kredit: data.jumlah,
-					keterangan: `Pembayaran pembelian ${data.nama}`,
+					keterangan: transactionKeterangan,
 				},
 			]
 		: [
@@ -271,15 +178,35 @@ async function processPurchase(
 					kodeAkun: targetAccountCode,
 					debit: data.jumlah,
 					kredit: 0,
-					keterangan: `${data.nama} - ${data.kategori}`,
+					keterangan: transactionKeterangan,
 				},
 				{
 					kodeAkun: paymentAccountCode,
 					debit: 0,
 					kredit: data.jumlah,
-					keterangan: `Pembayaran ${data.nama}`,
+					keterangan: transactionKeterangan,
 				},
 			];
+
+	// Create journal entry first so cashflow records can reference it
+	const journalEntry = await tx.journalEntry.create({
+		data: {
+			tanggal: new Date(data.tanggal),
+			keterangan: transactionKeterangan,
+			reference: `asset-purchase-${Date.now()}`,
+		},
+	});
+
+	for (const entry of entries) {
+		await tx.journalEntryLine.create({
+			data: {
+				journalEntryId: journalEntry.id,
+				kodeAkun: entry.kodeAkun,
+				debit: entry.debit,
+				kredit: entry.kredit,
+			},
+		});
+	}
 
 	// Process all entries and update account balances
 	const createdCashflows = [];
@@ -319,9 +246,14 @@ async function processPurchase(
 				keterangan: entry.keterangan,
 				kodeAkun: entry.kodeAkun,
 				kategori: isAsset ? "aset" : "pengeluaran",
+				cashflowCategory: isAsset ? "INV" : "OPS",
 				debit: entry.debit,
 				kredit: entry.kredit,
-				source: data.metodePembayaran,
+				source:
+					paymentAccount.namaAkun.toLowerCase().includes("bank")
+						? "bank"
+						: "kas",
+				referenceId: journalEntry.id,
 			} as never,
 		});
 
@@ -334,27 +266,44 @@ async function processPurchase(
 		});
 	}
 
-	// Create journal entry for proper double-entry bookkeeping
-	const journalEntry = await tx.journalEntry.create({
-		data: {
-			tanggal: new Date(data.tanggal),
-			keterangan:
-				data.keterangan ||
-				`Pembelian ${isAsset ? "Aktiva" : "Beban"}: ${data.nama}`,
-			reference: "asset-purchase",
+	// Update AccountBalance snapshots for the active academic year
+	const purchaseDate = new Date(data.tanggal);
+	const academicYearForPurchase = await tx.academicYear.findFirst({
+		where: {
+			tanggalMulai: { lte: purchaseDate },
+			tanggalSelesai: { gte: purchaseDate },
 		},
 	});
 
-	// Create journal entry lines
-	for (const entry of entries) {
-		await tx.journalEntryLine.create({
-			data: {
-				journalEntryId: journalEntry.id,
-				kodeAkun: entry.kodeAkun,
-				debit: entry.debit,
-				kredit: entry.kredit,
-			},
-		});
+	if (academicYearForPurchase) {
+		for (const entry of entries) {
+			const account = await tx.account.findUnique({
+				where: { kodeAkun: entry.kodeAkun },
+			});
+			if (!account) continue;
+
+			const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
+			const saldoChange = isDebitNormal
+				? entry.debit - entry.kredit
+				: entry.kredit - entry.debit;
+
+			await tx.accountBalance
+				.upsert({
+					where: {
+						kodeAkun_academicYearId: {
+							kodeAkun: entry.kodeAkun,
+							academicYearId: academicYearForPurchase.id,
+						},
+					},
+					update: { saldo: { increment: saldoChange } },
+					create: {
+						kodeAkun: entry.kodeAkun,
+						academicYearId: academicYearForPurchase.id,
+						saldo: saldoChange,
+					},
+				})
+				.catch(() => {});
+		}
 	}
 
 	// If it's an asset, create Asset record for tracking
@@ -424,6 +373,7 @@ export async function GET(request: NextRequest) {
 				const isAsset = searchParams.get("isAsset");
 				const startDate = searchParams.get("startDate");
 				const endDate = searchParams.get("endDate");
+				const academicYearId = searchParams.get("academicYearId");
 				const search = searchParams.get("search");
 				const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -437,8 +387,18 @@ export async function GET(request: NextRequest) {
 					where.kategori = { in: NON_ASSET_CATEGORIES };
 				}
 
-				// Date range filter
-				if (startDate && endDate) {
+				// Carry-forward filter: assets acquired on or before the academic year end
+				let academicYear: Awaited<
+					ReturnType<typeof prisma.academicYear.findUnique>
+				> = null;
+				if (academicYearId) {
+					academicYear = await prisma.academicYear.findUnique({
+						where: { id: academicYearId },
+					});
+					if (academicYear) {
+						where.tanggalPerolehan = { lte: academicYear.tanggalSelesai };
+					}
+				} else if (startDate && endDate) {
 					where.tanggal = {
 						gte: new Date(startDate),
 						lte: new Date(endDate),
@@ -507,17 +467,86 @@ export async function GET(request: NextRequest) {
 				else if (isAsset === "false") total = totalNonAssets;
 				else total = totalAssets + totalNonAssets;
 
+				// Compute per-academic-year depreciation values for assets
+				const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+
+				function computeAssetYearValues(
+					asset: (typeof assetPurchases)[number],
+				) {
+					if (!academicYear) {
+						return {
+							bookValue: asset.isTanah
+								? asset.hargaPerolehan
+								: asset.hargaPerolehan - asset.alreadyDepreciatedAmount,
+							sisaUmurTeknis: asset.isTanah
+								? null
+								: (asset.sisaUmurTeknis ??
+									asset.umurTeknis - asset.alreadyDepreciatedYears),
+							accumulatedDepreciation: asset.isTanah
+								? 0
+								: asset.alreadyDepreciatedAmount,
+							depreciatedYears: asset.isTanah
+								? 0
+								: asset.alreadyDepreciatedYears,
+						};
+					}
+
+					const yearEnd = academicYear.tanggalSelesai;
+					const purchaseDate = asset.tanggalPerolehan;
+
+					if (asset.isTanah || asset.umurTeknis === 0) {
+						return {
+							bookValue: asset.hargaPerolehan,
+							sisaUmurTeknis: null,
+							accumulatedDepreciation: 0,
+							depreciatedYears: 0,
+						};
+					}
+
+					const yearsElapsed = Math.max(
+						0,
+						Math.floor(
+							(yearEnd.getTime() - purchaseDate.getTime()) / MS_PER_YEAR,
+						),
+					);
+					const depreciatedYears = Math.min(yearsElapsed, asset.umurTeknis);
+					const annualDepreciation =
+						(asset.hargaPerolehan - asset.nilaiResidu) / asset.umurTeknis;
+					const accumulatedDepreciation =
+						depreciatedYears * annualDepreciation;
+					const bookValue = asset.hargaPerolehan - accumulatedDepreciation;
+					const sisaUmurTeknis = asset.umurTeknis - depreciatedYears;
+
+					return {
+						bookValue: Math.max(bookValue, asset.nilaiResidu),
+						sisaUmurTeknis: Math.max(sisaUmurTeknis, 0),
+						accumulatedDepreciation: Math.min(
+							accumulatedDepreciation,
+							asset.hargaPerolehan - asset.nilaiResidu,
+						),
+						depreciatedYears,
+					};
+				}
+
 				return success(
 					{
-						assets: assetPurchases.map((a) => ({
-							id: a.id,
-							nama: a.nama,
-							kategori: a.kategori,
-							jumlah: a.hargaPerolehan,
-							tanggal: a.tanggalPerolehan,
-							lokasi: a.lokasi,
-							isAsset: true,
-						})),
+						assets: assetPurchases.map((a) => {
+							const computed = computeAssetYearValues(a);
+							return {
+								id: a.id,
+								nama: a.nama,
+								kategori: a.kategori,
+								jumlah: a.hargaPerolehan,
+								tanggal: a.tanggalPerolehan,
+								lokasi: a.lokasi,
+								isAsset: true,
+								umurTeknis: a.umurTeknis,
+								nilaiResidu: a.nilaiResidu,
+								isTanah: a.isTanah,
+								status: a.status,
+								...computed,
+							};
+						}),
 						expenses: nonAssetPurchases.map((c) => ({
 							id: c.id,
 							nama: c.keterangan,
