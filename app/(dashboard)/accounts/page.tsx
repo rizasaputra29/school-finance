@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
+import { useAcademicYear } from "@/context/AcademicYearContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
 	Wallet,
 	CreditCard,
@@ -19,7 +19,19 @@ import {
 	Plus,
 	Pencil,
 	Trash2,
+	Search,
 } from "lucide-react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { FormDialog } from "@/components/reusable/FormDialog";
+import {
+	Field,
+	FieldLabel,
+	FieldDescription,
+	FieldError,
+} from "@/components/reusable/Field";
+import * as Dialog from "@radix-ui/react-dialog";
 import type { Account } from "@/types/account";
 
 const accountTypeConfig: Record<
@@ -57,160 +69,177 @@ const accountTypeConfig: Record<
 	},
 };
 
-const INITIAL_FORM = {
-	kodeAkun: "",
-	namaAkun: "",
-	tipeAkun: "Asset",
-	saldo: "",
-};
+const accountFormSchema = z.object({
+	kodeAkun: z.string().min(1, "Kode akun wajib diisi"),
+	namaAkun: z.string().min(1, "Nama akun wajib diisi"),
+	tipeAkun: z.enum(["Asset", "Liability", "Equity", "Revenue", "Expense"]),
+	saldo: z.string().optional(),
+});
+
+type AccountFormValues = z.infer<typeof accountFormSchema>;
 
 export default function AccountsPage() {
 	const { isAdmin } = useAuth();
-	const [accounts, setAccounts] = useState<Account[]>([]);
-	const [isLoading, setIsLoading] = useState(true);
+	const { selectedYear } = useAcademicYear();
+	const queryClient = useQueryClient();
+	const [searchTerm, setSearchTerm] = useState("");
 
-	// Dialog States
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
 	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 	const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-	const [formData, setFormData] = useState(INITIAL_FORM);
-	const [error, setError] = useState("");
 
-	const fetchData = async () => {
-		try {
-			const res = await fetch("/api/accounts");
+	const createForm = useForm<AccountFormValues>({
+		resolver: zodResolver(accountFormSchema),
+		defaultValues: {
+			kodeAkun: "",
+			namaAkun: "",
+			tipeAkun: "Asset",
+			saldo: "",
+		},
+		mode: "onChange",
+	});
+
+	const editForm = useForm<AccountFormValues>({
+		resolver: zodResolver(accountFormSchema),
+		defaultValues: {
+			kodeAkun: "",
+			namaAkun: "",
+			tipeAkun: "Asset",
+			saldo: "",
+		},
+		mode: "onChange",
+	});
+
+	const { data: accounts = [], isLoading } = useQuery<Account[]>({
+		queryKey: ["accounts", selectedYear?.id],
+		queryFn: async () => {
+			const params = new URLSearchParams();
+			if (selectedYear?.id) params.set("academicYearId", selectedYear.id);
+			const res = await fetch(`/api/accounts${params.toString() ? `?${params}` : ""}`);
 			const result = await res.json();
 			if (!result.success) {
-				toast.error(result.error?.message || "Gagal memuat data akun");
-				return;
+				throw new Error(result.error?.message || "Gagal memuat data akun");
 			}
-			setAccounts(result.data);
-		} catch (error) {
-			console.error("Failed to fetch accounts:", error);
-			toast.error("Terjadi kesalahan saat memuat data akun");
-		} finally {
-			setIsLoading(false);
-		}
-	};
+			return result.data.map((a: Record<string, unknown>) => ({
+				...a,
+				saldo: a.yearSaldo ?? a.saldo,
+			}));
+		},
+	});
 
-	useEffect(() => {
-		fetchData();
-	}, []);
-
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setError("");
-
-		const submitData = {
-			...formData,
-			saldo: parseFormattedNumber(String(formData.saldo)),
-		};
-
-		const promise = fetch("/api/accounts", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(submitData),
-		}).then(async (res) => {
+	const createMutation = useMutation({
+		mutationFn: async (data: AccountFormValues) => {
+			const res = await fetch("/api/accounts", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					...data,
+					saldo: parseFormattedNumber(String(data.saldo || "0")),
+				}),
+			});
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal membuat akun");
 			return result;
-		});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["accounts"] });
+			setIsCreateOpen(false);
+			createForm.reset();
+			toast.success("Akun berhasil dibuat");
+		},
+		onError: (err: Error) => {
+			toast.error(err.message);
+		},
+	});
 
-		toast.promise(promise, {
-			loading: "Menyimpan akun...",
-			success: (result) => {
-				setIsCreateOpen(false);
-				setFormData(INITIAL_FORM);
-				fetchData();
-				return `Akun ${result.data.namaAkun} berhasil dibuat`;
-			},
-			error: (err) => {
-				setError(err.message);
-				return err.message;
-			},
-		});
-	};
-
-	const handleEdit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		if (!selectedAccount) return;
-		setError("");
-
-		const submitData = {
-			...formData,
-			saldo: parseFormattedNumber(String(formData.saldo)),
-		};
-
-		const promise = fetch(`/api/accounts/${selectedAccount.id}`, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(submitData),
-		}).then(async (res) => {
+	const editMutation = useMutation({
+		mutationFn: async (data: AccountFormValues) => {
+			if (!selectedAccount) throw new Error("Akun tidak dipilih");
+			const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					...data,
+					saldo: parseFormattedNumber(String(data.saldo || "0")),
+				}),
+			});
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal mengupdate akun");
 			return result;
-		});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["accounts"] });
+			setIsEditOpen(false);
+			setSelectedAccount(null);
+			editForm.reset();
+			toast.success("Akun berhasil diupdate");
+		},
+		onError: (err: Error) => {
+			toast.error(err.message);
+		},
+	});
 
-		toast.promise(promise, {
-			loading: "Mengupdate akun...",
-			success: (result) => {
-				setIsEditOpen(false);
-				setSelectedAccount(null);
-				setFormData(INITIAL_FORM);
-				fetchData();
-				return `Akun ${result.data.namaAkun} berhasil diupdate`;
-			},
-			error: (err) => {
-				setError(err.message);
-				return err.message;
-			},
-		});
-	};
-
-	const handleDelete = async () => {
-		if (!selectedAccount) return;
-
-		const promise = fetch(`/api/accounts/${selectedAccount.id}`, {
-			method: "DELETE",
-		}).then(async (res) => {
-			// Handle 204 No Content for DELETE
-			if (res.status === 204) {
-				return { success: true, data: selectedAccount };
-			}
+	const deleteMutation = useMutation({
+		mutationFn: async () => {
+			if (!selectedAccount) throw new Error("Akun tidak dipilih");
+			const res = await fetch(`/api/accounts/${selectedAccount.id}`, {
+				method: "DELETE",
+			});
+			if (res.status === 204) return { success: true };
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal menghapus akun");
 			return result;
-		});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["accounts"] });
+			setIsDeleteOpen(false);
+			setSelectedAccount(null);
+			toast.success("Akun berhasil dihapus");
+		},
+		onError: (err: Error) => {
+			toast.error(err.message);
+		},
+	});
 
-		toast.promise(promise, {
-			loading: "Menghapus akun...",
-			success: (result) => {
-				setIsDeleteOpen(false);
-				setSelectedAccount(null);
-				fetchData();
-				return `Akun ${result.data?.namaAkun || selectedAccount.namaAkun} berhasil dihapus`;
-			},
-			error: (err) => err.message,
-		});
+	const handleCreate = createForm.handleSubmit((data) => {
+		createMutation.mutate(data);
+	});
+
+	const handleEdit = editForm.handleSubmit((data) => {
+		editMutation.mutate(data);
+	});
+
+	const handleDelete = () => {
+		if (!selectedAccount) return;
+		deleteMutation.mutate();
 	};
 
 	const openEditDialog = (acc: Account) => {
 		setSelectedAccount(acc);
-		setFormData({
+		editForm.reset({
 			kodeAkun: acc.kodeAkun,
 			namaAkun: acc.namaAkun,
-			tipeAkun: acc.tipeAkun,
+			tipeAkun: acc.tipeAkun as AccountFormValues["tipeAkun"],
 			saldo: formatNumberInput(acc.saldo),
 		});
 		setIsEditOpen(true);
 	};
 
-	// Group accounts by type
-	const groupedAccounts = accounts.reduce(
+	const filteredAccounts = useMemo(() => {
+		if (!searchTerm.trim()) return accounts;
+		const term = searchTerm.toLowerCase();
+		return accounts.filter(
+			(a) =>
+				a.kodeAkun.toLowerCase().includes(term) ||
+				a.namaAkun.toLowerCase().includes(term),
+		);
+	}, [accounts, searchTerm]);
+
+	const groupedAccounts = filteredAccounts.reduce(
 		(acc, account) => {
 			if (!acc[account.tipeAkun]) {
 				acc[account.tipeAkun] = [];
@@ -223,97 +252,114 @@ export default function AccountsPage() {
 
 	const accountTypes = ["Asset", "Liability", "Equity", "Revenue", "Expense"];
 
-	const renderForm = (
-		onSubmit: (e: React.FormEvent) => Promise<void>,
+	const renderAccountForm = (
+		form: typeof createForm,
+		onSubmit: (e: React.BaseSyntheticEvent) => Promise<void>,
 		submitLabel: string,
 		isEdit = false,
 	) => (
-		<form onSubmit={onSubmit} className="mt-6 space-y-4">
-			{error && (
-				<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-					{error}
-				</div>
-			)}
+		<form onSubmit={onSubmit} className="space-y-4">
+			<Controller
+				control={form.control}
+				name="kodeAkun"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={!!fieldState.error}>
+						<FieldLabel htmlFor="kodeAkun">Kode Akun</FieldLabel>
+						<Input
+							{...field}
+							id="kodeAkun"
+							placeholder="Contoh: 101"
+							disabled={isEdit}
+							aria-invalid={!!fieldState.error}
+						/>
+						<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+					</Field>
+				)}
+			/>
 
-			<div className="space-y-2">
-				<Label htmlFor="kodeAkun">Kode Akun</Label>
-				<Input
-					id="kodeAkun"
-					value={formData.kodeAkun}
-					onChange={(e) =>
-						setFormData({ ...formData, kodeAkun: e.target.value })
-					}
-					placeholder="Contoh: 101"
-					required
-					disabled={isEdit} // Kode akun shouldn't ideally be changed easily as it breaks relations
-				/>
-			</div>
+			<Controller
+				control={form.control}
+				name="namaAkun"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={!!fieldState.error}>
+						<FieldLabel htmlFor="namaAkun">Nama Akun</FieldLabel>
+						<Input
+							{...field}
+							id="namaAkun"
+							placeholder="Contoh: Kas Utama"
+							aria-invalid={!!fieldState.error}
+						/>
+						<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+					</Field>
+				)}
+			/>
 
-			<div className="space-y-2">
-				<Label htmlFor="namaAkun">Nama Akun</Label>
-				<Input
-					id="namaAkun"
-					value={formData.namaAkun}
-					onChange={(e) =>
-						setFormData({ ...formData, namaAkun: e.target.value })
-					}
-					placeholder="Contoh: Kas Utama"
-					required
-				/>
-			</div>
+			<Controller
+				control={form.control}
+				name="tipeAkun"
+				render={({ field, fieldState }) => (
+					<Field data-invalid={!!fieldState.error}>
+						<FieldLabel htmlFor="tipeAkun">Tipe Akun</FieldLabel>
+						<select
+							{...field}
+							id="tipeAkun"
+							className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+						>
+							{accountTypes.map((type) => (
+								<option key={type} value={type}>
+									{accountTypeConfig[type]?.label || type}
+								</option>
+							))}
+						</select>
+						<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+					</Field>
+				)}
+			/>
 
-			<div className="space-y-2">
-				<Label htmlFor="tipeAkun">Tipe Akun</Label>
-				<select
-					id="tipeAkun"
-					value={formData.tipeAkun}
-					onChange={(e) =>
-						setFormData({ ...formData, tipeAkun: e.target.value })
-					}
-					className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-					required
-				>
-					{accountTypes.map((type) => (
-						<option key={type} value={type}>
-							{accountTypeConfig[type]?.label || type}
-						</option>
-					))}
-				</select>
-			</div>
-
-			<div className="space-y-2">
-				<Label htmlFor="saldo">Saldo Awal / Saat Ini</Label>
-				<div className="relative">
-					<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-						Rp
-					</span>
-					<Input
-						id="saldo"
-						value={formData.saldo}
-						onChange={(e) =>
-							setFormData({
-								...formData,
-								saldo: formatNumberInput(e.target.value),
-							})
-						}
-						placeholder="0"
-						className="pl-10"
-					/>
-				</div>
-				<p className="text-xs text-slate-500">
-					{isEdit
-						? "Mengubah saldo secara langsung akan mempengaruhi balance sheet."
-						: "Saldo awal akun."}
-				</p>
-			</div>
+			<Controller
+				control={form.control}
+				name="saldo"
+				render={({ field }) => (
+					<Field>
+						<FieldLabel htmlFor="saldo">Saldo Awal / Saat Ini</FieldLabel>
+						<div className="relative">
+							<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+								Rp
+							</span>
+							<Input
+								{...field}
+								id="saldo"
+								value={field.value || ""}
+								onChange={(e) =>
+									field.onChange(formatNumberInput(e.target.value))
+								}
+								placeholder="0"
+								className="pl-10"
+							/>
+						</div>
+						<FieldDescription>
+							{isEdit
+								? "Mengubah saldo secara langsung akan mempengaruhi balance sheet."
+								: "Saldo awal akun."}
+						</FieldDescription>
+					</Field>
+				)}
+			/>
 
 			<div className="flex justify-end gap-3 pt-4">
-				<Dialog.Close asChild>
-					<Button type="button" variant="outline">
-						Batal
-					</Button>
-				</Dialog.Close>
-				<Button type="submit">{submitLabel}</Button>
+				<Button
+					type="button"
+					variant="outline"
+					onClick={() => {
+						if (isEdit) setIsEditOpen(false);
+						else setIsCreateOpen(false);
+					}}
+				>
+					Batal
+				</Button>
+				<Button type="submit" disabled={form.formState.isSubmitting}>
+					{form.formState.isSubmitting ? "Menyimpan..." : submitLabel}
+				</Button>
 			</div>
 		</form>
 	);
@@ -339,37 +385,42 @@ export default function AccountsPage() {
 					</h1>
 					<p className="text-xs md:text-sm text-gray-500">
 						Bagan akun untuk laporan keuangan
+						{selectedYear && (
+							<span className="ml-2 text-[#059DEA] font-medium">
+								• {selectedYear.tahunAjaran}
+							</span>
+						)}
 					</p>
 				</div>
 
 				{isAdmin && (
-					<Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-						<Dialog.Trigger asChild>
-							<Button
-								onClick={() => {
-									setFormData(INITIAL_FORM);
-									setError("");
-								}}
-								size="sm"
-								className="text-xs md:text-sm"
-							>
-								<Plus className="h-4 w-4 md:mr-2" />
-								<span className="hidden md:inline">Tambah Akun</span>
-								<span className="md:hidden">Tambah</span>
-							</Button>
-						</Dialog.Trigger>
-						<Dialog.Portal>
-							<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-							<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl border border-slate-200">
-								<Dialog.Title className="text-lg font-semibold text-slate-900">
-									Tambah Akun Baru
-								</Dialog.Title>
-								{renderForm(handleSubmit, "Simpan")}
-							</Dialog.Content>
-						</Dialog.Portal>
-					</Dialog.Root>
+					<Button
+						onClick={() => {
+							createForm.reset();
+							setIsCreateOpen(true);
+						}}
+						size="sm"
+						className="text-xs md:text-sm"
+					>
+						<Plus className="h-4 w-4 md:mr-2" />
+						<span className="hidden md:inline">Tambah Akun</span>
+						<span className="md:hidden">Tambah</span>
+					</Button>
 				)}
 			</div>
+
+			{/* Search */}
+			{accounts.length > 0 && (
+				<div className="relative max-w-sm">
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+					<Input
+						placeholder="Cari kode atau nama akun..."
+						value={searchTerm}
+						onChange={(e) => setSearchTerm(e.target.value)}
+						className="pl-9"
+					/>
+				</div>
+			)}
 
 			{/* Account Groups */}
 			{accountTypes.map((type) => {
@@ -470,18 +521,33 @@ export default function AccountsPage() {
 				</Card>
 			)}
 
+			{accounts.length > 0 && filteredAccounts.length === 0 && (
+				<Card>
+					<CardContent className="flex h-48 items-center justify-center text-slate-400">
+						Tidak ada akun yang cocok dengan pencarian
+					</CardContent>
+				</Card>
+			)}
+
+			{/* Create Dialog */}
+			<FormDialog
+				title="Tambah Akun Baru"
+				open={isCreateOpen}
+				onOpenChange={setIsCreateOpen}
+				form={createForm}
+			>
+				{renderAccountForm(createForm, handleCreate, "Simpan")}
+			</FormDialog>
+
 			{/* Edit Dialog */}
-			<Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
-				<Dialog.Portal>
-					<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-					<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
-						<Dialog.Title className="text-lg font-semibold text-slate-900">
-							Edit Akun
-						</Dialog.Title>
-						{renderForm(handleEdit, "Update", true)}
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+			<FormDialog
+				title="Edit Akun"
+				open={isEditOpen}
+				onOpenChange={setIsEditOpen}
+				form={editForm}
+			>
+				{renderAccountForm(editForm, handleEdit, "Update", true)}
+			</FormDialog>
 
 			{/* Delete Dialog */}
 			<Dialog.Root open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>

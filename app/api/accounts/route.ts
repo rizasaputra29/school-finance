@@ -42,7 +42,7 @@ async function validateBankAccount(
 ): Promise<{ valid: boolean; error?: string }> {
 	// Check if this is a Bank account (kode 1110 or 102, or kategori = 'Bank')
 	const isBankAccount =
-		kodeAkun === "1110" ||
+		kodeAkun === "102" ||
 		kodeAkun === "102" ||
 		kategori === "Bank" ||
 		kodeAkun.startsWith("111") ||
@@ -52,7 +52,7 @@ async function validateBankAccount(
 		// Check if a bank account already exists
 		const existingBank = await prisma.account.findFirst({
 			where: {
-				OR: [{ kodeAkun: "1110" }, { kodeAkun: "102" }],
+				OR: [{ kodeAkun: "102" }],
 			},
 		});
 
@@ -70,11 +70,103 @@ async function validateBankAccount(
 export async function GET(request: NextRequest) {
 	return withAuthAppRouter(request, async () => {
 		try {
-			// Use direct query to bypass cache for accurate data
+			const { searchParams } = new URL(request.url);
+			const academicYearId = searchParams.get("academicYearId");
+			const tipeAkunParam = searchParams.get("tipeAkun");
+
+			const where: Record<string, unknown> = {};
+			if (tipeAkunParam) {
+				const tipeAkunList = tipeAkunParam
+					.split(",")
+					.map((t) => t.trim())
+					.filter((t) =>
+						["Asset", "Liability", "Equity", "Revenue", "Expense"].includes(t),
+					);
+				if (tipeAkunList.length > 0) {
+					where.tipeAkun = { in: tipeAkunList };
+				}
+			}
+
 			const accounts = await prisma.account.findMany({
+				where,
 				orderBy: [{ tipeAkun: "asc" }, { kodeAkun: "asc" }],
 			});
-			return success(accounts, {
+
+			if (!academicYearId) {
+				return success(accounts, {
+					message: "Accounts retrieved successfully",
+				});
+			}
+
+			const academicYear = await prisma.academicYear.findUnique({
+				where: { id: academicYearId },
+			});
+			if (!academicYear) {
+				return errors.notFound("Tahun ajaran tidak ditemukan");
+			}
+
+			const existingBalances = await prisma.accountBalance.findMany({
+				where: { academicYearId },
+			});
+			const balanceMap = new Map(
+				existingBalances.map((b) => [b.kodeAkun, b.saldo]),
+			);
+
+			const accountsWithYearSaldo = await Promise.all(
+				accounts.map(async (account) => {
+					let yearSaldo: number;
+
+					if (balanceMap.has(account.kodeAkun)) {
+						yearSaldo = balanceMap.get(account.kodeAkun)!;
+					} else {
+								const isCarryForwardAccount = ["Asset", "Liability", "Equity"].includes(
+									account.tipeAkun,
+								);
+
+								const lines = await prisma.journalEntryLine.aggregate({
+									where: {
+										kodeAkun: account.kodeAkun,
+										journalEntry: {
+											tanggal: isCarryForwardAccount
+												? { lte: academicYear.tanggalSelesai }
+												: {
+														gte: academicYear.tanggalMulai,
+														lte: academicYear.tanggalSelesai,
+													},
+											status: "posted",
+										},
+									},
+									_sum: { debit: true, kredit: true },
+								});
+
+						const totalDebit = lines._sum.debit ?? 0;
+						const totalKredit = lines._sum.kredit ?? 0;
+
+						const isDebitNormal = ["Asset", "Expense"].includes(
+							account.tipeAkun,
+						);
+						yearSaldo = isDebitNormal
+							? totalDebit - totalKredit
+							: totalKredit - totalDebit;
+
+						await prisma.accountBalance
+							.create({
+								data: {
+									kodeAkun: account.kodeAkun,
+									academicYearId,
+									saldo: yearSaldo,
+								},
+							})
+							.catch(() => {
+								/* ignore duplicate key race condition */
+							});
+					}
+
+					return { ...account, yearSaldo };
+				}),
+			);
+
+			return success(accountsWithYearSaldo, {
 				message: "Accounts retrieved successfully",
 			});
 		} catch (error) {

@@ -36,11 +36,17 @@ export async function PATCH(
 					where: { OR: [{ id }, { kodeAkun: id }] },
 				});
 
-				if (existingAccount?.isSystem) {
-					return errors.forbidden(
-						`Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`,
-					);
-				}
+			if (existingAccount?.isSystem) {
+				return errors.forbidden(
+					`Akun ${existingAccount.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat mengubah akun ini.`,
+				);
+			}
+
+			if (existingAccount?.isSystemProtected) {
+				return errors.forbidden(
+					`Akun ${existingAccount.kodeAkun} adalah akun yang dilindungi. Tidak dapat mengubah akun ini.`,
+				);
+			}
 
 				// Check for idempotency key in headers (for PATCH)
 				const headers: Record<string, string | string[] | undefined> = {};
@@ -126,16 +132,43 @@ export async function DELETE(
 			try {
 				const { id } = await params;
 
-				// Task 32: System Account Protection - check isSystem before delete
-				const accountToDelete = await prisma.account.findFirst({
-					where: { OR: [{ id }, { kodeAkun: id }] },
-				});
+			// Task 32: System Account Protection - check isSystem before delete
+			const accountToDelete = await prisma.account.findFirst({
+				where: { OR: [{ id }, { kodeAkun: id }] },
+				include: {
+					_count: {
+						select: {
+							journalEntryLines: true,
+							cashflows: true,
+						},
+					},
+				},
+			});
 
-				if (accountToDelete?.isSystem) {
-					return errors.forbidden(
-						`Akun ${accountToDelete.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat menghapus akun ini.`,
-					);
-				}
+			if (accountToDelete?.isSystem) {
+				return errors.forbidden(
+					`Akun ${accountToDelete.kodeAkun} adalah akun sistem yang dilindungi. Tidak dapat menghapus akun ini.`,
+				);
+			}
+
+			if (accountToDelete?.isSystemProtected) {
+				return errors.forbidden(
+					`Akun ${accountToDelete.kodeAkun} adalah akun yang dilindungi. Tidak dapat menghapus akun ini.`,
+				);
+			}
+
+			// Check if account has journal entries or cashflow records
+			if (accountToDelete && accountToDelete._count.journalEntryLines > 0) {
+				return errors.forbidden(
+					`Akun ${accountToDelete.kodeAkun} memiliki ${accountToDelete._count.journalEntryLines} entri jurnal. Tidak dapat menghapus akun yang sudah memiliki transaksi.`,
+				);
+			}
+
+			if (accountToDelete && accountToDelete._count.cashflows > 0) {
+				return errors.forbidden(
+					`Akun ${accountToDelete.kodeAkun} memiliki ${accountToDelete._count.cashflows} catatan kas. Tidak dapat menghapus akun yang sudah memiliki transaksi.`,
+				);
+			}
 
 				// Check for idempotency
 				const deleteHeaders: Record<string, string | string[] | undefined> = {};

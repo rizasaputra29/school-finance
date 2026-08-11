@@ -33,6 +33,7 @@ const updateAcademicYearSchema = z.object({
 		.transform((val) => new Date(val))
 		.optional(),
 	isActive: z.boolean().optional(),
+	isArchived: z.boolean().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -88,104 +89,179 @@ export async function POST(request: NextRequest) {
 					return errors.badRequest("Tahun ajaran sudah diarsipkan");
 				}
 
-				// Generate closing entries
-				const revenueAccounts = await prisma.account.findMany({
-					where: { tipeAkun: "Revenue" },
-				});
-				const expenseAccounts = await prisma.account.findMany({
-					where: { tipeAkun: "Expense" },
-				});
-
-				let saldoBerjalanAccount = await prisma.account.findFirst({
-					where: { kodeAkun: "3-000" },
-				});
-
-				if (!saldoBerjalanAccount) {
-					saldoBerjalanAccount = await prisma.account.create({
-						data: {
-							kodeAkun: "3-000",
-							namaAkun: "Saldo Berjalan",
-							tipeAkun: "Equity",
-							saldo: 0,
-						},
+				// Generate closing entries inside transaction
+				const closedYear = await prisma.$transaction(async (tx) => {
+					const revenueAccounts = await tx.account.findMany({
+						where: { tipeAkun: "Revenue" },
 					});
-				}
+					const expenseAccounts = await tx.account.findMany({
+						where: { tipeAkun: "Expense" },
+					});
 
-				const closingDate = academicYear.tanggalSelesai;
+					let saldoBerjalanAccount = await tx.account.findFirst({
+						where: { kodeAkun: "3-000" },
+					});
 
-				// Close Revenue accounts
-				for (const revenueAccount of revenueAccounts) {
-					if (revenueAccount.saldo > 0) {
-						const entry = await prisma.journalEntry.create({
+					if (!saldoBerjalanAccount) {
+						saldoBerjalanAccount = await tx.account.create({
+							data: {
+								kodeAkun: "3-000",
+								namaAkun: "Saldo Berjalan",
+								tipeAkun: "Equity",
+								saldo: 0,
+							},
+						});
+					}
+
+					const closingDate = academicYear.tanggalSelesai;
+
+					// Close Revenue accounts
+					for (const revenueAccount of revenueAccounts) {
+						if (revenueAccount.saldo !== 0) {
+							const amount = Math.abs(revenueAccount.saldo);
+							const entry = await tx.journalEntry.create({
+								data: {
+									tanggal: closingDate,
+									keterangan: `Penutupan Pendapatan - ${revenueAccount.namaAkun}`,
+									reference: `closing:${id}`,
+								},
+							});
+
+							await tx.journalEntryLine.createMany({
+								data: [
+									{
+										journalEntryId: entry.id,
+										kodeAkun: revenueAccount.kodeAkun,
+										debit: amount,
+										kredit: 0,
+									},
+									{
+										journalEntryId: entry.id,
+										kodeAkun: saldoBerjalanAccount.kodeAkun,
+										debit: 0,
+										kredit: amount,
+									},
+								],
+							});
+
+							await tx.account.update({
+								where: { id: revenueAccount.id },
+								data: { saldo: 0 },
+							});
+						}
+					}
+
+					// Close Expense accounts
+					for (const expenseAccount of expenseAccounts) {
+						if (expenseAccount.saldo !== 0) {
+							const amount = Math.abs(expenseAccount.saldo);
+							const entry = await tx.journalEntry.create({
+								data: {
+									tanggal: closingDate,
+									keterangan: `Penutupan Beban - ${expenseAccount.namaAkun}`,
+									reference: `closing:${id}`,
+								},
+							});
+
+							await tx.journalEntryLine.createMany({
+								data: [
+									{
+										journalEntryId: entry.id,
+										kodeAkun: saldoBerjalanAccount.kodeAkun,
+										debit: amount,
+										kredit: 0,
+									},
+									{
+										journalEntryId: entry.id,
+										kodeAkun: expenseAccount.kodeAkun,
+										debit: 0,
+										kredit: amount,
+									},
+								],
+							});
+
+							await tx.account.update({
+								where: { id: expenseAccount.id },
+								data: { saldo: 0 },
+							});
+						}
+					}
+
+					// Transfer 3-000 net balance to 302 Laba Rugi Periode Sebelumnya
+					const saldoBerjalanFinal = await tx.account.findUnique({
+						where: { kodeAkun: "3-000" },
+					});
+
+					if (saldoBerjalanFinal && saldoBerjalanFinal.saldo !== 0) {
+						const netAmount = Math.abs(saldoBerjalanFinal.saldo);
+						const isProfit = saldoBerjalanFinal.saldo > 0;
+
+						let account302 = await tx.account.findFirst({
+							where: { kodeAkun: "302" },
+						});
+
+						if (!account302) {
+							account302 = await tx.account.create({
+								data: {
+									kodeAkun: "302",
+									namaAkun: "Laba (Rugi) Periode Sebelumnya",
+									tipeAkun: "Equity",
+									saldo: 0,
+								},
+							});
+						}
+
+						const transferEntry = await tx.journalEntry.create({
 							data: {
 								tanggal: closingDate,
-								keterangan: `Penutupan Pendapatan - ${revenueAccount.namaAkun}`,
+								keterangan: `Transfer ${isProfit ? "Laba" : "Rugi"} ke Laba Rugi Periode Sebelumnya`,
 								reference: `closing:${id}`,
 							},
 						});
 
-						await prisma.journalEntryLine.createMany({
-							data: [
-								{
-									journalEntryId: entry.id,
-									kodeAkun: revenueAccount.kodeAkun,
-									debit: revenueAccount.saldo,
-									kredit: 0,
-								},
-								{
-									journalEntryId: entry.id,
-									kodeAkun: saldoBerjalanAccount.kodeAkun,
-									debit: 0,
-									kredit: revenueAccount.saldo,
-								},
-							],
-						});
+						if (isProfit) {
+							await tx.journalEntryLine.createMany({
+								data: [
+									{ journalEntryId: transferEntry.id, kodeAkun: "3-000", debit: netAmount, kredit: 0 },
+									{ journalEntryId: transferEntry.id, kodeAkun: "302", debit: 0, kredit: netAmount },
+								],
+							});
+						} else {
+							await tx.journalEntryLine.createMany({
+								data: [
+									{ journalEntryId: transferEntry.id, kodeAkun: "302", debit: netAmount, kredit: 0 },
+									{ journalEntryId: transferEntry.id, kodeAkun: "3-000", debit: 0, kredit: netAmount },
+								],
+							});
+						}
 
-						await prisma.account.update({
-							where: { id: revenueAccount.id },
+						// Update account balances
+						await tx.account.update({
+							where: { kodeAkun: "3-000" },
 							data: { saldo: 0 },
 						});
-					}
-				}
-
-				// Close Expense accounts
-				for (const expenseAccount of expenseAccounts) {
-					if (expenseAccount.saldo > 0) {
-						const entry = await prisma.journalEntry.create({
-							data: {
-								tanggal: closingDate,
-								keterangan: `Penutupan Beban - ${expenseAccount.namaAkun}`,
-								reference: `closing:${id}`,
-							},
+						await tx.account.update({
+							where: { kodeAkun: "302" },
+							data: { saldo: { increment: isProfit ? netAmount : -netAmount } },
 						});
 
-						await prisma.journalEntryLine.createMany({
-							data: [
-								{
-									journalEntryId: entry.id,
-									kodeAkun: saldoBerjalanAccount.kodeAkun,
-									debit: expenseAccount.saldo,
-									kredit: 0,
-								},
-								{
-									journalEntryId: entry.id,
-									kodeAkun: expenseAccount.kodeAkun,
-									debit: 0,
-									kredit: expenseAccount.saldo,
-								},
-							],
+						// Upsert AccountBalance snapshots for closing year
+						await tx.accountBalance.upsert({
+							where: { kodeAkun_academicYearId: { kodeAkun: "302", academicYearId: id } },
+							update: { saldo: isProfit ? netAmount : -netAmount },
+							create: { kodeAkun: "302", academicYearId: id, saldo: isProfit ? netAmount : -netAmount },
 						});
-
-						await prisma.account.update({
-							where: { id: expenseAccount.id },
-							data: { saldo: 0 },
+						await tx.accountBalance.upsert({
+							where: { kodeAkun_academicYearId: { kodeAkun: "3-000", academicYearId: id } },
+							update: { saldo: 0 },
+							create: { kodeAkun: "3-000", academicYearId: id, saldo: 0 },
 						});
 					}
-				}
 
-				const closedYear = await prisma.academicYear.update({
-					where: { id },
-					data: { isActive: false, isArchived: true },
+					return tx.academicYear.update({
+						where: { id },
+						data: { isActive: false, isArchived: true },
+					});
 				});
 
 				return success(closedYear, {
@@ -223,17 +299,31 @@ export async function POST(request: NextRequest) {
 				return errors.conflict("Tahun ajaran sudah ada");
 			}
 
+			// Validate date overlap with existing academic years
+			const overlappingYear = await prisma.academicYear.findFirst({
+				where: {
+					isArchived: false,
+					OR: [
+						{
+							tanggalMulai: { lte: tanggalSelesai },
+							tanggalSelesai: { gte: tanggalMulai },
+						},
+					],
+				},
+			});
+
+			if (overlappingYear) {
+				return errors.conflict(
+					`Tanggal tumpang tindih dengan tahun ajaran ${overlappingYear.tahunAjaran} (${overlappingYear.tanggalMulai.toLocaleDateString("id-ID")} - ${overlappingYear.tanggalSelesai.toLocaleDateString("id-ID")})`,
+				);
+			}
+
 			const currentActiveYear = await prisma.academicYear.findFirst({
 				where: { isActive: true },
 			});
 
 			const result = await prisma.$transaction(async (tx) => {
 				if (currentActiveYear) {
-					await tx.student.updateMany({
-						where: { status: "Active" },
-						data: { status: "Archived" },
-					});
-
 					await tx.academicYear.update({
 						where: { id: currentActiveYear.id },
 						data: { isActive: false, isArchived: true },
@@ -322,6 +412,25 @@ export async function DELETE(request: NextRequest) {
 				return errors.validation([
 					{ field: "id", message: "ID tahun ajaran wajib diisi" },
 				]);
+			}
+
+			const academicYear = await prisma.academicYear.findUnique({
+				where: { id },
+				include: {
+					_count: {
+						select: { billings: true },
+					},
+				},
+			});
+
+			if (!academicYear) {
+				return errors.notFound("Tahun ajaran");
+			}
+
+			if (academicYear._count.billings > 0) {
+				return errors.badRequest(
+					`Tahun ajaran ${academicYear.tahunAjaran} tidak dapat diarsipkan karena masih memiliki ${academicYear._count.billings} tagihan terkait. Hapus atau pindahkan tagihan terlebih dahulu.`,
+				);
 			}
 
 			const archivedYear = await prisma.academicYear.update({

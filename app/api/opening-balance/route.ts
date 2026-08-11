@@ -42,7 +42,7 @@ const createOpeningBalanceSchema = z.object({
 	entries: z
 		.array(openingBalanceEntrySchema)
 		.min(1, "Minimal harus ada 1 entri aset"),
-	periode: z.string().optional(), // Format: YYYY-MM or YYYY (year)
+	academicYearId: z.string().optional(),
 });
 
 // ============================================================================
@@ -195,22 +195,24 @@ export async function GET(request: NextRequest) {
 		async () => {
 			try {
 				const { searchParams } = new URL(request.url);
-				const periode = searchParams.get("periode");
+				const academicYearId = searchParams.get("academicYearId");
 
 				const where: Record<string, unknown> = {
 					reference: { startsWith: OPENING_BALANCE_REFERENCE_PREFIX },
 				};
 
-				if (periode) {
-					// Filter by period
-					const startDate = new Date(`${periode}-01`);
-					const endDate = new Date(periode);
-					endDate.setMonth(endDate.getMonth() + 1);
+				if (academicYearId) {
+					// Look up AcademicYear to get date range
+					const academicYear = await prisma.academicYear.findUnique({
+						where: { id: academicYearId },
+					});
 
-					where.tanggal = {
-						gte: startDate,
-						lt: endDate,
-					};
+					if (academicYear) {
+						where.tanggal = {
+							gte: academicYear.tanggalMulai,
+							lt: academicYear.tanggalSelesai,
+						};
+					}
 				}
 
 				const openingBalances = await prisma.journalEntry.findMany({
@@ -258,12 +260,20 @@ export async function POST(request: NextRequest) {
 					);
 				}
 
-				const { tanggal, entries, periode: requestedPeriode } = validation.data;
+				const { tanggal, entries, academicYearId } = validation.data;
 
-				// Determine the period
+				// Determine the period from academic year or date
 				const transactionDate = new Date(tanggal);
-				const transactionPeriode =
-					requestedPeriode || formatPeriode(transactionDate);
+				let transactionPeriode = formatPeriode(transactionDate);
+
+				if (academicYearId) {
+					const academicYear = await prisma.academicYear.findUnique({
+						where: { id: academicYearId },
+					});
+					if (academicYear) {
+						transactionPeriode = academicYear.tahunAjaran;
+					}
+				}
 
 				// Validate entries
 				const entryValidation = validateOpeningBalanceEntries(entries);
@@ -371,32 +381,7 @@ export async function POST(request: NextRequest) {
 						},
 					});
 
-					// Update account balances in parallel - Debit asset accounts
-					const accountUpdates = entries
-						.filter((entry) => entry.debit > 0)
-						.map((entry) =>
-							tx.account.update({
-								where: { kodeAkun: entry.kodeAkun },
-								data: {
-									saldo: { increment: roundAmount(entry.debit) },
-								},
-							}),
-						);
-
-					// Add Ekuitas Saldo Awal update
-					accountUpdates.push(
-						tx.account.update({
-							where: { kodeAkun: EQUITAS_SALDO_AWAL_ACCOUNT },
-							data: {
-								saldo: { increment: roundAmount(totalDebit) },
-							},
-						}),
-					);
-
-					await Promise.all(accountUpdates);
-
 					// Create cashflow records using createMany for better performance
-					const periode = formatPeriode(transactionDate);
 					const cashflowData: Prisma.CashflowCreateManyInput[] = entries
 						.filter((entry) => entry.debit > 0 || entry.kredit > 0)
 						.map((entry) => ({
@@ -408,7 +393,6 @@ export async function POST(request: NextRequest) {
 							kredit: roundAmount(entry.kredit),
 							source: "kas",
 							status: "posted",
-							periode,
 							version: 1,
 						}));
 
@@ -422,7 +406,6 @@ export async function POST(request: NextRequest) {
 						kredit: roundAmount(totalDebit),
 						source: "kas",
 						status: "posted",
-						periode,
 						version: 1,
 					});
 
