@@ -20,6 +20,9 @@ interface BillingRecord extends BaseBillingRecord {
 		nama: string;
 		kelas: string;
 	};
+	academicYear?: {
+		tahunAjaran: string;
+	} | null;
 }
 
 // Proper type for jsPDF with autotable plugin
@@ -35,14 +38,10 @@ function getLastAutoTableFinalY(doc: jsPDF): number {
 	return typedDoc.lastAutoTable?.finalY ?? 0;
 }
 
-// Helper to get period string
-function getPeriodString(periodeBulan?: string): string {
-	if (!periodeBulan) return "";
-	if (periodeBulan.includes("-")) {
-		const [start, end] = periodeBulan.split("-");
-		return `Periode: ${start} - ${end}`;
-	}
-	return `Periode: ${periodeBulan}`;
+// Helper to get period string from academic year
+function getPeriodString(tahunAjaran?: string): string {
+	if (!tahunAjaran) return "";
+	return `Tahun Ajaran: ${tahunAjaran}`;
 }
 
 // Export to PDF
@@ -55,12 +54,12 @@ async function exportToPDF(
 		countLunas: number;
 		countBelumLunas: number;
 	},
-	periodeBulan?: string,
+	tahunAjaran?: string,
 ): Promise<Buffer> {
 	const doc = new jsPDF();
 	const pageWidth = doc.internal.pageSize.getWidth();
 	const currentDate = formatDateFull(new Date());
-	const periodStr = getPeriodString(periodeBulan);
+	const periodStr = getPeriodString(tahunAjaran);
 
 	// Helper function to add header
 	const addHeader = (title: string, startY: number = 15): number => {
@@ -156,7 +155,7 @@ async function exportToPDF(
 			b.student.nama,
 			b.student.kelas,
 			b.jenisBiaya,
-			b.periodeBulan,
+			b.academicYear?.tahunAjaran || "",
 			formatRupiah(b.jumlah),
 			b.statusBayar,
 		]),
@@ -240,9 +239,9 @@ async function exportToExcel(
 		countLunas: number;
 		countBelumLunas: number;
 	},
-	periodeBulan?: string,
+	tahunAjaran?: string,
 ): Promise<Buffer> {
-	const periodStr = getPeriodString(periodeBulan);
+	const periodStr = getPeriodString(tahunAjaran);
 	const currentDate = formatDateFull(new Date());
 
 	const workbook = XLSX.utils.book_new();
@@ -269,7 +268,7 @@ async function exportToExcel(
 			b.student.nama,
 			b.student.kelas,
 			b.jenisBiaya,
-			b.periodeBulan,
+			b.academicYear?.tahunAjaran || "",
 			b.jumlah,
 			b.statusBayar,
 		]),
@@ -330,7 +329,7 @@ export async function GET(request: NextRequest) {
 		async () => {
 			try {
 				const query = getQueryParams(request);
-				const { format, periodeBulan, statusBayar, studentId, search } = query;
+				const { format, statusBayar, studentId, search } = query;
 
 				if (!format || !["pdf", "excel"].includes(format)) {
 					return errors.validation([
@@ -340,7 +339,6 @@ export async function GET(request: NextRequest) {
 
 				// Build where clause
 				const where: Record<string, unknown> = {};
-				if (periodeBulan) where.periodeBulan = periodeBulan;
 				if (statusBayar) where.statusBayar = statusBayar;
 				if (studentId) where.studentId = studentId;
 				if (search) {
@@ -363,8 +361,13 @@ export async function GET(request: NextRequest) {
 								kelas: true,
 							},
 						},
+						academicYear: {
+							select: {
+								tahunAjaran: true,
+							},
+						},
 					},
-					orderBy: [{ periodeBulan: "desc" }, { createdAt: "desc" }],
+					orderBy: [{ createdAt: "desc" }],
 				})) as BillingRecord[];
 
 				// Calculate summary
@@ -392,11 +395,11 @@ export async function GET(request: NextRequest) {
 				let filename: string;
 
 				if (format === "pdf") {
-					buffer = await exportToPDF(billings, summary, periodeBulan);
+					buffer = await exportToPDF(billings, summary);
 					contentType = "application/pdf";
 					filename = `billing-${new Date().toISOString().split("T")[0]}.pdf`;
 				} else {
-					buffer = await exportToExcel(billings, summary, periodeBulan);
+					buffer = await exportToExcel(billings, summary);
 					contentType =
 						"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 					filename = `billing-${new Date().toISOString().split("T")[0]}.xlsx`;

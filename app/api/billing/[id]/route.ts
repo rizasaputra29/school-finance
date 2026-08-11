@@ -8,6 +8,10 @@ import {
 } from "@/lib/utils/utils-idempotency";
 import { success, errors, noContent, error } from "@/lib/api/api-response";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
+import {
+	getCashAccountCode,
+	postBillingPaymentToJournal,
+} from "@/lib/services/billing";
 
 function getIdempotencyKeyFromNextRequest(req: NextRequest): string | null {
 	const header = req.headers.get("x-idempotency-key");
@@ -62,7 +66,7 @@ export async function PATCH(
 	request: NextRequest,
 	{ params }: { params: Promise<{ id: string }> },
 ) {
-	return withAuthAppRouter(request, async () => {
+	return withAuthAppRouter(request, async (user) => {
 		const { id } = await params;
 
 		if (!id) {
@@ -74,7 +78,6 @@ export async function PATCH(
 			]);
 		}
 
-		// Check for idempotency key in headers
 		const idempotencyKey = getIdempotencyKeyFromNextRequest(request);
 		if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
 			const cachedResult = getIdempotencyResult(idempotencyKey);
@@ -86,13 +89,13 @@ export async function PATCH(
 		}
 
 		const body = await request.json();
-		const { statusBayar, jumlah, catatan } = body;
+		const { statusBayar, jumlah, catatan, source } = body;
+		const paymentSource: "kas" | "bank" = source || "kas";
 
 		try {
-			// Get current billing for comparison
 			const currentBilling = await prisma.billing.findUnique({
 				where: { id },
-				include: { student: true },
+				include: { student: true, academicYear: true },
 			});
 
 			if (!currentBilling) {
@@ -103,109 +106,110 @@ export async function PATCH(
 			if (jumlah !== undefined) updateData.jumlah = parseFloat(jumlah);
 			if (catatan !== undefined) updateData.catatan = catatan;
 
-			// Handle payment status change
 			if (statusBayar && statusBayar !== currentBilling.statusBayar) {
 				updateData.statusBayar = statusBayar;
 
 				if (statusBayar === "Lunas") {
 					updateData.tanggalBayar = new Date();
 
-					// Map fee types to account codes (matching Excel Chart of Accounts)
-					const feeTypeToAccountCode: Record<string, string> = {
-						Pendaftaran: "400", // Penerimaan Dana Pendaftaran
-						Gedung: "401", // Penerimaan Uang Gedung
-						Kegiatan: "402", // Penerimaan Uang Kegiatan
-						Seragam: "403", // Penerimaan Uang Seragam
-						ATK: "404", // Penerimaan Uang ATK
-						SPP: "405", // Penerimaan Uang SPP
-					};
+					const cashAccountCode = getCashAccountCode(paymentSource);
+					const sourceLabel = paymentSource === "bank" ? "Bank" : "Kas";
 
-					const accountCode =
-						feeTypeToAccountCode[currentBilling.jenisBiaya] || "405";
-
-					// Create cashflow entry for income (cash received)
-					const cashflow = await prisma.cashflow.create({
-						data: {
-							tanggal: new Date(),
-							keterangan: `Pembayaran ${currentBilling.jenisBiaya} - ${currentBilling.student.nama} (${currentBilling.student.nis}) - ${currentBilling.periodeBulan}`,
-							kodeAkun: accountCode,
-							kategori: currentBilling.jenisBiaya,
-							debit: currentBilling.jumlah,
-							kredit: 0,
-							referenceId: id,
-						},
-					});
-
-					updateData.cashflowId = cashflow.id;
-
-					// Decrease Piutang Siswa (103) - receivable collected
-					await prisma.account.update({
-						where: { kodeAkun: "103" },
-						data: { saldo: { decrement: currentBilling.jumlah } },
-					});
-
-					// Increase Kas (101) - cash received
-					await prisma.account.update({
-						where: { kodeAkun: "101" },
-						data: { saldo: { increment: currentBilling.jumlah } },
-					});
-
-					// Update student payment totals
-					await prisma.student.update({
-						where: { id: currentBilling.studentId },
-						data: {
-							totalBayar: { increment: currentBilling.jumlah },
-						},
-					});
-
-					// Check if all billings are paid for this student
-					const unpaidBillings = await prisma.billing.count({
-						where: {
-							studentId: currentBilling.studentId,
-							statusBayar: "Belum Lunas",
-							id: { not: id }, // Exclude current billing being paid
-						},
-					});
-
-					if (unpaidBillings === 0) {
-						await prisma.student.update({
-							where: { id: currentBilling.studentId },
-							data: { statusBayar: "Lunas" },
+					const result = await prisma.$transaction(async (tx) => {
+						// Delete any existing cashflows for this billing (prevents duplicates)
+						await tx.cashflow.deleteMany({
+							where: { referenceId: id },
 						});
-					}
+
+						// Cashflow 1: Debit Kas/Bank (cash increases)
+						const cashflowDebit = await tx.cashflow.create({
+							data: {
+								tanggal: new Date(),
+								keterangan: `Pembayaran ${currentBilling.jenisBiaya} - ${currentBilling.student.nama} (${currentBilling.student.nis}) - ${sourceLabel} - Tahun Ajaran ${currentBilling.academicYear?.tahunAjaran || ""}`,
+								kodeAkun: cashAccountCode,
+								kategori: currentBilling.jenisBiaya,
+								cashflowCategory: "OPS",
+								debit: currentBilling.jumlah,
+								kredit: 0,
+								referenceId: id,
+							},
+						});
+
+						// Cashflow 2: Credit Piutang Siswa (piutang decreases)
+						await tx.cashflow.create({
+							data: {
+								tanggal: new Date(),
+								keterangan: `Pembayaran ${currentBilling.jenisBiaya} - ${currentBilling.student.nama} (${currentBilling.student.nis}) - Piutang Siswa - Tahun Ajaran ${currentBilling.academicYear?.tahunAjaran || ""}`,
+								kodeAkun: "103",
+								kategori: currentBilling.jenisBiaya,
+								cashflowCategory: "OPS",
+								debit: 0,
+								kredit: currentBilling.jumlah,
+								referenceId: id,
+							},
+						});
+
+					const journalResult = await postBillingPaymentToJournal(tx, {
+						billingId: id,
+						studentId: currentBilling.studentId,
+						studentName: currentBilling.student.nama,
+						studentNis: currentBilling.student.nis,
+						jenisBiaya: currentBilling.jenisBiaya,
+						jumlah: currentBilling.jumlah,
+						paymentDate: new Date(),
+						source: paymentSource,
+						isOverdue: currentBilling.tanggalJatuhTempo
+							? new Date() > new Date(currentBilling.tanggalJatuhTempo)
+							: false,
+						user,
+					});
+
+						await tx.student.update({
+							where: { id: currentBilling.studentId },
+							data: {
+								totalBayar: { increment: currentBilling.jumlah },
+							},
+						});
+
+						const unpaidBillings = await tx.billing.count({
+							where: {
+								studentId: currentBilling.studentId,
+								statusBayar: "Belum Lunas",
+								id: { not: id },
+							},
+						});
+
+						if (unpaidBillings === 0) {
+							await tx.student.update({
+								where: { id: currentBilling.studentId },
+								data: { statusBayar: "Lunas" },
+							});
+						}
+
+						return { cashflowId: cashflowDebit.id, journalResult };
+					});
+
+					updateData.cashflowId = result.cashflowId;
 				} else if (
 					statusBayar === "Belum Lunas" &&
 					currentBilling.statusBayar === "Lunas"
 				) {
-					// Reverting payment - remove cashflow entry
-					if (currentBilling.cashflowId) {
-						await prisma.cashflow.delete({
-							where: { id: currentBilling.cashflowId },
+					await prisma.$transaction(async (tx) => {
+						// Delete all cashflows with this referenceId (both debit and credit)
+						await tx.cashflow.deleteMany({
+							where: { referenceId: id },
 						});
-					}
 
-					updateData.tanggalBayar = null;
-					updateData.cashflowId = null;
+						updateData.tanggalBayar = null;
+						updateData.cashflowId = null;
 
-					// Increase Piutang Siswa (103) - receivable restored
-					await prisma.account.update({
-						where: { kodeAkun: "103" },
-						data: { saldo: { increment: currentBilling.jumlah } },
-					});
-
-					// Decrease Kas (101) - cash returned
-					await prisma.account.update({
-						where: { kodeAkun: "101" },
-						data: { saldo: { decrement: currentBilling.jumlah } },
-					});
-
-					// Revert student payment totals
-					await prisma.student.update({
-						where: { id: currentBilling.studentId },
-						data: {
-							totalBayar: { decrement: currentBilling.jumlah },
-							statusBayar: "Belum Lunas",
-						},
+						await tx.student.update({
+							where: { id: currentBilling.studentId },
+							data: {
+								totalBayar: { decrement: currentBilling.jumlah },
+								statusBayar: "Belum Lunas",
+							},
+						});
 					});
 				}
 			}
@@ -225,7 +229,6 @@ export async function PATCH(
 				},
 			});
 
-			// Cache result for idempotency
 			if (idempotencyKey) {
 				setIdempotencyResult(idempotencyKey, billing);
 			}
@@ -254,7 +257,6 @@ export async function DELETE(
 			]);
 		}
 
-		// Check for idempotency
 		const idempotencyKey = getIdempotencyKeyFromNextRequest(request);
 		if (idempotencyKey && isValidIdempotencyKey(idempotencyKey)) {
 			const cachedResult = getIdempotencyResult(idempotencyKey);
@@ -272,35 +274,25 @@ export async function DELETE(
 				return errors.notFound("Tagihan");
 			}
 
-			// Update student totals
-			await prisma.student.update({
-				where: { id: billing.studentId },
-				data: {
-					totalTagihan: { decrement: billing.jumlah },
-					...(billing.statusBayar === "Lunas" && {
-						totalBayar: { decrement: billing.jumlah },
-					}),
-				},
+			await prisma.$transaction(async (tx) => {
+				await tx.student.update({
+					where: { id: billing.studentId },
+					data: {
+						totalTagihan: { decrement: billing.jumlah },
+						...(billing.statusBayar === "Lunas" && {
+							totalBayar: { decrement: billing.jumlah },
+						}),
+					},
+				});
+
+				// Delete all cashflows linked to this billing (both debit and credit sides)
+				await tx.cashflow.deleteMany({
+					where: { referenceId: id },
+				});
+
+				await tx.billing.delete({ where: { id } });
 			});
 
-			// If billing was paid, delete associated cashflow (which cascades to delete Billing)
-			// If not, delete billing directly
-			if (billing.cashflowId) {
-				try {
-					await prisma.cashflow.delete({
-						where: { id: billing.cashflowId },
-					});
-				} catch {
-					// If cashflow missing for some reason, try deleting billing directly
-					await prisma.billing.delete({ where: { id } });
-				}
-			} else {
-				await prisma.billing.delete({
-					where: { id },
-				});
-			}
-
-			// Cache result for idempotency
 			if (idempotencyKey) {
 				setIdempotencyResult(idempotencyKey, { deleted: true });
 			}

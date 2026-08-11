@@ -1,223 +1,432 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
 import {
 	Plus,
 	Search,
-	ChevronLeft,
-	ChevronRight,
 	Receipt,
 	CheckCircle,
 	Clock,
-	CreditCard,
+	AlertCircle,
+	ChevronRight,
 } from "lucide-react";
-import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
-import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
-import * as Dialog from "@radix-ui/react-dialog";
+import type { ColumnDef, Row } from "@tanstack/react-table";
+import { DataTable } from "@/components/reusable/DataTable";
+import { StatusBadge } from "@/components/reusable/StatusBadge";
+import {
+	CurrencyInput,
+	parseFormattedNumber,
+} from "@/components/reusable/CurrencyInput";
+import { SearchableSelect } from "@/components/reusable/SearchableSelect";
+import { FormDialog } from "@/components/reusable/FormDialog";
+import { BulkPayDialog } from "@/components/reusable/BulkPayDialog";
+import { Field, FieldLabel, FieldError } from "@/components/reusable/Field";
+import { InstallmentPlanPreview } from "@/components/reusable/InstallmentPlanPreview";
+import { BILLING_TYPES } from "@/config/classes";
+import { groupBillings, type BillingRowData } from "@/lib/services/billing";
+import type {
+	Billing,
+	BillingSummary,
+} from "@/types/billing";
 import type { StudentMinimal as Student } from "@/types/student";
-import type { Billing } from "@/types/billing";
-import type { Pagination } from "@/types/pagination";
-import type { BillingSummary as Summary } from "@/types/summary";
+import type { Pagination as PaginationMeta } from "@/types/pagination";
+import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
+import { useAcademicYear } from "@/context/AcademicYearContext";
+import {
+	Pagination,
+	PaginationContent,
+	PaginationItem,
+	PaginationLink,
+	PaginationNext,
+	PaginationPrevious,
+} from "@/components/ui/pagination";
 
-const JENIS_BIAYA = [
-	"Pendaftaran",
-	"Gedung",
-	"Kegiatan",
-	"Seragam",
-	"ATK",
-	"SPP",
-];
+const createBillingSchema = z.object({
+	studentId: z.string().min(1, "Siswa wajib dipilih"),
+	jenisBiaya: z.string().min(1, "Jenis biaya wajib diisi"),
+	jumlah: z.string().min(1, "Jumlah wajib diisi"),
+	catatan: z.string().optional(),
+	isCicilan: z.boolean(),
+	tenor: z.string().optional(),
+});
+
+type CreateBillingForm = z.infer<typeof createBillingSchema>;
 
 export default function BillingPage() {
 	const { isAdmin } = useAuth();
-	const [billings, setBillings] = useState<Billing[]>([]);
-	const [students, setStudents] = useState<Student[]>([]);
-	const [pagination, setPagination] = useState<Pagination>({
+	const { selectedYear } = useAcademicYear();
+	const queryClient = useQueryClient();
+	const [searchTerm, setSearchTerm] = useState("");
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
+	const [statusFilter, setStatusFilter] = useState("");
+	const [overdueFilter, setOverdueFilter] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
+
+	const [isCreateOpen, setIsCreateOpen] = useState(false);
+	const [studentSearch, setStudentSearch] = useState("");
+	const [debouncedStudentSearch] = useDebounce(studentSearch, 200);
+	const [paymentSource, setPaymentSource] = useState<"kas" | "bank">("kas");
+	const [selectedBillingForPay, setSelectedBillingForPay] = useState<Billing | null>(null);
+	const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+	const [isGenerateSppOpen, setIsGenerateSppOpen] = useState(false);
+	const [sppJumlah, setSppJumlah] = useState("");
+	const [sppTanggal, setSppTanggal] = useState("5");
+	const [isBulkPayOpen, setIsBulkPayOpen] = useState(false);
+	const [selectedGroupForBulkPay, setSelectedGroupForBulkPay] = useState<BillingRowData | null>(null);
+
+	const form = useForm<CreateBillingForm>({
+		resolver: zodResolver(createBillingSchema),
+		mode: "onChange",
+		defaultValues: {
+			studentId: "",
+			jenisBiaya: "",
+			jumlah: "",
+			catatan: "",
+			isCicilan: false,
+			tenor: "",
+		},
+	});
+
+	const watchIsCicilan = form.watch("isCicilan");
+	const watchJumlah = form.watch("jumlah");
+	const watchTenor = form.watch("tenor");
+
+	const { data: studentsData } = useQuery({
+		queryKey: ["students", "billing"],
+		queryFn: () =>
+			fetch("/api/students?limit=1000&status=Active").then((r) => r.json()),
+	});
+
+	const students: Student[] = studentsData?.data ?? [];
+
+	const fetchData = useCallback(() => {
+		let url = `/api/billing?page=1&limit=1000`;
+		if (statusFilter) url += `&statusBayar=${statusFilter}`;
+		if (overdueFilter) url += `&overdue=true`;
+		if (selectedYear?.id) url += `&academicYearId=${selectedYear.id}`;
+		if (debouncedSearchTerm)
+			url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
+		return fetch(url).then((r) => r.json());
+	}, [statusFilter, overdueFilter, selectedYear?.id, debouncedSearchTerm]);
+
+	const { data, isLoading } = useQuery({
+		queryKey: [
+			"billings",
+			statusFilter,
+			overdueFilter,
+			selectedYear?.id,
+			debouncedSearchTerm,
+		],
+		queryFn: fetchData,
+		placeholderData: () => ({
+			data: [],
+			meta: {
+				pagination: { page: 1, limit: 10, total: 0, totalPages: 0 },
+				summary: {
+					totalTagihan: 0,
+					totalBelumLunas: 0,
+					totalLunas: 0,
+					totalCicilan: 0,
+					countBelumLunas: 0,
+					countLunas: 0,
+					countCicilan: 0,
+					countOverdue: 0,
+				},
+			},
+		}),
+	});
+
+	const billings: Billing[] = data?.data ?? [];
+	const pagination: PaginationMeta = data?.meta?.pagination ?? {
 		page: 1,
 		limit: 10,
 		total: 0,
 		totalPages: 0,
-	});
-	const [summary, setSummary] = useState<Summary>({
+	};
+	const summary: BillingSummary = data?.meta?.summary ?? {
 		totalTagihan: 0,
 		totalBelumLunas: 0,
 		totalLunas: 0,
+		totalCicilan: 0,
 		countBelumLunas: 0,
 		countLunas: 0,
-	});
-	const [isLoading, setIsLoading] = useState(true);
-	const [searchTerm, setSearchTerm] = useState("");
-	const [studentSearch, setStudentSearch] = useState("");
-	const [statusFilter, setStatusFilter] = useState("");
-	const [isDialogOpen, setIsDialogOpen] = useState(false);
+		countCicilan: 0,
+		countOverdue: 0,
+	};
 
-	// Debounce search term to avoid excessive API calls
-	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
-	const [debouncedStudentSearch] = useDebounce(studentSearch, 200);
-	const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
-	const [selectedBilling, setSelectedBilling] = useState<Billing | null>(null);
-	const [error, setError] = useState("");
-	const [formData, setFormData] = useState({
-		studentId: "",
-		jenisBiaya: "",
-		periodeBulan: new Date().toISOString().slice(0, 7),
-		jumlah: "",
-		catatan: "",
-	});
+	const groupedBillings = useMemo(() => {
+		return groupBillings(billings as BillingRowData[]);
+	}, [billings]);
 
-	const fetchData = useCallback(
-		async (page = 1) => {
-			setIsLoading(true);
-			try {
-				// Fetch students and billings in parallel
-				const studentsRes = fetch("/api/students?limit=1000&status=Active");
-
-				let billingsUrl = `/api/billing?page=${page}&limit=10`;
-				if (statusFilter) billingsUrl += `&statusBayar=${statusFilter}`;
-				if (debouncedSearchTerm)
-					billingsUrl += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
-				const billingsRes = fetch(billingsUrl);
-
-				const [studentsResponse, billingsResponse] = await Promise.all([
-					studentsRes,
-					billingsRes,
-				]);
-
-				const studentsResult = await studentsResponse.json();
-				if (!studentsResult.success) {
-					toast.error(
-						studentsResult.error?.message || "Gagal memuat data siswa",
+	const createMutation = useMutation({
+		mutationFn: (payload: Record<string, unknown>) =>
+			fetch("/api/billing", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			}).then(async (r) => {
+				const result = await r.json();
+				if (!result.success)
+					throw new Error(
+						result.error?.message || "Gagal membuat tagihan",
 					);
-				} else {
-					setStudents(studentsResult.data);
-				}
-
-				const billingsResult = await billingsResponse.json();
-				if (!billingsResult.success) {
-					toast.error(
-						billingsResult.error?.message || "Gagal memuat data tagihan",
-					);
-					setIsLoading(false);
-					return;
-				}
-				setBillings(billingsResult.data);
-				setPagination(billingsResult.meta.pagination);
-				setSummary(billingsResult.meta.summary);
-			} catch (error) {
-				console.error("Failed to fetch data:", error);
-				toast.error("Terjadi kesalahan saat memuat data");
-			} finally {
-				setIsLoading(false);
-			}
+				return result;
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["billings"] });
+			queryClient.invalidateQueries({ queryKey: ["students", "billing"] });
+			setIsCreateOpen(false);
+			form.reset();
+			toast.success("Tagihan berhasil dibuat");
 		},
-		[statusFilter, debouncedSearchTerm],
-	);
+		onError: (err: Error) => toast.error(err.message),
+	});
 
-	useEffect(() => {
-		fetchData();
-	}, [fetchData]);
+	const payMutation = useMutation({
+		mutationFn: ({ id, data: payload }: { id: string; data: Record<string, unknown> }) =>
+			fetch(`/api/billing/${id}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			}).then(async (r) => {
+				const result = await r.json();
+				if (!result.success)
+					throw new Error(
+						result.error?.message || "Gagal memproses pembayaran",
+					);
+				return result;
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["billings"] });
+			queryClient.invalidateQueries({ queryKey: ["students", "billing"] });
+			setIsPayDialogOpen(false);
+			setSelectedBillingForPay(null);
+			toast.success("Pembayaran berhasil diproses");
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
 
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setError("");
+	const generateSppMutation = useMutation({
+		mutationFn: (payload: { academicYearId: string; jumlahPerBulan: number; tanggalJatuhTempo: number }) =>
+			fetch("/api/billing/generate-spp", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			}).then(async (r) => {
+				const result = await r.json();
+				if (!result.success)
+					throw new Error(
+						result.error?.message || "Gagal generate SPP",
+					);
+				return result;
+			}),
+		onSuccess: (result) => {
+			queryClient.invalidateQueries({ queryKey: ["billings"] });
+			queryClient.invalidateQueries({ queryKey: ["students", "billing"] });
+			setIsGenerateSppOpen(false);
+			setSppJumlah("");
+			toast.success(result.message || "SPP berhasil di-generate");
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
 
-		// Parse formatted number before sending
-		const submitData = {
-			...formData,
+	const bulkPayMutation = useMutation({
+		mutationFn: ({ billingIds, source }: { billingIds: string[]; source: "kas" | "bank" }) =>
+			fetch("/api/billing/bulk-pay", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ billingIds, source }),
+			}).then(async (r) => {
+				const result = await r.json();
+				if (!result.success)
+					throw new Error(
+						result.error?.message || "Gagal memproses pembayaran",
+					);
+				return result;
+			}),
+		onSuccess: (result) => {
+			queryClient.invalidateQueries({ queryKey: ["billings"] });
+			queryClient.invalidateQueries({ queryKey: ["students", "billing"] });
+			setIsBulkPayOpen(false);
+			setSelectedGroupForBulkPay(null);
+			toast.success(result.message || "Pembayaran berhasil diproses");
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
+
+	const handleSubmit = (formData: CreateBillingForm) => {
+		createMutation.mutate({
+			studentId: formData.studentId,
+			jenisBiaya: formData.jenisBiaya,
 			jumlah: parseFormattedNumber(formData.jumlah),
-		};
-
-		const promise = fetch("/api/billing", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(submitData),
-		}).then(async (res) => {
-			const result = await res.json();
-			if (!result.success)
-				throw new Error(result.error?.message || "Gagal membuat tagihan");
-			return result;
-		});
-
-		toast.promise(promise, {
-			loading: "Membuat tagihan...",
-			success: (result) => {
-				setIsDialogOpen(false);
-				setFormData({
-					studentId: "",
-					jenisBiaya: "",
-					periodeBulan: new Date().toISOString().slice(0, 7),
-					jumlah: "",
-					catatan: "",
-				});
-				fetchData(pagination.page);
-				return `Tagihan ${result.data.jenisBiaya} berhasil dibuat`;
-			},
-			error: (err) => {
-				setError(err.message);
-				return err.message;
-			},
+			catatan: formData.catatan || undefined,
+			isCicilan: formData.isCicilan,
+			tenor: formData.isCicilan ? parseInt(formData.tenor || "0") : undefined,
+			academicYearId: selectedYear?.id,
 		});
 	};
 
-	const handlePayment = async () => {
-		if (!selectedBilling) return;
-
-		const promise = fetch(`/api/billing/${selectedBilling.id}`, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ statusBayar: "Lunas" }),
-		}).then(async (res) => {
-			const result = await res.json();
-			if (!result.success)
-				throw new Error(result.error?.message || "Gagal memproses pembayaran");
-			return result;
-		});
-
-		toast.promise(promise, {
-			loading: "Memproses pembayaran...",
-			success: (result) => {
-				setIsPayDialogOpen(false);
-				setSelectedBilling(null);
-				fetchData(pagination.page);
-				return `Pembayaran ${result.data.jenisBiaya} berhasil diproses`;
-			},
-			error: (err) => err.message,
-		});
+	const handlePay = (billing: Billing) => {
+		setSelectedBillingForPay(billing);
+		setPaymentSource("kas");
+		setIsPayDialogOpen(true);
 	};
 
-	const selectedStudent = students.find((s) => s.id === formData.studentId);
+	const handleBulkPay = (group: BillingRowData) => {
+		setSelectedGroupForBulkPay(group);
+		setIsBulkPayOpen(true);
+	};
 
-	const filteredBillings = useMemo(
-		() =>
-			billings.filter(
-				(b) =>
-					b.student.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-					b.student.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||
-					b.jenisBiaya.toLowerCase().includes(searchTerm.toLowerCase()),
-			),
-		[billings, searchTerm],
+	const filteredStudents = useMemo(() => {
+		if (!debouncedStudentSearch) return students;
+		const term = debouncedStudentSearch.toLowerCase();
+		return students.filter(
+			(s) =>
+				s.nama.toLowerCase().includes(term) ||
+				s.nis.toLowerCase().includes(term),
+		);
+	}, [students, debouncedStudentSearch]);
+
+	const columns: ColumnDef<BillingRowData>[] = useMemo(
+		() => [
+			{
+				id: "expand",
+				size: 40,
+				header: "",
+				cell: ({ row }) => {
+					if (!row.original.isGroup && !row.original.children?.length) return null;
+					return (
+						<button
+							onClick={(e) => {
+								e.stopPropagation();
+								row.toggleExpanded();
+							}}
+							className="p-1 hover:bg-gray-100 rounded"
+						>
+							<ChevronRight
+								className={`h-4 w-4 transition-transform ${
+									row.getIsExpanded() ? "rotate-90" : ""
+								}`}
+							/>
+						</button>
+					);
+				},
+			},
+			{
+				accessorKey: "student.nis",
+				header: "NIS",
+				cell: ({ row }) => (
+					<span className="font-mono">{row.original.student.nis}</span>
+				),
+			},
+			{
+				accessorKey: "student.nama",
+				header: "Nama Siswa",
+				cell: ({ row }) => (
+					<span className="font-medium">{row.original.student.nama}</span>
+				),
+			},
+			{
+				accessorKey: "student.kelas",
+				header: "Kelas",
+				cell: ({ row }) => (
+					<Badge variant="secondary">{row.original.student.kelas}</Badge>
+				),
+			},
+			{
+				accessorKey: "jenisBiaya",
+				header: "Jenis Biaya",
+				cell: ({ row }) => {
+					const b = row.original;
+					if (b.isGroup) {
+						return (
+							<div>
+								<span className="font-medium">{b.jenisBiaya}</span>
+								<span className="ml-2 text-xs text-gray-500">{b.label}</span>
+							</div>
+						);
+					}
+					return (
+						<div>
+							<span>{b.jenisBiaya}</span>
+							{b.keterangan && (
+								<p className="text-xs text-gray-500 mt-0.5">{b.keterangan}</p>
+							)}
+						</div>
+					);
+				},
+			},
+			{
+				accessorKey: "jumlah",
+				header: "Jumlah",
+				cell: ({ row }) => {
+					const b = row.original;
+					const amount = b.isGroup ? b.totalJumlah : b.jumlah;
+					return (
+						<span className="text-right font-semibold block">
+							{formatRupiah(amount ?? 0)}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "statusBayar",
+				header: "Status",
+				cell: ({ row }) => {
+					const status = row.original.statusBayar;
+					if (status === "Lunas")
+						return <StatusBadge label="Lunas" variant="success" />;
+					if (status === "Sebagian")
+						return <StatusBadge label="Sebagian" variant="info" />;
+					return <StatusBadge label="Belum Lunas" variant="warning" />;
+				},
+			},
+			{
+				id: "actions",
+				header: "Aksi",
+				cell: ({ row }) => {
+					const b = row.original;
+					if (b.isGroup) {
+						if (b.statusBayar === "Lunas" || !isAdmin) return null;
+						return (
+							<div className="flex gap-1">
+								<Button size="sm" variant="outline" onClick={() => handleBulkPay(b)}>
+									<CheckCircle className="h-3 w-3 mr-1" />
+									Bayar
+								</Button>
+							</div>
+						);
+					}
+					return (
+						<div className="flex gap-1">
+							{b.statusBayar !== "Lunas" && isAdmin && (
+								<Button size="sm" variant="outline" onClick={() => handlePay(b as Billing)}>
+									<CheckCircle className="h-3 w-3 mr-1" />
+									Bayar
+								</Button>
+							)}
+						</div>
+					);
+				},
+			},
+		],
+		[isAdmin],
 	);
 
 	return (
 		<div className="space-y-6">
-			{/* Header */}
 			<div className="flex items-center justify-between gap-2">
 				<div>
 					<h1 className="text-xl md:text-2xl font-bold text-gray-900">
@@ -227,199 +436,39 @@ export default function BillingPage() {
 						Kelola tagihan dan pembayaran siswa
 					</p>
 				</div>
-
 				{isAdmin && (
-					<Dialog.Root open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-						<Dialog.Trigger asChild>
-							<Button size="sm" className="text-xs md:text-sm">
-								<Plus className="h-4 w-4 md:mr-2" />
-								<span className="hidden md:inline">Tambah Tagihan</span>
-								<span className="md:hidden">Tambah</span>
-							</Button>
-						</Dialog.Trigger>
-						<Dialog.Portal>
-							<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-							<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-								<Dialog.Title className="text-lg font-semibold text-slate-900">
-									Tambah Tagihan Baru
-								</Dialog.Title>
-								<Dialog.Description className="mt-1 text-sm text-slate-500">
-									Buat tagihan baru untuk siswa
-								</Dialog.Description>
-
-								<form onSubmit={handleSubmit} className="mt-6 space-y-4">
-									{error && (
-										<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-											{error}
-										</div>
-									)}
-
-									<div className="space-y-2">
-										<Label htmlFor="studentId">Pilih Siswa</Label>
-										<div className="relative">
-											<Input
-												type="text"
-												placeholder="Cari nama atau NIS siswa..."
-												value={studentSearch}
-												onChange={(e) => setStudentSearch(e.target.value)}
-											/>
-											{studentSearch && (
-												<div className="absolute z-10 left-0 right-0 mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
-											{students
-												.filter(
-													(s) =>
-														s.nama
-															.toLowerCase()
-															.includes(debouncedStudentSearch.toLowerCase()) ||
-														s.nis
-															.toLowerCase()
-															.includes(debouncedStudentSearch.toLowerCase()) ||
-														s.kelas
-															.toLowerCase()
-															.includes(debouncedStudentSearch.toLowerCase()),
-												)
-														.slice(0, 20)
-														.map((s) => (
-															<button
-																key={s.id}
-																type="button"
-																onClick={() => {
-																	setFormData({ ...formData, studentId: s.id });
-																	setStudentSearch("");
-																}}
-																className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
-																	formData.studentId === s.id
-																		? "bg-[#059DEA]/30 font-medium"
-																		: ""
-																}`}
-															>
-																<span className="font-medium">{s.nis}</span> -{" "}
-																{s.nama}{" "}
-																<span className="text-gray-500">
-																	({s.kelas})
-																</span>
-															</button>
-														))}
-											{students.filter(
-													(s) =>
-														s.nama
-															.toLowerCase()
-															.includes(debouncedStudentSearch.toLowerCase()) ||
-														s.nis
-															.toLowerCase()
-															.includes(debouncedStudentSearch.toLowerCase()),
-												).length === 0 && (
-														<p className="px-3 py-2 text-sm text-gray-500">
-															Tidak ada siswa ditemukan
-														</p>
-													)}
-												</div>
-											)}
-										</div>
-									</div>
-
-									{selectedStudent && (
-										<div className="rounded-lg bg-slate-50 p-3">
-											<p className="text-sm text-slate-600">
-												<span className="font-medium">Nama:</span>{" "}
-												{selectedStudent.nama}
-											</p>
-											<p className="text-sm text-slate-600">
-												<span className="font-medium">Kelas:</span>{" "}
-												{selectedStudent.kelas}
-											</p>
-										</div>
-									)}
-
-									<div className="space-y-2">
-										<Label htmlFor="jenisBiaya">Jenis Biaya</Label>
-										<select
-											id="jenisBiaya"
-											value={formData.jenisBiaya}
-											onChange={(e) =>
-												setFormData({ ...formData, jenisBiaya: e.target.value })
-											}
-											className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-											required
-										>
-											<option value="">-- Pilih Jenis Biaya --</option>
-											{JENIS_BIAYA.map((jenis) => (
-												<option key={jenis} value={jenis}>
-													{jenis}
-												</option>
-											))}
-										</select>
-									</div>
-
-									<div className="space-y-2">
-										<Label htmlFor="periodeBulan">Periode (Bulan)</Label>
-										<Input
-											id="periodeBulan"
-											type="month"
-											value={formData.periodeBulan}
-											onChange={(e) =>
-												setFormData({
-													...formData,
-													periodeBulan: e.target.value,
-												})
-											}
-											required
-										/>
-									</div>
-
-									<div className="space-y-2">
-										<Label htmlFor="jumlah">Jumlah (Rp)</Label>
-										<div className="relative">
-											<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-												Rp
-											</span>
-											<Input
-												id="jumlah"
-												type="text"
-												inputMode="numeric"
-												value={formData.jumlah}
-												onChange={(e) => {
-													const formatted = formatNumberInput(e.target.value);
-													setFormData({ ...formData, jumlah: formatted });
-												}}
-												placeholder="500.000"
-												className="pl-10"
-												required
-											/>
-										</div>
-										<p className="text-xs text-slate-400">
-											Contoh: 500.000 = lima ratus ribu rupiah
-										</p>
-									</div>
-
-									<div className="space-y-2">
-										<Label htmlFor="catatan">Catatan (Opsional)</Label>
-										<Input
-											id="catatan"
-											value={formData.catatan}
-											onChange={(e) =>
-												setFormData({ ...formData, catatan: e.target.value })
-											}
-											placeholder="Catatan tambahan..."
-										/>
-									</div>
-
-									<div className="flex justify-end gap-3 pt-4">
-										<Dialog.Close asChild>
-											<Button type="button" variant="outline">
-												Batal
-											</Button>
-										</Dialog.Close>
-										<Button type="submit">Simpan</Button>
-									</div>
-								</form>
-							</Dialog.Content>
-						</Dialog.Portal>
-					</Dialog.Root>
+					<div className="flex gap-2">
+						<Button
+							size="sm"
+							variant="outline"
+							className="text-xs md:text-sm"
+							onClick={() => {
+								setSppJumlah("");
+								setSppTanggal("5");
+								setIsGenerateSppOpen(true);
+							}}
+						>
+							<Receipt className="h-4 w-4 md:mr-2" />
+							<span className="hidden md:inline">Generate SPP</span>
+							<span className="md:hidden">SPP</span>
+						</Button>
+						<Button
+							size="sm"
+							className="text-xs md:text-sm"
+							onClick={() => {
+								form.reset();
+								setIsCreateOpen(true);
+							}}
+						>
+							<Plus className="h-4 w-4 md:mr-2" />
+							<span className="hidden md:inline">Tambah Tagihan</span>
+							<span className="md:hidden">Tambah</span>
+						</Button>
+					</div>
 				)}
 			</div>
 
-			<div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+			<div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
 				<Card className="bg-[#059DEA] shadow-sm">
 					<CardContent className="flex items-center gap-3 p-3 md:p-5">
 						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
@@ -435,7 +484,6 @@ export default function BillingPage() {
 						</div>
 					</CardContent>
 				</Card>
-
 				<Card className="bg-white shadow-sm">
 					<CardContent className="flex items-center gap-3 p-3 md:p-5">
 						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-amber-50 shrink-0">
@@ -454,7 +502,24 @@ export default function BillingPage() {
 						</div>
 					</CardContent>
 				</Card>
-
+				<Card className="bg-white shadow-sm">
+					<CardContent className="flex items-center gap-3 p-3 md:p-5">
+						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-red-50 shrink-0">
+							<AlertCircle className="h-5 w-5 md:h-6 md:w-6 text-red-600" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
+								Jatuh Tempo
+							</p>
+							<p className="text-sm md:text-xl font-bold text-red-600 truncate">
+								{summary.countOverdue}
+							</p>
+							<p className="text-[10px] text-gray-400 mt-0.5 md:mt-1 truncate">
+								tagihan terlambat
+							</p>
+						</div>
+					</CardContent>
+				</Card>
 				<Card className="bg-white shadow-sm">
 					<CardContent className="flex items-center gap-3 p-3 md:p-5">
 						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-[#059DEA]/20 shrink-0">
@@ -473,25 +538,8 @@ export default function BillingPage() {
 						</div>
 					</CardContent>
 				</Card>
-
-				<Card className="bg-white shadow-sm">
-					<CardContent className="flex items-center gap-3 p-3 md:p-5">
-						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-gray-100 shrink-0">
-							<CreditCard className="h-5 w-5 md:h-6 md:w-6 text-gray-600" />
-						</div>
-						<div className="min-w-0">
-							<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
-								Total Transaksi
-							</p>
-							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{pagination.total}
-							</p>
-						</div>
-					</CardContent>
-				</Card>
 			</div>
 
-			{/* Search */}
 			<Card>
 				<CardContent className="p-4">
 					<div className="flex flex-col gap-3">
@@ -505,202 +553,526 @@ export default function BillingPage() {
 								className="pl-10 w-full"
 							/>
 						</div>
-						<div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0 hide-scrollbar">
+						<div className="flex gap-2 overflow-x-auto pb-1">
 							<Button
-								variant={statusFilter === "" ? "default" : "outline"}
+								variant={
+									statusFilter === "" && !overdueFilter ? "default" : "outline"
+								}
 								size="sm"
-								onClick={() => setStatusFilter("")}
+								onClick={() => {
+									setStatusFilter("");
+									setOverdueFilter(false);
+								}}
 								className="whitespace-nowrap"
 							>
 								Semua
 							</Button>
 							<Button
-								variant={statusFilter === "Lunas" ? "default" : "outline"}
+								variant={
+									statusFilter === "Lunas" && !overdueFilter
+										? "default"
+										: "outline"
+								}
 								size="sm"
-								onClick={() => setStatusFilter("Lunas")}
+								onClick={() => {
+									setStatusFilter("Lunas");
+									setOverdueFilter(false);
+								}}
 								className="whitespace-nowrap"
 							>
 								Lunas
 							</Button>
 							<Button
-								variant={statusFilter === "Belum Lunas" ? "default" : "outline"}
+								variant={
+									statusFilter === "Belum Lunas" && !overdueFilter
+										? "default"
+										: "outline"
+								}
 								size="sm"
-								onClick={() => setStatusFilter("Belum Lunas")}
+								onClick={() => {
+									setStatusFilter("Belum Lunas");
+									setOverdueFilter(false);
+								}}
 								className="whitespace-nowrap"
 							>
 								Belum Lunas
+							</Button>
+							<Button
+								variant={overdueFilter ? "default" : "outline"}
+								size="sm"
+								onClick={() => {
+									setStatusFilter("");
+									setOverdueFilter(true);
+								}}
+								className="whitespace-nowrap text-red-600 border-red-200 hover:bg-red-50"
+							>
+								<AlertCircle className="w-3 h-3 mr-1" /> Jatuh Tempo
 							</Button>
 						</div>
 					</div>
 				</CardContent>
 			</Card>
 
-			{/* Table */}
 			<Card>
-				<CardHeader>
-					<CardTitle className="text-lg">
-						Daftar Tagihan
-						{statusFilter && (
-							<Badge variant="secondary" className="ml-2">
-								{statusFilter}
-							</Badge>
-						)}
-					</CardTitle>
-				</CardHeader>
-				<CardContent>
-					{isLoading ? (
-						<div className="flex h-48 items-center justify-center">
-							<div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-						</div>
-					) : filteredBillings.length > 0 ? (
-						<div className="overflow-x-auto -mx-4 px-4">
-							<Table className="min-w-[800px]">
-								<TableHeader>
-									<TableRow>
-										<TableHead>NIS</TableHead>
-										<TableHead>Nama Siswa</TableHead>
-										<TableHead>Kelas</TableHead>
-										<TableHead>Jenis Biaya</TableHead>
-										<TableHead>Periode</TableHead>
-										<TableHead className="text-right">Jumlah</TableHead>
-										<TableHead>Status</TableHead>
-										<TableHead>Aksi</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{filteredBillings.map((b) => (
-										<TableRow key={b.id}>
-											<TableCell className="font-mono">
-												{b.student.nis}
-											</TableCell>
-											<TableCell className="font-medium">
-												{b.student.nama}
-											</TableCell>
-											<TableCell>
-												<Badge variant="secondary">{b.student.kelas}</Badge>
-											</TableCell>
-											<TableCell>{b.jenisBiaya}</TableCell>
-											<TableCell>{b.periodeBulan}</TableCell>
-											<TableCell className="text-right font-semibold">
-												{formatRupiah(b.jumlah)}
-											</TableCell>
-											<TableCell>
-												<Badge
-													variant={
-														b.statusBayar === "Lunas" ? "success" : "warning"
-													}
-												>
-													{b.statusBayar}
-												</Badge>
-											</TableCell>
-											<TableCell>
-												{b.statusBayar === "Belum Lunas" && isAdmin && (
+				<CardContent className="p-0">
+					<DataTable
+						columns={columns}
+						data={groupedBillings}
+						loading={isLoading}
+						emptyMessage="Tidak ada data tagihan"
+						pageSize={50}
+						renderSubComponent={({ row }) => {
+							const b = row.original as BillingRowData;
+							if (!b.children) return null;
+							return (
+								<div className="bg-gray-50 p-3 space-y-1">
+									{b.children.map((child) => (
+										<div
+											key={child.id}
+											className="flex items-center justify-between py-1.5 px-3 rounded bg-white text-sm"
+										>
+											<div className="flex items-center gap-3">
+												<span className="text-gray-600 min-w-[200px]">
+													{child.keterangan || child.jenisBiaya}
+												</span>
+												{child.tanggalJatuhTempo && (
+													<span className="text-xs text-gray-400">
+														JT: {formatShortDate(child.tanggalJatuhTempo)}
+													</span>
+												)}
+											</div>
+											<div className="flex items-center gap-3">
+												<span className="font-medium">
+													{formatRupiah(child.jumlah)}
+												</span>
+												{child.statusBayar === "Lunas" ? (
+													<StatusBadge label="Lunas" variant="success" />
+												) : (
+													<StatusBadge label="Belum Lunas" variant="warning" />
+												)}
+												{child.statusBayar !== "Lunas" && isAdmin && (
 													<Button
 														size="sm"
 														variant="outline"
-														onClick={() => {
-															setSelectedBilling(b);
-															setIsPayDialogOpen(true);
-														}}
+														onClick={() => handlePay(child as Billing)}
 													>
 														Bayar
 													</Button>
 												)}
-												{b.statusBayar === "Lunas" && b.tanggalBayar && (
-													<span className="text-xs text-slate-500">
-														{formatShortDate(b.tanggalBayar)}
-													</span>
-												)}
-											</TableCell>
-										</TableRow>
+											</div>
+										</div>
 									))}
-								</TableBody>
-							</Table>
-						</div>
-					) : (
-						<div className="flex h-48 items-center justify-center text-slate-400">
-							Tidak ada data tagihan
-						</div>
-					)}
-
-					{/* Pagination */}
+								</div>
+							);
+						}}
+					/>
 					{pagination.totalPages > 1 && (
-						<div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
-							<p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
+						<div className="flex items-center justify-between px-4 py-3 border-t">
+							<p className="text-sm text-gray-500">
 								Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
 								{Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
 								dari {pagination.total} tagihan
 							</p>
-							<div className="flex justify-center gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={pagination.page === 1}
-									onClick={() => fetchData(pagination.page - 1)}
-									className="w-10 p-0"
-								>
-									<ChevronLeft className="h-4 w-4" />
-								</Button>
-								<span className="flex items-center px-4 text-sm font-medium border border-gray-200 rounded-md">
-									{pagination.page} / {pagination.totalPages}
-								</span>
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={pagination.page === pagination.totalPages}
-									onClick={() => fetchData(pagination.page + 1)}
-									className="w-10 p-0"
-								>
-									<ChevronRight className="h-4 w-4" />
-								</Button>
-							</div>
+							<Pagination>
+								<PaginationContent>
+									<PaginationItem>
+										<PaginationPrevious
+											text="Sebelumnya"
+											onClick={(e) => {
+												e.preventDefault();
+												if (currentPage > 1) setCurrentPage(currentPage - 1);
+											}}
+											className={currentPage <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+										/>
+									</PaginationItem>
+									<PaginationItem>
+										<PaginationLink size="default" isActive>{pagination.page}</PaginationLink>
+									</PaginationItem>
+									{pagination.totalPages > 1 && (
+										<PaginationItem>
+											<PaginationLink
+												size="default"
+												onClick={(e) => {
+													e.preventDefault();
+													setCurrentPage(2);
+												}}
+												className="cursor-pointer"
+											>
+												2
+											</PaginationLink>
+										</PaginationItem>
+									)}
+									<PaginationItem>
+										<PaginationNext
+											text="Selanjutnya"
+											onClick={(e) => {
+												e.preventDefault();
+												if (currentPage < pagination.totalPages) setCurrentPage(currentPage + 1);
+											}}
+											className={currentPage >= pagination.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+										/>
+									</PaginationItem>
+								</PaginationContent>
+							</Pagination>
 						</div>
 					)}
 				</CardContent>
 			</Card>
 
-			{/* Payment Confirmation Dialog */}
-			<Dialog.Root open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
-				<Dialog.Portal>
-					<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-					<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
-						<Dialog.Title className="text-lg font-semibold text-slate-900">
-							Konfirmasi Pembayaran
-						</Dialog.Title>
-						{selectedBilling && (
-							<div className="mt-4 space-y-3">
-								<div className="rounded-lg bg-slate-50 p-4">
-									<p className="text-sm text-slate-600">
-										<span className="font-medium">Siswa:</span>{" "}
-										{selectedBilling.student.nama}
-									</p>
-									<p className="text-sm text-slate-600">
-										<span className="font-medium">Jenis:</span>{" "}
-										{selectedBilling.jenisBiaya}
-									</p>
-									<p className="text-sm text-slate-600">
-										<span className="font-medium">Periode:</span>{" "}
-										{selectedBilling.periodeBulan}
-									</p>
-									<p className="mt-2 text-lg font-bold text-slate-900">
-										{formatRupiah(selectedBilling.jumlah)}
-									</p>
-								</div>
-								<p className="text-sm text-slate-500">
-									Pembayaran akan otomatis tercatat di Cashflow sebagai
-									pemasukan.
+			<FormDialog
+				open={isCreateOpen}
+				onOpenChange={setIsCreateOpen}
+				title="Tambah Tagihan Baru"
+				description="Buat tagihan baru untuk siswa"
+				className="max-w-md"
+			>
+				<form
+					onSubmit={form.handleSubmit(handleSubmit)}
+					className="space-y-4"
+				>
+					{createMutation.isError && (
+						<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+							{createMutation.error.message}
+						</div>
+					)}
+
+					<Field data-invalid={!!form.formState.errors.studentId}>
+						<FieldLabel>Pilih Siswa *</FieldLabel>
+						<Controller
+							control={form.control}
+							name="studentId"
+							render={({ field }) => (
+								<SearchableSelect
+									options={filteredStudents.map((s) => ({
+										value: s.id,
+										label: s.nis,
+										subLabel: `${s.nama} (${s.kelas})`,
+									}))}
+									value={field.value}
+									onChange={(val) => {
+										field.onChange(val);
+										setStudentSearch("");
+									}}
+									placeholder="Cari nama atau NIS siswa..."
+								/>
+							)}
+						/>
+						<FieldError
+							errors={
+								form.formState.errors.studentId
+									? [{ message: form.formState.errors.studentId.message }]
+									: []
+							}
+						/>
+					</Field>
+
+					<Field data-invalid={!!form.formState.errors.jenisBiaya}>
+						<FieldLabel>Jenis Biaya *</FieldLabel>
+						<Controller
+							control={form.control}
+							name="jenisBiaya"
+							render={({ field }) => (
+								<select
+									{...field}
+									className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+									aria-invalid={!!form.formState.errors.jenisBiaya}
+								>
+									<option value="">-- Pilih Jenis Biaya --</option>
+									{BILLING_TYPES.map((j) => (
+										<option key={j} value={j}>
+											{j}
+										</option>
+									))}
+								</select>
+							)}
+						/>
+						<FieldError
+							errors={
+								form.formState.errors.jenisBiaya
+									? [{ message: form.formState.errors.jenisBiaya.message }]
+									: []
+							}
+						/>
+					</Field>
+
+					<Field data-invalid={!!form.formState.errors.jumlah}>
+						<FieldLabel>Jumlah (Rp) *</FieldLabel>
+						<Controller
+							control={form.control}
+							name="jumlah"
+							render={({ field }) => (
+								<CurrencyInput
+									value={field.value}
+									onChange={field.onChange}
+									placeholder="500.000"
+									aria-invalid={!!form.formState.errors.jumlah}
+								/>
+							)}
+						/>
+						<p className="text-xs text-slate-400">
+							Contoh: 500.000 = lima ratus ribu rupiah
+						</p>
+						<FieldError
+							errors={
+								form.formState.errors.jumlah
+									? [{ message: form.formState.errors.jumlah.message }]
+									: []
+							}
+						/>
+					</Field>
+
+					<Field data-invalid={!!form.formState.errors.catatan}>
+						<FieldLabel>Catatan (Opsional)</FieldLabel>
+						<Controller
+							control={form.control}
+							name="catatan"
+							render={({ field }) => (
+								<Input {...field} placeholder="Catatan tambahan..." />
+							)}
+						/>
+					</Field>
+
+					<div className="border-t border-gray-100 pt-4">
+						<label className="flex items-center gap-3 cursor-pointer">
+							<Controller
+								control={form.control}
+								name="isCicilan"
+								render={({ field }) => (
+									<input
+										type="checkbox"
+										checked={field.value}
+										onChange={(e) => field.onChange(e.target.checked)}
+										className="h-4 w-4 rounded border-gray-300 text-[#059DEA] focus:ring-[#059DEA]"
+									/>
+								)}
+							/>
+							<div>
+								<span className="text-sm font-medium text-gray-700">
+									Bayar dengan Cicilan
+								</span>
+								<p className="text-xs text-gray-500">
+									Bagi tagihan ini menjadi beberapa cicilan bulanan
 								</p>
 							</div>
-						)}
-						<div className="mt-6 flex justify-end gap-3">
-							<Dialog.Close asChild>
-								<Button variant="outline">Batal</Button>
-							</Dialog.Close>
-							<Button onClick={handlePayment}>Konfirmasi Bayar</Button>
+						</label>
+					</div>
+
+					{watchIsCicilan && (
+						<>
+							<div className="grid grid-cols-2 gap-3">
+								<Field data-invalid={!!form.formState.errors.tenor}>
+									<FieldLabel>Tenor (Bulan) *</FieldLabel>
+									<Controller
+										control={form.control}
+										name="tenor"
+										render={({ field }) => (
+											<Input
+												type="number"
+												min={1}
+												max={12}
+												{...field}
+												placeholder="3"
+												aria-invalid={!!form.formState.errors.tenor}
+											/>
+										)}
+									/>
+									<p className="text-xs text-slate-400">1-12 bulan</p>
+									<FieldError
+										errors={
+											form.formState.errors.tenor
+												? [{ message: form.formState.errors.tenor.message }]
+												: []
+										}
+									/>
+								</Field>
 						</div>
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+						{watchJumlah && watchTenor && parseInt(watchTenor) > 0 && (
+							<InstallmentPlanPreview
+								jumlahTotal={parseFormattedNumber(watchJumlah)}
+								tenor={parseInt(watchTenor)}
+								jenisBiaya={form.watch("jenisBiaya")}
+							/>
+						)}
+						</>
+					)}
+
+					<div className="flex justify-end gap-3 pt-4">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setIsCreateOpen(false)}
+						>
+							Batal
+						</Button>
+						<Button type="submit" disabled={createMutation.isPending}>
+							{createMutation.isPending ? "Menyimpan..." : "Simpan"}
+						</Button>
+					</div>
+				</form>
+			</FormDialog>
+
+			<FormDialog
+				open={isPayDialogOpen}
+				onOpenChange={setIsPayDialogOpen}
+				title="Konfirmasi Pembayaran"
+				description={`Bayar tagihan ${selectedBillingForPay?.jenisBiaya ?? ""} untuk ${selectedBillingForPay?.student?.nama ?? ""}`}
+				className="max-w-sm"
+			>
+				{selectedBillingForPay && (
+					<div className="space-y-4">
+						<div className="rounded-lg bg-slate-50 p-4 space-y-2">
+							<p className="text-sm text-slate-600">
+								<span className="font-medium">Jenis Biaya:</span>{" "}
+								{selectedBillingForPay.jenisBiaya}
+							</p>
+						<p className="text-sm text-slate-600">
+							<span className="font-medium">Jumlah:</span>{" "}
+							{formatRupiah(selectedBillingForPay.jumlah)}
+						</p>
+						</div>
+						<div className="space-y-2">
+							<label className="text-sm font-medium text-gray-700">
+								Sumber Pembayaran
+							</label>
+							<div className="flex gap-2">
+								<Button
+									type="button"
+									variant={paymentSource === "kas" ? "default" : "outline"}
+									size="sm"
+									className="flex-1"
+									onClick={() => setPaymentSource("kas")}
+								>
+									Kas
+								</Button>
+								<Button
+									type="button"
+									variant={paymentSource === "bank" ? "default" : "outline"}
+									size="sm"
+									className="flex-1"
+									onClick={() => setPaymentSource("bank")}
+								>
+									Bank
+								</Button>
+							</div>
+						</div>
+						<div className="flex justify-end gap-3">
+							<Button
+								variant="outline"
+								onClick={() => {
+									setIsPayDialogOpen(false);
+									setSelectedBillingForPay(null);
+								}}
+							>
+								Batal
+							</Button>
+							<Button
+								onClick={() => {
+									if (!selectedBillingForPay) return;
+									payMutation.mutate({
+										id: selectedBillingForPay.id,
+										data: { statusBayar: "Lunas", source: paymentSource },
+									});
+								}}
+								disabled={payMutation.isPending}
+							>
+								{payMutation.isPending ? "Memproses..." : "Konfirmasi Bayar"}
+							</Button>
+						</div>
+					</div>
+				)}
+			</FormDialog>
+
+			{/* Generate SPP Dialog */}
+			<FormDialog
+				open={isGenerateSppOpen}
+				onOpenChange={setIsGenerateSppOpen}
+				title="Generate SPP untuk Setahun"
+			>
+				<div className="space-y-4">
+					<p className="text-sm text-gray-500">
+						Buat tagihan SPP untuk semua siswa aktif selama 12 bulan
+					</p>
+					<Field>
+						<FieldLabel>Jumlah SPP per Bulan *</FieldLabel>
+						<CurrencyInput
+							value={sppJumlah}
+							onChange={setSppJumlah}
+							placeholder="500.000"
+						/>
+					</Field>
+					<Field>
+						<FieldLabel>Tanggal Jatuh Tempo *</FieldLabel>
+						<select
+							value={sppTanggal}
+							onChange={(e) => setSppTanggal(e.target.value)}
+							className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+						>
+							{Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+								<option key={day} value={day.toString()}>
+									Tanggal {day}
+								</option>
+							))}
+						</select>
+					</Field>
+					{sppJumlah && (
+						<div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
+							Akan membuat 12 tagihan SPP × {formatRupiah(parseFormattedNumber(sppJumlah))} untuk semua siswa aktif
+						</div>
+					)}
+					<div className="flex justify-end gap-2">
+						<Button
+							variant="outline"
+							onClick={() => setIsGenerateSppOpen(false)}
+						>
+							Batal
+						</Button>
+						<Button
+							onClick={() => {
+								if (!sppJumlah || parseFormattedNumber(sppJumlah) <= 0) {
+									toast.error("Jumlah SPP wajib diisi");
+									return;
+								}
+								if (!selectedYear?.id) {
+									toast.error("Tahun ajaran tidak ditemukan");
+									return;
+								}
+								generateSppMutation.mutate({
+									academicYearId: selectedYear.id,
+									jumlahPerBulan: parseFormattedNumber(sppJumlah),
+									tanggalJatuhTempo: parseInt(sppTanggal),
+								});
+							}}
+							disabled={generateSppMutation.isPending}
+						>
+							{generateSppMutation.isPending
+								? "Generating..."
+								: "Generate SPP"}
+						</Button>
+					</div>
+				</div>
+			</FormDialog>
+
+			{/* Bulk Pay Dialog */}
+			<BulkPayDialog
+				open={isBulkPayOpen}
+				onOpenChange={setIsBulkPayOpen}
+				title="Bayar Beberapa Tagihan"
+				description={selectedGroupForBulkPay ? `${selectedGroupForBulkPay.student?.nama} - ${selectedGroupForBulkPay.label}` : ""}
+				items={
+					selectedGroupForBulkPay?.children?.map((child) => ({
+						id: child.id,
+						label: child.keterangan || `${child.jenisBiaya} Bulan ${child.bulan || ""}`,
+						keterangan: child.keterangan || undefined,
+						jumlah: child.jumlah,
+						tanggalJatuhTempo: child.tanggalJatuhTempo,
+						statusBayar: child.statusBayar,
+					})) || []
+				}
+				isPending={bulkPayMutation.isPending}
+				onConfirm={(selectedIds, source) => {
+					bulkPayMutation.mutate({ billingIds: selectedIds, source });
+				}}
+			/>
 		</div>
 	);
 }
