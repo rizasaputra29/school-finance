@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3 } from "lucide-react";
@@ -62,30 +62,18 @@ function CustomTooltipRp({
 }
 
 export default function PerformaPage() {
-	const [data, setData] = useState<PerformaData | null>(null);
-	const [loading, setLoading] = useState(true);
 	const [tahun, setTahun] = useState(new Date().getFullYear());
 
-	const fetchData = useCallback(async () => {
-		setLoading(true);
-		try {
+	const { data, isLoading: loading } = useQuery({
+		queryKey: ["performa", tahun],
+		queryFn: async () => {
 			const res = await fetch(`/api/performa?tahun=${tahun}`);
 			const result = await res.json();
-			if (!result.success) {
-				toast.error(result.error?.message || "Gagal memuat data performa");
-				return;
-			}
-			setData(result.data);
-		} catch {
-			toast.error("Terjadi kesalahan saat memuat data performa");
-		} finally {
-			setLoading(false);
-		}
-	}, [tahun]);
-
-	useEffect(() => {
-		fetchData();
-	}, [fetchData]);
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat data performa");
+			return result.data as PerformaData;
+		},
+	});
 
 	if (loading) {
 		return (

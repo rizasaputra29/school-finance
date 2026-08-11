@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,7 @@ import {
 	BookOpen,
 	Send,
 	DollarSign,
+	EyeOff,
 } from "lucide-react";
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatRupiah } from "@/lib/utils/utils-currency";
@@ -70,33 +71,42 @@ const getIconColorClass = (type: string): string => {
 
 export default function ReminderPage() {
 	const router = useRouter();
-	const [reminders, setReminders] = useState<Reminder[]>([]);
-	const [isLoading, setIsLoading] = useState(true);
 	const [filter, setFilter] = useState<string>("all");
+	const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
-		fetchReminders();
+		const saved = localStorage.getItem("dismissedReminders");
+		if (saved) {
+			try {
+				setDismissedIds(new Set(JSON.parse(saved)));
+			} catch {}
+		}
 	}, []);
 
-	const fetchReminders = async () => {
-		try {
+	const { data: remindersData, isLoading } = useQuery({
+		queryKey: ["reminders"],
+		queryFn: async () => {
 			const res = await fetch("/api/reminders");
 			const result = await res.json();
-			if (!result.success) {
-				toast.error(result.error?.message || "Gagal memuat pengingat");
-				return;
-			}
-			setReminders(result.data);
-		} catch (error) {
-			console.error("Failed to fetch reminders:", error);
-			toast.error("Terjadi kesalahan saat memuat pengingat");
-		} finally {
-			setIsLoading(false);
-		}
-	};
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat pengingat");
+			return result.data as Reminder[];
+		},
+	});
 
-	const filteredReminders =
-		filter === "all" ? reminders : reminders.filter((r) => r.type === filter);
+	const reminders = remindersData ?? [];
+
+	const dismissReminder = useCallback((id: string) => {
+		setDismissedIds((prev) => {
+			const next = new Set(prev);
+			next.add(id);
+			localStorage.setItem("dismissedReminders", JSON.stringify(Array.from(next)));
+			return next;
+		});
+	}, []);
+
+	const filteredReminders = (filter === "all" ? reminders : reminders.filter((r) => r.type === filter))
+		.filter((r) => !dismissedIds.has(r.id));
 
 	const groupedReminders = filteredReminders.reduce(
 		(acc, reminder) => {
@@ -110,10 +120,10 @@ export default function ReminderPage() {
 	);
 
 	const counts = {
-		hutang: reminders.filter((r) => r.type === "hutang").length,
-		penyusutan: reminders.filter((r) => r.type === "penyusutan").length,
-		piutang: reminders.filter((r) => r.type === "piutang").length,
-		payroll: reminders.filter((r) => r.type === "payroll").length,
+		hutang: reminders.filter((r) => r.type === "hutang" && !dismissedIds.has(r.id)).length,
+		penyusutan: reminders.filter((r) => r.type === "penyusutan" && !dismissedIds.has(r.id)).length,
+		piutang: reminders.filter((r) => r.type === "piutang" && !dismissedIds.has(r.id)).length,
+		payroll: reminders.filter((r) => r.type === "payroll" && !dismissedIds.has(r.id)).length,
 	};
 
 	const isOverdue = (dueDate?: string) => {
@@ -284,7 +294,18 @@ export default function ReminderPage() {
 														</Button>
 													</div>
 												</div>
-												<ChevronRight className="h-5 w-5 text-gray-400 shrink-0" />
+												<div className="flex items-center gap-2 shrink-0">
+													<Button
+														size="sm"
+														variant="ghost"
+														onClick={() => dismissReminder(reminder.id)}
+														title="Sembunyikan"
+														className="text-gray-400 hover:text-gray-600"
+													>
+														<EyeOff className="h-4 w-4" />
+													</Button>
+													<ChevronRight className="h-5 w-5 text-gray-400" />
+												</div>
 											</div>
 										))}
 									</div>
