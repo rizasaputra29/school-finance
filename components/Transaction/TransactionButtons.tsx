@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import * as Dialog from "@radix-ui/react-dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
 	TrendingUp,
 	TrendingDown,
@@ -15,11 +16,20 @@ import {
 	Receipt,
 	Calculator,
 	PiggyBank,
+	Check,
 } from "lucide-react";
 import {
 	formatNumberInput,
 	parseFormattedNumber,
 } from "@/lib/utils/utils-core";
+import { WizardModal } from "@/components/reusable/WizardModal";
+import {
+	Field,
+	FieldLabel,
+	FieldError,
+} from "@/components/reusable/Field";
+import { CurrencyInput } from "@/components/reusable/CurrencyInput";
+import { SearchableSelect } from "@/components/reusable/SearchableSelect";
 
 // Transaction type definitions
 export type TransactionType =
@@ -46,39 +56,11 @@ interface Account {
 	isContra?: boolean;
 }
 
-interface TransactionFormData {
-	tanggal: string;
-	keterangan: string;
-	kodeAkun: string;
-	jumlah: string;
-	// Asset specific
-	namaAset?: string;
-	kategoriAset?: string;
-	lokasiAset?: string;
-	umurTeknis?: string;
-	nilaiResidu?: string;
-	isTanah?: boolean;
-	// Debt specific
-	tenor?: string;
-	dueDate?: string;
-	kreditur?: string;
-	// Equity specific
-	jenisEkuitas?: string;
-	// Piutang specific
-	studentName?: string;
-	nis?: string;
+interface TransactionButtonsProps {
+	accounts: Account[];
+	onSuccess?: () => void;
 }
 
-const INITIAL_FORM: TransactionFormData = {
-	tanggal: new Date().toISOString().split("T")[0],
-	keterangan: "",
-	kodeAkun: "",
-	jumlah: "",
-	umurTeknis: "5",
-	nilaiResidu: "0",
-};
-
-// Transaction type configuration
 const TRANSACTION_CONFIG: Record<
 	TransactionType,
 	{
@@ -87,24 +69,21 @@ const TRANSACTION_CONFIG: Record<
 		color: string;
 		accountTypes: AccountType[];
 		description: string;
-		hasSpecialOptions: boolean;
 	}
 > = {
 	pemasukan: {
-		label: "Pendapatan",
+		label: "Pemasukan",
 		icon: <TrendingUp className="h-5 w-5" />,
 		color: "bg-emerald-500",
 		accountTypes: ["Revenue", "Equity"],
 		description: "Pencatatan pendapatan baru",
-		hasSpecialOptions: false,
 	},
 	pengeluaran: {
-		label: "Beban",
+		label: "Pengeluaran",
 		icon: <TrendingDown className="h-5 w-5" />,
 		color: "bg-red-500",
 		accountTypes: ["Expense"],
 		description: "Pencatatan biaya/beban",
-		hasSpecialOptions: false,
 	},
 	aset: {
 		label: "Aset",
@@ -112,15 +91,13 @@ const TRANSACTION_CONFIG: Record<
 		color: "bg-blue-500",
 		accountTypes: ["Asset"],
 		description: "Perolehan aset baru dengan penyusutan",
-		hasSpecialOptions: true,
 	},
 	hutang: {
-		label: "Kewajiban",
+		label: "Hutang",
 		icon: <CreditCard className="h-5 w-5" />,
 		color: "bg-orange-500",
 		accountTypes: ["Liability"],
 		description: "Pencatatan hutang dengan tenor",
-		hasSpecialOptions: true,
 	},
 	piutang: {
 		label: "Piutang",
@@ -128,7 +105,6 @@ const TRANSACTION_CONFIG: Record<
 		color: "bg-purple-500",
 		accountTypes: ["Asset"],
 		description: "Pencatatan piutang siswa",
-		hasSpecialOptions: true,
 	},
 	ekuitas: {
 		label: "Ekuitas",
@@ -136,26 +112,147 @@ const TRANSACTION_CONFIG: Record<
 		color: "bg-yellow-500",
 		accountTypes: ["Equity"],
 		description: "Pencatatan modal/ekuitas",
-		hasSpecialOptions: true,
 	},
 };
 
-interface TransactionButtonsProps {
-	accounts: Account[];
-	onSuccess?: () => void;
-}
+const WIZARD_STEPS = [
+	{ id: "type", title: "Pilih Jenis Transaksi" },
+	{ id: "basic", title: "Informasi Dasar" },
+	{ id: "detail", title: "Detail Tambahan" },
+	{ id: "review", title: "Review" },
+];
+
+const baseFormSchema = z.object({
+	transactionType: z.enum([
+		"pemasukan",
+		"pengeluaran",
+		"aset",
+		"hutang",
+		"piutang",
+		"ekuitas",
+	]),
+	tanggal: z.string().min(1, "Tanggal wajib diisi"),
+	keterangan: z.string().min(1, "Keterangan wajib diisi"),
+	kodeAkun: z.string().min(1, "Akun wajib dipilih"),
+	jumlah: z
+		.string()
+		.min(1, "Jumlah wajib diisi")
+		.refine((val) => parseFormattedNumber(val) > 0, {
+			message: "Jumlah harus lebih dari 0",
+		}),
+	kategori: z.string().optional(),
+	namaAset: z.string().optional(),
+	kategoriAset: z.string().optional(),
+	lokasiAset: z.string().optional(),
+	umurTeknis: z.string().optional(),
+	nilaiResidu: z.string().optional(),
+	isTanah: z.boolean().optional().default(false),
+	tenor: z.string().optional(),
+	dueDate: z.string().optional(),
+	kreditur: z.string().optional(),
+	studentName: z.string().optional(),
+	nis: z.string().optional(),
+	jenisEkuitas: z.string().optional(),
+});
+
+type FormValues = z.infer<typeof baseFormSchema>;
+
+const asetDetailSchema = z
+	.object({
+		namaAset: z.string().min(1, "Nama aset wajib diisi"),
+		kategoriAset: z.string().min(1, "Kategori aset wajib dipilih"),
+		lokasiAset: z.string().optional(),
+		isTanah: z.boolean().default(false),
+		umurTeknis: z.string().optional(),
+		nilaiResidu: z.string().optional(),
+	})
+	.superRefine((data, ctx) => {
+		if (!data.isTanah) {
+			if (!data.umurTeknis?.trim()) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: "Umur teknis wajib diisi",
+					path: ["umurTeknis"],
+				});
+			}
+			if (data.nilaiResidu === undefined || data.nilaiResidu === "") {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: "Nilai residu wajib diisi",
+					path: ["nilaiResidu"],
+				});
+			}
+		}
+	});
+
+const hutangDetailSchema = z.object({
+	tenor: z.string().min(1, "Tenor wajib dipilih"),
+	dueDate: z.string().min(1, "Tanggal jatuh tempo wajib diisi"),
+	kreditur: z.string().min(1, "Kreditur wajib diisi"),
+});
+
+const piutangDetailSchema = z.object({
+	studentName: z.string().min(1, "Nama siswa wajib diisi"),
+	nis: z.string().min(1, "NIS wajib diisi"),
+	dueDate: z.string().min(1, "Tanggal jatuh tempo wajib diisi"),
+});
+
+const ekuitasDetailSchema = z.object({
+	jenisEkuitas: z.string().min(1, "Jenis ekuitas wajib dipilih"),
+});
+
+const kategoriDetailSchema = z.object({
+	kategori: z.string().min(1, "Kategori wajib dipilih"),
+});
+
+const DEFAULT_VALUES: FormValues = {
+	transactionType: "pemasukan",
+	tanggal: new Date().toISOString().split("T")[0],
+	keterangan: "",
+	kodeAkun: "",
+	jumlah: "",
+	kategori: "",
+	namaAset: "",
+	kategoriAset: "",
+	lokasiAset: "",
+	umurTeknis: "5",
+	nilaiResidu: "0",
+	isTanah: false,
+	tenor: "",
+	dueDate: "",
+	kreditur: "",
+	studentName: "",
+	nis: "",
+	jenisEkuitas: "",
+};
 
 export function TransactionButtons({
 	accounts,
 	onSuccess,
 }: TransactionButtonsProps) {
-	const [openType, setOpenType] = useState<TransactionType | null>(null);
-	const [isMainModalOpen, setIsMainModalOpen] = useState(false);
-	const [formData, setFormData] = useState<TransactionFormData>(INITIAL_FORM);
-	const [selectedCategory, setSelectedCategory] = useState("");
-	const [isLoading, setIsLoading] = useState(false);
-	const [error, setError] = useState("");
-	const [success, setSuccess] = useState(false);
+	const [isOpen, setIsOpen] = useState(false);
+	const [currentStep, setCurrentStep] = useState(0);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [submitError, setSubmitError] = useState("");
+
+	const {
+		register,
+		control,
+		handleSubmit,
+		watch,
+		setValue,
+		getValues,
+		trigger,
+		setError,
+		formState: { errors },
+		reset,
+	} = useForm({
+		resolver: zodResolver(baseFormSchema) as never,
+		defaultValues: DEFAULT_VALUES,
+		mode: "onChange",
+	});
+
+	const transactionType = watch("transactionType");
 
 	// Group accounts by type
 	const accountsByType = useMemo(() => {
@@ -175,103 +272,49 @@ export function TransactionButtons({
 		return grouped;
 	}, [accounts]);
 
-	const getFilteredAccounts = (type: TransactionType): Account[] => {
-		const config = TRANSACTION_CONFIG[type];
+	const filteredAccounts = useMemo(() => {
+		const config = TRANSACTION_CONFIG[transactionType];
+		if (!config) return [];
 		let filtered: Account[] = [];
-
 		config.accountTypes.forEach((accountType) => {
 			filtered = [...filtered, ...accountsByType[accountType]];
 		});
-
-		if (selectedCategory) {
-			filtered = filtered.filter((acc) => acc.kategori === selectedCategory);
-		}
-
 		return filtered;
-	};
+	}, [transactionType, accountsByType]);
 
-	const getCategories = (type: TransactionType): string[] => {
-		const accounts = getFilteredAccounts(type);
+	const accountOptions = useMemo(
+		() =>
+			filteredAccounts.map((acc) => ({
+				value: acc.kodeAkun,
+				label: `${acc.kodeAkun} - ${acc.namaAkun}`,
+				subLabel: acc.tipeAkun,
+			})),
+		[filteredAccounts],
+	);
+
+	const accountCategories = useMemo(() => {
 		const categories = [
-			...new Set(accounts.map((a) => a.kategori).filter(Boolean)),
+			...new Set(filteredAccounts.map((a) => a.kategori).filter(Boolean)),
 		];
 		return categories as string[];
-	};
+	}, [filteredAccounts]);
 
-	const handleSubmit = async (type: TransactionType) => {
-		setError("");
-		setIsLoading(true);
+	const selectedAccount = useMemo(
+		() => accounts.find((a) => a.kodeAkun === watch("kodeAkun")),
+		[accounts, watch("kodeAkun")],
+	);
 
-		try {
-			const amount = parseFormattedNumber(formData.jumlah);
-			if (amount <= 0) {
-				setError("Jumlah harus lebih dari 0");
-				setIsLoading(false);
-				return;
-			}
-
-			const entries = buildDoubleEntryEntries(type, formData.kodeAkun, amount);
-
-			const res = await fetch("/api/cashflow", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					tanggal: formData.tanggal,
-					keterangan: formData.keterangan,
-					entries,
-					transactionType: type,
-					...(type === "aset" && {
-						namaAset: formData.namaAset,
-						kategoriAset: formData.kategoriAset,
-						lokasiAset: formData.lokasiAset,
-						umurTeknis: parseInt(formData.umurTeknis || "5"),
-						nilaiResidu: parseFormattedNumber(formData.nilaiResidu || "0"),
-						isTanah: formData.isTanah || false,
-					}),
-					...(type === "hutang" && {
-						tenor: parseInt(formData.tenor || "12"),
-						dueDate: formData.dueDate,
-						kreditur: formData.kreditur,
-					}),
-					...(type === "ekuitas" && {
-						jenisEkuitas: formData.jenisEkuitas,
-					}),
-					...(type === "piutang" && {
-						studentName: formData.studentName,
-						nis: formData.nis,
-						dueDate: formData.dueDate,
-					}),
-				}),
-			});
-
-			const result = await res.json();
-
-			if (result.success) {
-				setSuccess(true);
-				toast.success("Transaksi berhasil disimpan");
-				setTimeout(() => {
-					setIsMainModalOpen(false);
-					setOpenType(null);
-					setFormData(INITIAL_FORM);
-					setSelectedCategory("");
-					setSuccess(false);
-					onSuccess?.();
-				}, 1500);
-			} else {
-				setError(result.error?.message || "Gagal menyimpan transaksi");
-			}
-		} catch (err) {
-			console.error("Transaction error:", err);
-			setError("Terjadi kesalahan saat menyimpan");
-		} finally {
-			setIsLoading(false);
-		}
+	const resetWizard = () => {
+		reset(DEFAULT_VALUES);
+		setCurrentStep(0);
+		setSubmitError("");
 	};
 
 	const buildDoubleEntryEntries = (
 		type: TransactionType,
 		accountCode: string,
 		amount: number,
+		notes: string,
 	): Array<{
 		kodeAkun: string;
 		debit: number;
@@ -291,13 +334,13 @@ export function TransactionButtons({
 						kodeAkun: cashCode,
 						debit: amount,
 						kredit: 0,
-						keterangan: `${formData.keterangan} - Kas`,
+						keterangan: `${notes} - Kas`,
 					},
 					{
 						kodeAkun: accountCode,
 						debit: 0,
 						kredit: amount,
-						keterangan: `${formData.keterangan} - Pendapatan`,
+						keterangan: `${notes} - Pendapatan`,
 					},
 				];
 			case "pengeluaran":
@@ -306,13 +349,13 @@ export function TransactionButtons({
 						kodeAkun: accountCode,
 						debit: amount,
 						kredit: 0,
-						keterangan: `${formData.keterangan} - Beban`,
+						keterangan: `${notes} - Beban`,
 					},
 					{
 						kodeAkun: cashCode,
 						debit: 0,
 						kredit: amount,
-						keterangan: `${formData.keterangan} - Kas`,
+						keterangan: `${notes} - Kas`,
 					},
 				];
 			case "aset":
@@ -321,13 +364,13 @@ export function TransactionButtons({
 						kodeAkun: accountCode,
 						debit: amount,
 						kredit: 0,
-						keterangan: `${formData.keterangan} - Aset`,
+						keterangan: `${notes} - Aset`,
 					},
 					{
 						kodeAkun: cashCode,
 						debit: 0,
 						kredit: amount,
-						keterangan: `${formData.keterangan} - Pembayaran`,
+						keterangan: `${notes} - Pembayaran`,
 					},
 				];
 			case "hutang":
@@ -336,44 +379,45 @@ export function TransactionButtons({
 						kodeAkun: cashCode,
 						debit: amount,
 						kredit: 0,
-						keterangan: `${formData.keterangan} - Penerimaan`,
+						keterangan: `${notes} - Penerimaan`,
 					},
 					{
 						kodeAkun: accountCode,
 						debit: 0,
 						kredit: amount,
-						keterangan: `${formData.keterangan} - Kewajiban`,
+						keterangan: `${notes} - Kewajiban`,
 					},
 				];
-			case "piutang":
+			case "piutang": {
 				const revenueCode = accountsByType.Revenue[0]?.kodeAkun || "4101";
 				return [
 					{
 						kodeAkun: accountCode,
 						debit: amount,
 						kredit: 0,
-						keterangan: `${formData.keterangan} - Piutang`,
+						keterangan: `${notes} - Piutang`,
 					},
 					{
 						kodeAkun: revenueCode,
 						debit: 0,
 						kredit: amount,
-						keterangan: `${formData.keterangan} - Pendapatan`,
+						keterangan: `${notes} - Pendapatan`,
 					},
 				];
+			}
 			case "ekuitas":
 				return [
 					{
 						kodeAkun: cashCode,
 						debit: amount,
 						kredit: 0,
-						keterangan: `${formData.keterangan} - Kas`,
+						keterangan: `${notes} - Kas`,
 					},
 					{
 						kodeAkun: accountCode,
 						debit: 0,
 						kredit: amount,
-						keterangan: `${formData.keterangan} - Ekuitas`,
+						keterangan: `${notes} - Ekuitas`,
 					},
 				];
 			default:
@@ -381,171 +425,291 @@ export function TransactionButtons({
 		}
 	};
 
-	const renderForm = (type: TransactionType) => {
-		const config = TRANSACTION_CONFIG[type];
-		const filteredAccounts = getFilteredAccounts(type);
-		const categories = getCategories(type);
-		const selectedAccount = accounts.find(
-			(a) => a.kodeAkun === formData.kodeAkun,
-		);
+	const onSubmit = async (data: FormValues) => {
+		setSubmitError("");
+		setIsSubmitting(true);
 
-		return (
-			<div className="space-y-4">
-				{error && (
-					<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-						{error}
-					</div>
-				)}
-				{success && (
-					<div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-600">
-						Transaksi berhasil disimpan!
-					</div>
-				)}
+		try {
+			const amount = parseFormattedNumber(data.jumlah);
+			if (amount <= 0) {
+				setSubmitError("Jumlah harus lebih dari 0");
+				setIsSubmitting(false);
+				return;
+			}
 
-				<div className="space-y-2">
-					<Label htmlFor="tanggal">Tanggal</Label>
-					<Input
-						id="tanggal"
-						type="date"
-						value={formData.tanggal}
-						onChange={(e) =>
-							setFormData({ ...formData, tanggal: e.target.value })
-						}
-						required
-					/>
-				</div>
+			const entries = buildDoubleEntryEntries(
+				data.transactionType,
+				data.kodeAkun,
+				amount,
+				data.keterangan,
+			);
 
-				<div className="space-y-2">
-					<Label htmlFor="keterangan">Keterangan</Label>
-					<Input
-						id="keterangan"
-						value={formData.keterangan}
-						onChange={(e) =>
-							setFormData({ ...formData, keterangan: e.target.value })
-						}
-						placeholder={`Contoh: Pembayaran ${config.label}`}
-						required
-					/>
-				</div>
+			const res = await fetch("/api/cashflow", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					tanggal: data.tanggal,
+					keterangan: data.keterangan,
+					entries,
+					transactionType: data.transactionType,
+					...(data.transactionType === "aset" && {
+						namaAset: data.namaAset,
+						kategoriAset: data.kategoriAset,
+						lokasiAset: data.lokasiAset,
+						umurTeknis: parseInt(data.umurTeknis || "5"),
+						nilaiResidu: parseFormattedNumber(data.nilaiResidu || "0"),
+						isTanah: data.isTanah || false,
+					}),
+					...(data.transactionType === "hutang" && {
+						tenor: parseInt(data.tenor || "12"),
+						dueDate: data.dueDate,
+						kreditur: data.kreditur,
+					}),
+					...(data.transactionType === "ekuitas" && {
+						jenisEkuitas: data.jenisEkuitas,
+					}),
+					...(data.transactionType === "piutang" && {
+						studentName: data.studentName,
+						nis: data.nis,
+						dueDate: data.dueDate,
+					}),
+					...(data.transactionType === "pemasukan" && {
+						kategori: data.kategori,
+					}),
+					...(data.transactionType === "pengeluaran" && {
+						kategori: data.kategori,
+					}),
+				}),
+			});
 
-				{/* Category Filter */}
-				{categories.length > 0 && (
-					<div className="space-y-2">
-						<Label>Kategori</Label>
-						<select
-							className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-							value={selectedCategory}
-							onChange={(e) => setSelectedCategory(e.target.value)}
-						>
-							<option value="">Semua Kategori</option>
-							{categories.map((cat) => (
-								<option key={cat} value={cat!}>
-									{cat}
-								</option>
-							))}
-						</select>
-					</div>
-				)}
+			const result = await res.json();
 
-				{/* Account Selection */}
-				<div className="space-y-2">
-					<Label>Pilih Akun {config.accountTypes.join(", ")}</Label>
-					<div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-						{filteredAccounts.map((acc) => (
+			if (result.success) {
+				toast.success("Transaksi berhasil disimpan");
+				setIsOpen(false);
+				resetWizard();
+				onSuccess?.();
+			} else {
+				setSubmitError(result.error?.message || "Gagal menyimpan transaksi");
+			}
+		} catch (err) {
+			setSubmitError("Terjadi kesalahan saat menyimpan");
+		} finally {
+			setIsSubmitting(false);
+		}
+	};
+
+	const validateCurrentStep = async (): Promise<boolean> => {
+		if (currentStep === 0) {
+			return trigger("transactionType");
+		}
+		if (currentStep === 1) {
+			return trigger(["tanggal", "keterangan", "kodeAkun", "jumlah"]);
+		}
+		if (currentStep === 2) {
+			const values = getValues();
+			let result: z.SafeParseReturnType<unknown, unknown> | null = null;
+			switch (values.transactionType) {
+				case "aset":
+					result = asetDetailSchema.safeParse(values);
+					break;
+				case "hutang":
+					result = hutangDetailSchema.safeParse(values);
+					break;
+				case "piutang":
+					result = piutangDetailSchema.safeParse(values);
+					break;
+				case "ekuitas":
+					result = ekuitasDetailSchema.safeParse(values);
+					break;
+				case "pemasukan":
+				case "pengeluaran":
+					result = kategoriDetailSchema.safeParse(values);
+					break;
+				default:
+					return true;
+			}
+
+			if (result && !result.success) {
+				result.error.issues.forEach((issue) => {
+					const path = issue.path[0] as keyof FormValues;
+					setError(path, { type: "manual", message: issue.message });
+				});
+				return false;
+			}
+			return true;
+		}
+		return true;
+	};
+
+	const handleNext = async () => {
+		if (currentStep === WIZARD_STEPS.length - 1) {
+			await handleSubmit(onSubmit)();
+			return;
+		}
+
+		const isValid = await validateCurrentStep();
+		if (isValid) {
+			setCurrentStep((prev) => prev + 1);
+		}
+	};
+
+	const handleBack = () => {
+		setCurrentStep((prev) => Math.max(0, prev - 1));
+	};
+
+	const formatCurrency = (value: string) => {
+		const num = parseFormattedNumber(value);
+		return `Rp ${num.toLocaleString("id-ID")}`;
+	};
+
+	const renderTypeStep = () => (
+		<div className="space-y-4">
+			<p className="text-sm text-slate-500 text-center">
+				Pilih jenis transaksi yang ingin dicatat
+			</p>
+			<div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+				{(Object.keys(TRANSACTION_CONFIG) as TransactionType[]).map(
+					(type) => {
+						const config = TRANSACTION_CONFIG[type];
+						const isSelected = transactionType === type;
+						return (
 							<button
-								key={acc.id}
+								key={type}
 								type="button"
-								onClick={() =>
-									setFormData({ ...formData, kodeAkun: acc.kodeAkun })
-								}
-								className={`flex items-center justify-between p-2 rounded-lg text-left transition-colors ${
-									formData.kodeAkun === acc.kodeAkun
-										? "bg-blue-100 border-blue-300 border"
-										: "hover:bg-gray-50 border border-transparent"
+								onClick={() => setValue("transactionType", type)}
+								className={`relative flex flex-col items-center justify-center gap-2 rounded-full px-4 py-4 border-2 transition-all ${
+									isSelected
+										? "border-[#059DEA] bg-[#059DEA]/10 text-[#059DEA]"
+										: "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700"
 								}`}
 							>
-								<div>
-									<span className="font-mono font-medium">{acc.kodeAkun}</span>
-									<span className="ml-2 text-sm">{acc.namaAkun}</span>
+								<div
+									className={`p-2.5 rounded-full ${
+										isSelected ? "bg-[#059DEA] text-white" : `${config.color} text-white`
+									}`}
+								>
+									{config.icon}
 								</div>
-								<Badge variant="outline" className="text-xs">
-									{acc.tipeAkun}
-								</Badge>
+								<span className="font-medium text-sm">
+									{config.label}
+								</span>
+								{isSelected && (
+									<span className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-[#059DEA] text-white rounded-full p-0.5">
+										<Check className="h-3 w-3" />
+									</span>
+								)}
 							</button>
-						))}
-						{filteredAccounts.length === 0 && (
-							<p className="text-center text-gray-500 py-4">
-								Tidak ada akun tersedia
-							</p>
-						)}
-					</div>
-					{formData.kodeAkun && selectedAccount && (
-						<div className="flex items-center gap-2 mt-1">
-							<Badge className="bg-blue-100 text-blue-700">
-								{selectedAccount.kodeAkun} - {selectedAccount.namaAkun}
-							</Badge>
-							<button
-								type="button"
-								onClick={() => setFormData({ ...formData, kodeAkun: "" })}
-								className="text-xs text-red-500 hover:text-red-700"
-							>
-								✕
-							</button>
-						</div>
-					)}
-				</div>
+						);
+					},
+				)}
+			</div>
+			<FieldError
+				errors={errors.transactionType ? [{ message: errors.transactionType.message }] : []}
+				className="text-center"
+			/>
+		</div>
+	);
 
-				{/* Amount */}
-				<div className="space-y-2">
-					<Label htmlFor="jumlah">Jumlah (Rp)</Label>
-					<div className="relative">
-						<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
-							Rp
-						</span>
-						<Input
-							id="jumlah"
-							value={formData.jumlah}
-							onChange={(e) =>
-								setFormData({
-									...formData,
-									jumlah: formatNumberInput(e.target.value),
-								})
-							}
-							placeholder="0"
-							className="pl-10"
-							required
+	const renderBasicStep = () => (
+		<div className="space-y-4">
+			<Field data-invalid={!!errors.tanggal}>
+				<FieldLabel>Tanggal</FieldLabel>
+				<Input
+					type="date"
+					{...register("tanggal")}
+				/>
+				<FieldError
+					errors={errors.tanggal ? [{ message: errors.tanggal.message }] : []}
+				/>
+			</Field>
+
+			<Field data-invalid={!!errors.keterangan}>
+				<FieldLabel>Keterangan</FieldLabel>
+				<Input
+					{...register("keterangan")}
+					placeholder={`Contoh: Pembayaran ${TRANSACTION_CONFIG[transactionType].label}`}
+				/>
+				<FieldError
+					errors={
+						errors.keterangan ? [{ message: errors.keterangan.message }] : []
+					}
+				/>
+			</Field>
+
+			<Field data-invalid={!!errors.kodeAkun}>
+				<FieldLabel>Sumber/Akun</FieldLabel>
+				<Controller
+					name="kodeAkun"
+					control={control}
+					render={({ field }) => (
+						<SearchableSelect
+							options={accountOptions}
+							value={field.value}
+							onChange={field.onChange}
+							placeholder="Pilih akun"
+							searchPlaceholder="Cari akun..."
+							emptyMessage="Tidak ada akun tersedia"
 						/>
-					</div>
-				</div>
+					)}
+				/>
+				<FieldError
+					errors={
+						errors.kodeAkun ? [{ message: errors.kodeAkun.message }] : []
+					}
+				/>
+			</Field>
 
-				{/* ========== ASET OPTIONS - PENYUSUTAN ========== */}
-				{type === "aset" && (
-					<div className="border-t pt-4 mt-4 space-y-4">
+			<Field data-invalid={!!errors.jumlah}>
+				<FieldLabel>Jumlah (Rp)</FieldLabel>
+				<Controller
+					name="jumlah"
+					control={control}
+					render={({ field }) => (
+						<CurrencyInput
+							value={field.value}
+							onChange={field.onChange}
+							placeholder="0"
+						/>
+					)}
+				/>
+				<FieldError
+					errors={errors.jumlah ? [{ message: errors.jumlah.message }] : []}
+				/>
+			</Field>
+		</div>
+	);
+
+	const renderDetailStep = () => {
+		switch (transactionType) {
+			case "aset":
+				return (
+					<div className="space-y-4">
 						<div className="flex items-center gap-2 text-blue-700">
 							<Calculator className="h-4 w-4" />
-							<span className="font-medium text-sm">Option Penyusutan</span>
+							<span className="font-medium text-sm">Detail Aset</span>
 						</div>
 
-						<div className="space-y-2">
-							<Label htmlFor="namaAset">Nama Aset</Label>
+						<Field data-invalid={!!errors.namaAset}>
+							<FieldLabel>Nama Aset</FieldLabel>
 							<Input
-								id="namaAset"
-								value={formData.namaAset || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, namaAset: e.target.value })
-								}
+								{...register("namaAset")}
 								placeholder="Contoh: Laptop ASUS VivoBook"
 							/>
-						</div>
+							<FieldError
+								errors={
+									errors.namaAset
+										? [{ message: errors.namaAset.message }]
+										: []
+								}
+							/>
+						</Field>
 
-						<div className="space-y-2">
-							<Label htmlFor="kategoriAset">Kategori Aset</Label>
+						<Field data-invalid={!!errors.kategoriAset}>
+							<FieldLabel>Kategori Aset</FieldLabel>
 							<select
 								className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-								value={formData.kategoriAset || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, kategoriAset: e.target.value })
-								}
+								{...register("kategoriAset")}
 							>
 								<option value="">Pilih kategori</option>
 								<option value="Peralatan">Peralatan</option>
@@ -554,46 +718,41 @@ export function TransactionButtons({
 								<option value="Tanah">Tanah</option>
 								<option value="Inventaris">Inventaris</option>
 							</select>
-						</div>
-
-						<div className="space-y-2">
-							<Label htmlFor="lokasiAset">Lokasi</Label>
-							<Input
-								id="lokasiAset"
-								value={formData.lokasiAset || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, lokasiAset: e.target.value })
+							<FieldError
+								errors={
+									errors.kategoriAset
+										? [{ message: errors.kategoriAset.message }]
+										: []
 								}
+							/>
+						</Field>
+
+						<Field>
+							<FieldLabel>Lokasi</FieldLabel>
+							<Input
+								{...register("lokasiAset")}
 								placeholder="Contoh: Ruang TK A"
 							/>
-						</div>
+						</Field>
 
-						{/* Tanah Checkbox */}
-						<div className="flex items-center gap-2">
+						<Field orientation="horizontal">
+							<FieldLabel className="font-normal">
+								Tanah (Tidak Disusutkan)
+							</FieldLabel>
 							<input
 								type="checkbox"
-								id="isTanah"
-								checked={formData.isTanah || false}
-								onChange={(e) =>
-									setFormData({ ...formData, isTanah: e.target.checked })
-								}
-								className="rounded"
+								{...register("isTanah")}
+								className="h-4 w-4 rounded border-gray-300"
 							/>
-							<Label htmlFor="isTanah" className="text-sm font-normal">
-								Tanah (Tidak_DISUSUTKAN)
-							</Label>
-						</div>
+						</Field>
 
-						{!formData.isTanah && (
+						{!watch("isTanah") && (
 							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<Label htmlFor="umurTeknis">Umur Teknis (Tahun)</Label>
+								<Field data-invalid={!!errors.umurTeknis}>
+									<FieldLabel>Umur Teknis (Tahun)</FieldLabel>
 									<select
 										className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-										value={formData.umurTeknis}
-										onChange={(e) =>
-											setFormData({ ...formData, umurTeknis: e.target.value })
-										}
+										{...register("umurTeknis")}
 									>
 										<option value="1">1 Tahun</option>
 										<option value="2">2 Tahun</option>
@@ -604,79 +763,84 @@ export function TransactionButtons({
 										<option value="15">15 Tahun</option>
 										<option value="20">20 Tahun</option>
 									</select>
-									<p className="text-xs text-gray-500">Penyusutan per tahun</p>
-								</div>
-
-								<div className="space-y-2">
-									<Label htmlFor="nilaiResidu">Nilai Residu (Rp)</Label>
-									<Input
-										id="nilaiResidu"
-										value={formData.nilaiResidu || "0"}
-										onChange={(e) =>
-											setFormData({
-												...formData,
-												nilaiResidu: formatNumberInput(e.target.value),
-											})
+									<FieldError
+										errors={
+											errors.umurTeknis
+												? [{ message: errors.umurTeknis.message }]
+												: []
 										}
-										placeholder="0"
 									/>
-									<p className="text-xs text-gray-500">
-										Nilai akhir setelah penyusutan
-									</p>
-								</div>
+								</Field>
+
+								<Field data-invalid={!!errors.nilaiResidu}>
+									<FieldLabel>Nilai Residu (Rp)</FieldLabel>
+									<Controller
+										name="nilaiResidu"
+										control={control}
+										render={({ field }) => (
+											<CurrencyInput
+												value={field.value || "0"}
+												onChange={field.onChange}
+												placeholder="0"
+											/>
+										)}
+									/>
+									<FieldError
+										errors={
+											errors.nilaiResidu
+												? [{ message: errors.nilaiResidu.message }]
+												: []
+										}
+									/>
+								</Field>
 							</div>
 						)}
 
-						{formData.jumlah && formData.umurTeknis && !formData.isTanah && (
+						{watch("jumlah") && watch("umurTeknis") && !watch("isTanah") && (
 							<div className="bg-blue-50 p-3 rounded-lg text-sm">
 								<p className="font-medium text-blue-700">
 									Estimasi Penyusutan:
 								</p>
 								<p className="text-blue-600">
-									Rp{" "}
-									{(
-										(parseFormattedNumber(formData.jumlah) -
-											parseFormattedNumber(formData.nilaiResidu || "0")) /
-										parseInt(formData.umurTeknis)
-									).toLocaleString("id-ID")}{" "}
-									/ tahun
+									{`Rp ${(
+										(parseFormattedNumber(watch("jumlah")) -
+											parseFormattedNumber(watch("nilaiResidu") || "0")) /
+										parseInt(watch("umurTeknis") || "1")
+									).toLocaleString("id-ID")} / tahun`}
 								</p>
 							</div>
 						)}
 					</div>
-				)}
-
-				{/* ========== KEWAJIBAN OPTIONS - TENOR & JATUH TEMPO ========== */}
-				{type === "hutang" && (
-					<div className="border-t pt-4 mt-4 space-y-4">
+				);
+			case "hutang":
+				return (
+					<div className="space-y-4">
 						<div className="flex items-center gap-2 text-orange-700">
 							<CreditCard className="h-4 w-4" />
-							<span className="font-medium text-sm">
-								Option Kewajiban (Hutang)
-							</span>
+							<span className="font-medium text-sm">Detail Hutang</span>
 						</div>
 
-						<div className="space-y-2">
-							<Label htmlFor="kreditur">Kreditur / Penyedia</Label>
+						<Field data-invalid={!!errors.kreditur}>
+							<FieldLabel>Kreditur / Penyedia</FieldLabel>
 							<Input
-								id="kreditur"
-								value={formData.kreditur || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, kreditur: e.target.value })
-								}
+								{...register("kreditur")}
 								placeholder="Contoh: Bank BCA, Supplier ABC"
 							/>
-						</div>
+							<FieldError
+								errors={
+									errors.kreditur
+										? [{ message: errors.kreditur.message }]
+										: []
+								}
+							/>
+						</Field>
 
 						<div className="grid grid-cols-2 gap-4">
-							<div className="space-y-2">
-								<Label htmlFor="tenor">Tenor (Bulan)</Label>
+							<Field data-invalid={!!errors.tenor}>
+								<FieldLabel>Tenor (Bulan)</FieldLabel>
 								<select
 									className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-									value={formData.tenor}
-									onChange={(e) =>
-										setFormData({ ...formData, tenor: e.target.value })
-									}
+									{...register("tenor")}
 								>
 									<option value="">Pilih tenor</option>
 									<option value="1">1 Bulan</option>
@@ -687,207 +851,341 @@ export function TransactionButtons({
 									<option value="24">24 Bulan</option>
 									<option value="36">36 Bulan</option>
 								</select>
-							</div>
-
-							<div className="space-y-2">
-								<Label htmlFor="dueDate">Tanggal Jatuh Tempo</Label>
-								<Input
-									id="dueDate"
-									type="date"
-									value={formData.dueDate || ""}
-									onChange={(e) =>
-										setFormData({ ...formData, dueDate: e.target.value })
+								<FieldError
+									errors={
+										errors.tenor
+											? [{ message: errors.tenor.message }]
+											: []
 									}
 								/>
-							</div>
+							</Field>
+
+							<Field data-invalid={!!errors.dueDate}>
+								<FieldLabel>Tanggal Jatuh Tempo</FieldLabel>
+								<Input type="date" {...register("dueDate")} />
+								<FieldError
+									errors={
+										errors.dueDate
+											? [{ message: errors.dueDate.message }]
+											: []
+									}
+								/>
+							</Field>
 						</div>
 
-						{formData.jumlah && formData.tenor && (
+						{watch("jumlah") && watch("tenor") && (
 							<div className="bg-orange-50 p-3 rounded-lg text-sm">
 								<p className="font-medium text-orange-700">
 									Rincian Kewajiban:
 								</p>
 								<p className="text-orange-600">
-									Total: Rp{" "}
-									{parseFormattedNumber(formData.jumlah).toLocaleString(
-										"id-ID",
-									)}
+									{`Total: ${formatCurrency(watch("jumlah"))}`}
 								</p>
 								<p className="text-orange-600">
-									Cicilan per bulan: Rp{" "}
-									{(
-										parseFormattedNumber(formData.jumlah) /
-										parseInt(formData.tenor)
-									).toLocaleString("id-ID")}
+									{`Cicilan per bulan: Rp ${(
+										parseFormattedNumber(watch("jumlah")) /
+										parseInt(watch("tenor") || "1")
+									).toLocaleString("id-ID")}`}
 								</p>
 							</div>
 						)}
 					</div>
-				)}
-
-				{/* ========== PIUTANG OPTIONS ========== */}
-				{type === "piutang" && (
-					<div className="border-t pt-4 mt-4 space-y-4">
+				);
+			case "piutang":
+				return (
+					<div className="space-y-4">
 						<div className="flex items-center gap-2 text-purple-700">
 							<Receipt className="h-4 w-4" />
-							<span className="font-medium text-sm">Option Piutang</span>
+							<span className="font-medium text-sm">Detail Piutang</span>
 						</div>
 
-						<div className="space-y-2">
-							<Label htmlFor="studentName">Nama Siswa</Label>
+						<Field data-invalid={!!errors.studentName}>
+							<FieldLabel>Nama Siswa</FieldLabel>
 							<Input
-								id="studentName"
-								value={formData.studentName || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, studentName: e.target.value })
-								}
+								{...register("studentName")}
 								placeholder="Nama siswa"
 							/>
-						</div>
-
-						<div className="space-y-2">
-							<Label htmlFor="nis">NIS Siswa</Label>
-							<Input
-								id="nis"
-								value={formData.nis || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, nis: e.target.value })
+							<FieldError
+								errors={
+									errors.studentName
+										? [{ message: errors.studentName.message }]
+										: []
 								}
+							/>
+						</Field>
+
+						<Field data-invalid={!!errors.nis}>
+							<FieldLabel>NIS Siswa</FieldLabel>
+							<Input
+								{...register("nis")}
 								placeholder="Nomor Induk Siswa"
 							/>
-						</div>
-
-						<div className="space-y-2">
-							<Label htmlFor="piutangDueDate">Jatuh Tempo</Label>
-							<Input
-								id="piutangDueDate"
-								type="date"
-								value={formData.dueDate || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, dueDate: e.target.value })
+							<FieldError
+								errors={
+									errors.nis ? [{ message: errors.nis.message }] : []
 								}
 							/>
-						</div>
-					</div>
-				)}
+						</Field>
 
-				{/* ========== EKUITAS OPTIONS ========== */}
-				{type === "ekuitas" && (
-					<div className="border-t pt-4 mt-4 space-y-4">
+						<Field data-invalid={!!errors.dueDate}>
+							<FieldLabel>Tanggal Jatuh Tempo</FieldLabel>
+							<Input type="date" {...register("dueDate")} />
+							<FieldError
+								errors={
+									errors.dueDate
+										? [{ message: errors.dueDate.message }]
+										: []
+								}
+							/>
+						</Field>
+					</div>
+				);
+			case "ekuitas":
+				return (
+					<div className="space-y-4">
 						<div className="flex items-center gap-2 text-yellow-700">
 							<PiggyBank className="h-4 w-4" />
-							<span className="font-medium text-sm">Option Ekuitas</span>
+							<span className="font-medium text-sm">Detail Ekuitas</span>
 						</div>
 
-						<div className="space-y-2">
-							<Label htmlFor="jenisEkuitas">Jenis Ekuitas</Label>
+						<Field data-invalid={!!errors.jenisEkuitas}>
+							<FieldLabel>Jenis Ekuitas</FieldLabel>
 							<select
 								className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-								value={formData.jenisEkuitas || ""}
-								onChange={(e) =>
-									setFormData({ ...formData, jenisEkuitas: e.target.value })
-								}
+								{...register("jenisEkuitas")}
 							>
 								<option value="">Pilih jenis</option>
 								<option value="Modal">Modal</option>
 								<option value="Saldo Berjalan">Saldo Berjalan</option>
-								<option value="Laba Tahun Berjalan">Laba Tahun Berjalan</option>
+								<option value="Laba Tahun Berjalan">
+									Laba Tahun Berjalan
+								</option>
 								<option value="Saldo Awal">Saldo Awal</option>
 							</select>
+							<FieldError
+								errors={
+									errors.jenisEkuitas
+										? [{ message: errors.jenisEkuitas.message }]
+										: []
+								}
+							/>
+						</Field>
+					</div>
+				);
+			case "pemasukan":
+			case "pengeluaran":
+				return (
+					<div className="space-y-4">
+						<Field data-invalid={!!errors.kategori}>
+							<FieldLabel>Kategori</FieldLabel>
+							<select
+								className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+								{...register("kategori")}
+							>
+								<option value="">Pilih kategori</option>
+								{accountCategories.map((cat) => (
+									<option key={cat} value={cat}>
+										{cat}
+									</option>
+								))}
+							</select>
+							<FieldError
+								errors={
+									errors.kategori
+										? [{ message: errors.kategori.message }]
+										: []
+								}
+							/>
+						</Field>
+					</div>
+				);
+			default:
+				return null;
+		}
+	};
+
+	const renderReviewStep = () => {
+		const values = getValues();
+		return (
+			<div className="space-y-4">
+				<h3 className="font-medium text-slate-900">Ringkasan Transaksi</h3>
+				<div className="bg-gray-50 rounded-lg p-4 space-y-3 text-sm">
+					<div className="flex justify-between">
+						<span className="text-gray-500">Jenis</span>
+						<span className="font-medium">
+							{TRANSACTION_CONFIG[values.transactionType].label}
+						</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-gray-500">Tanggal</span>
+						<span className="font-medium">{values.tanggal}</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-gray-500">Keterangan</span>
+						<span className="font-medium text-right max-w-[60%]">
+							{values.keterangan}
+						</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-gray-500">Akun</span>
+						<span className="font-medium text-right max-w-[60%]">
+							{selectedAccount
+								? `${selectedAccount.kodeAkun} - ${selectedAccount.namaAkun}`
+								: values.kodeAkun}
+						</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-gray-500">Jumlah</span>
+						<span className="font-medium">{formatCurrency(values.jumlah)}</span>
+					</div>
+
+					{values.transactionType === "aset" && (
+						<>
+							<div className="border-t border-gray-200 pt-2 flex justify-between">
+								<span className="text-gray-500">Nama Aset</span>
+								<span className="font-medium">{values.namaAset}</span>
+							</div>
+							<div className="flex justify-between">
+								<span className="text-gray-500">Kategori Aset</span>
+								<span className="font-medium">{values.kategoriAset}</span>
+							</div>
+							{values.lokasiAset && (
+								<div className="flex justify-between">
+									<span className="text-gray-500">Lokasi</span>
+									<span className="font-medium">{values.lokasiAset}</span>
+								</div>
+							)}
+							<div className="flex justify-between">
+								<span className="text-gray-500">Tanah</span>
+								<span className="font-medium">
+									{values.isTanah ? "Ya" : "Tidak"}
+								</span>
+							</div>
+							{!values.isTanah && (
+								<>
+									<div className="flex justify-between">
+										<span className="text-gray-500">Umur Teknis</span>
+										<span className="font-medium">
+											{values.umurTeknis} Tahun
+										</span>
+									</div>
+									<div className="flex justify-between">
+										<span className="text-gray-500">Nilai Residu</span>
+										<span className="font-medium">
+											{formatCurrency(values.nilaiResidu || "0")}
+										</span>
+									</div>
+								</>
+							)}
+						</>
+					)}
+
+					{values.transactionType === "hutang" && (
+						<>
+							<div className="border-t border-gray-200 pt-2 flex justify-between">
+								<span className="text-gray-500">Kreditur</span>
+								<span className="font-medium">{values.kreditur}</span>
+							</div>
+							<div className="flex justify-between">
+								<span className="text-gray-500">Tenor</span>
+								<span className="font-medium">{values.tenor} Bulan</span>
+							</div>
+							<div className="flex justify-between">
+								<span className="text-gray-500">Jatuh Tempo</span>
+								<span className="font-medium">{values.dueDate}</span>
+							</div>
+						</>
+					)}
+
+					{values.transactionType === "piutang" && (
+						<>
+							<div className="border-t border-gray-200 pt-2 flex justify-between">
+								<span className="text-gray-500">Nama Siswa</span>
+								<span className="font-medium">{values.studentName}</span>
+							</div>
+							<div className="flex justify-between">
+								<span className="text-gray-500">NIS</span>
+								<span className="font-medium">{values.nis}</span>
+							</div>
+							<div className="flex justify-between">
+								<span className="text-gray-500">Jatuh Tempo</span>
+								<span className="font-medium">{values.dueDate}</span>
+							</div>
+						</>
+					)}
+
+					{values.transactionType === "ekuitas" && (
+						<div className="border-t border-gray-200 pt-2 flex justify-between">
+							<span className="text-gray-500">Jenis Ekuitas</span>
+							<span className="font-medium">{values.jenisEkuitas}</span>
 						</div>
+					)}
+
+					{(values.transactionType === "pemasukan" ||
+						values.transactionType === "pengeluaran") && (
+						<div className="border-t border-gray-200 pt-2 flex justify-between">
+							<span className="text-gray-500">Kategori</span>
+							<span className="font-medium">{values.kategori}</span>
+						</div>
+					)}
+				</div>
+
+				{submitError && (
+					<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+						{submitError}
 					</div>
 				)}
-
-				<div className="flex justify-end gap-3 pt-4">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => setOpenType(null)}
-					>
-						Kembali
-					</Button>
-					<Button
-						onClick={() => handleSubmit(type)}
-						disabled={isLoading || !formData.kodeAkun || !formData.jumlah}
-					>
-						{isLoading ? "Menyimpan..." : "Simpan"}
-					</Button>
-				</div>
 			</div>
 		);
 	};
 
+	const renderStepContent = () => {
+		switch (currentStep) {
+			case 0:
+				return renderTypeStep();
+			case 1:
+				return renderBasicStep();
+			case 2:
+				return renderDetailStep();
+			case 3:
+				return renderReviewStep();
+			default:
+				return null;
+		}
+	};
+
 	return (
-		<Dialog.Root
-			open={openType !== null || isMainModalOpen}
-			onOpenChange={(open) => {
-				if (!open) {
-					setIsMainModalOpen(false);
-					setOpenType(null);
-					setFormData(INITIAL_FORM);
-					setSelectedCategory("");
-					setError("");
-				} else {
-					setIsMainModalOpen(true);
-				}
-			}}
-		>
-			<Dialog.Trigger asChild>
-				<Button className="bg-[#059DEA] hover:bg-[#0480c4] text-white flex items-center gap-2">
-					<span className="hidden sm:inline">Tambah Transaksi</span>
-					<span className="sm:hidden">Tambah</span>
-				</Button>
-			</Dialog.Trigger>
-			<Dialog.Portal>
-				<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-				<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-4 md:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-					{openType === null ? (
-						<>
-							<Dialog.Title className="text-lg font-semibold mb-4 text-center">
-								Pilih Jenis Transaksi
-							</Dialog.Title>
-							<div className="grid grid-cols-2 gap-3">
-								{(Object.keys(TRANSACTION_CONFIG) as TransactionType[]).map(
-									(type) => {
-										const config = TRANSACTION_CONFIG[type];
-										return (
-											<button
-												key={type}
-												onClick={() => setOpenType(type)}
-												className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-gray-300 hover:bg-gray-50 transition-all gap-3"
-											>
-												<div
-													className={`p-3 rounded-xl ${config.color} text-white`}
-												>
-													{config.icon}
-												</div>
-												<span className="font-medium text-sm text-gray-700">
-													{config.label}
-												</span>
-											</button>
-										);
-									},
-								)}
-							</div>
-						</>
-					) : (
-						<>
-							<Dialog.Title className="text-lg font-semibold flex items-center gap-2">
-								<span
-									className={`flex h-8 w-8 items-center justify-center rounded-lg ${TRANSACTION_CONFIG[openType].color} text-white`}
-								>
-									{TRANSACTION_CONFIG[openType].icon}
-								</span>
-								{TRANSACTION_CONFIG[openType].label}
-							</Dialog.Title>
-							<Dialog.Description className="mt-1 text-sm text-slate-500 mb-4">
-								{TRANSACTION_CONFIG[openType].description}
-							</Dialog.Description>
-							{renderForm(openType)}
-						</>
-					)}
-				</Dialog.Content>
-			</Dialog.Portal>
-		</Dialog.Root>
+		<>
+			<Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
+				<Dialog.Trigger asChild>
+					<Button className="bg-[#059DEA] hover:bg-[#0480c4] text-white flex items-center gap-2">
+						<span className="hidden sm:inline">Tambah Transaksi</span>
+						<span className="sm:hidden">Tambah</span>
+					</Button>
+				</Dialog.Trigger>
+			</Dialog.Root>
+
+			<WizardModal
+				open={isOpen}
+				onOpenChange={(open) => {
+					if (!open) {
+						resetWizard();
+					}
+					setIsOpen(open);
+				}}
+				title="Tambah Transaksi"
+				description={TRANSACTION_CONFIG[transactionType].description}
+				steps={WIZARD_STEPS}
+				currentStep={currentStep}
+				onNext={handleNext}
+				onBack={handleBack}
+				isBackDisabled={currentStep === 0}
+				isSubmitting={isSubmitting}
+			>
+				<form id="transaction-wizard-form" onSubmit={handleSubmit(onSubmit)}>
+					{renderStepContent()}
+				</form>
+			</WizardModal>
+		</>
 	);
 }

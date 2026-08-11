@@ -11,9 +11,7 @@ import {
 	isAmountEqual,
 	type TransactionData,
 	type TransactionEntry,
-	type PeriodInfo,
 } from "@/lib/accounting/accounting-validation";
-import { formatDate as formatPeriode } from "@/lib/utils/utils-date";
 import { invalidateReportsCache } from "@/lib/utils/utils-cache";
 
 // Validation Schemas
@@ -60,48 +58,19 @@ function isValidStatusTransition(
 	return transitions[currentStatus]?.includes(newStatus) || false;
 }
 
-function calculateBalanceChange(
-	accountType: string,
-	debit: number,
-	kredit: number,
-): number {
-	const isDebitNormal = ["Asset", "Expense"].includes(accountType);
-	return isDebitNormal ? debit - kredit : kredit - debit;
+// Helper Functions
+interface AcademicYearInfo {
+	id: string;
+	tahunAjaran: string;
+	tanggalMulai: Date;
+	tanggalSelesai: Date;
+	isActive: boolean;
 }
 
-// Helper Functions
-async function getCurrentPeriod(): Promise<PeriodInfo | null> {
-	const now = new Date();
-	const periode = formatPeriode(now);
-
-	const period = await prisma.period.findUnique({
-		where: { kode: periode },
+async function getCurrentAcademicYear(): Promise<AcademicYearInfo | null> {
+	return prisma.academicYear.findFirst({
+		where: { isActive: true, isArchived: false },
 	});
-
-	if (!period) {
-		const tahun = now.getFullYear();
-		const bulan = now.getMonth() + 1;
-		const tanggalMulai = new Date(tahun, bulan - 1, 1);
-		const tanggalAkhir = new Date(tahun, bulan, 0);
-
-		return {
-			kode: periode,
-			status: "open",
-			tahun,
-			bulan,
-			tanggalMulai: tanggalMulai.toISOString(),
-			tanggalAkhir: tanggalAkhir.toISOString(),
-		};
-	}
-
-	return {
-		kode: period.kode,
-		status: period.status as "open" | "closed" | "archived",
-		tahun: period.tahun,
-		bulan: period.bulan,
-		tanggalMulai: period.tanggalMulai.toISOString(),
-		tanggalAkhir: period.tanggalAkhir.toISOString(),
-	};
 }
 
 async function getAccountTypesMap(): Promise<Map<string, string>> {
@@ -273,57 +242,37 @@ export async function POST(request: NextRequest) {
 
 			if (overrideClosedPeriod && !isOwner) {
 				return errors.forbidden(
-					"Hanya owner yang dapat meng-override periode yang sudah ditutup",
+					"Hanya owner yang dapat meng-override tahun ajaran yang sudah ditutup",
 				);
 			}
 
-			// Get current period
-			const currentPeriod = await getCurrentPeriod();
+			// Check if transaction date falls within active academic year
+			const activeYear = await getCurrentAcademicYear();
+			if (!activeYear) {
+				return errors.validation([
+					{
+						field: "tanggal",
+						message: "Tidak ada tahun ajaran aktif",
+					},
+				]);
+			}
 
-			// Get the period for the transaction date
 			const transactionDate = new Date(tanggal);
-			const transactionPeriode = formatPeriode(transactionDate);
-
-			// Check if the transaction date is for a different period
-			let targetPeriod = currentPeriod;
 			let isBackdatedEntry = false;
-			let originalPeriod: string | null = null;
 
-			if (currentPeriod && transactionPeriode !== currentPeriod.kode) {
-				const periodRecord = await prisma.period.findUnique({
-					where: { kode: transactionPeriode },
-				});
-
-				if (periodRecord) {
-					if (periodRecord.status === "closed" && !overrideClosedPeriod) {
-						return errors.validation([
-							{
-								field: "tanggal",
-								message: `Tanggal ${tanggal} berada di periode ${transactionPeriode} yang sudah ditutup. Hubungi administrator untuk membuka kembali periode.`,
-							},
-						]);
-					}
-
-					targetPeriod = {
-						kode: periodRecord.kode,
-						status: periodRecord.status as "open" | "closed" | "archived",
-						tahun: periodRecord.tahun,
-						bulan: periodRecord.bulan,
-						tanggalMulai: periodRecord.tanggalMulai.toISOString(),
-						tanggalAkhir: periodRecord.tanggalAkhir.toISOString(),
-					};
-					isBackdatedEntry = true;
-					originalPeriod = transactionPeriode;
-				} else {
-					isBackdatedEntry = true;
-					originalPeriod = transactionPeriode;
-				}
-			} else if (
-				currentPeriod &&
-				transactionDate < new Date(currentPeriod.tanggalMulai || "")
+			if (
+				transactionDate < activeYear.tanggalMulai ||
+				transactionDate > activeYear.tanggalSelesai
 			) {
+				if (!overrideClosedPeriod) {
+					return errors.validation([
+						{
+							field: "tanggal",
+							message: `Tanggal ${tanggal} berada di luar tahun ajaran aktif ${activeYear.tahunAjaran}. Hubungi administrator untuk override.`,
+						},
+					]);
+				}
 				isBackdatedEntry = true;
-				originalPeriod = transactionPeriode;
 			}
 
 			// Get account types
@@ -345,7 +294,16 @@ export async function POST(request: NextRequest) {
 
 			const validationResult = validateTransaction(transactionData, {
 				accountTypes,
-				period: targetPeriod,
+				period: activeYear
+					? {
+							kode: activeYear.tahunAjaran,
+							status: "open" as const,
+							tahun: activeYear.tanggalMulai.getFullYear(),
+							bulan: activeYear.tanggalMulai.getMonth() + 1,
+							tanggalMulai: activeYear.tanggalMulai.toISOString(),
+							tanggalAkhir: activeYear.tanggalSelesai.toISOString(),
+						}
+					: null,
 				allowBackdated,
 			});
 
@@ -385,16 +343,12 @@ export async function POST(request: NextRequest) {
 						status: "draft",
 						version: 1,
 						isBackdated: isBackdatedEntry,
-						originalPeriod: originalPeriod,
 						adjustmentType: adjustmentType,
 						backdatedBy: isBackdatedEntry ? user.id || undefined : undefined,
 						backdatedAt: isBackdatedEntry ? new Date() : undefined,
 						reason: reason,
 					},
 				});
-
-				// Add periode to each entry
-				const periode = formatPeriode(new Date(tanggal));
 
 				// Create journal lines
 				const journalLineData = entries.map((entry) => ({
@@ -429,7 +383,6 @@ export async function POST(request: NextRequest) {
 							kredit: roundAmount(entry.kredit),
 							source: isBankAccount ? "bank" : "kas",
 							status: "draft",
-							periode,
 							version: 1,
 						};
 					},
@@ -461,7 +414,6 @@ export async function POST(request: NextRequest) {
 					keterangan: result.journal.keterangan,
 					status: result.journal.status,
 					isBackdated: result.journal.isBackdated,
-					originalPeriod: result.journal.originalPeriod,
 					adjustmentType: result.journal.adjustmentType,
 					reason: result.journal.reason,
 					entries: result.entries,
@@ -591,33 +543,8 @@ export async function PUT(request: NextRequest) {
 
 			// Process status change in transaction
 			const result = await prisma.$transaction(async (tx) => {
-				// If posting, update account balances
+				// If posting, update cashflow records to posted status
 				if (action === "post") {
-					for (const entry of currentJournal.entries) {
-						const account = await tx.account.findUnique({
-							where: { kodeAkun: entry.kodeAkun },
-						});
-
-						if (!account) {
-							throw new Error(
-								`Akun dengan kode ${entry.kodeAkun} tidak ditemukan`,
-							);
-						}
-
-						const saldoChange = calculateBalanceChange(
-							account.tipeAkun,
-							entry.debit,
-							entry.kredit,
-						);
-
-						await tx.account.update({
-							where: { kodeAkun: entry.kodeAkun },
-							data: {
-								saldo: { increment: roundAmount(saldoChange) },
-							},
-						});
-					}
-
 					// Update cashflow records to posted status
 					await tx.cashflow.updateMany({
 						where: {
@@ -628,6 +555,26 @@ export async function PUT(request: NextRequest) {
 							status: "posted",
 						},
 					});
+
+					// Update account balances for posted journal entries
+					const lines = await tx.journalEntryLine.findMany({
+						where: { journalEntryId: id },
+					});
+					for (const line of lines) {
+						const account = await tx.account.findUnique({
+							where: { kodeAkun: line.kodeAkun },
+						});
+						if (account) {
+							const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
+							const saldoChange = isDebitNormal
+								? line.debit - line.kredit
+								: line.kredit - line.debit;
+							await tx.account.update({
+								where: { kodeAkun: line.kodeAkun },
+								data: { saldo: { increment: saldoChange } },
+							});
+						}
+					}
 				}
 
 				// Update journal status

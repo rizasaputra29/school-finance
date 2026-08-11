@@ -121,13 +121,21 @@ export async function POST(request: NextRequest) {
 					return errors.badRequest("Jumlah harus lebih dari 0");
 				}
 
-				// Check period is open
-				const periodeCode = data.tanggal.substring(0, 7); // YYYY-MM
-				const period = await prisma.period.findUnique({
-					where: { kode: periodeCode },
+				// Check if transaction date falls within active academic year
+				const activeYear = await prisma.academicYear.findFirst({
+					where: { isActive: true, isArchived: false },
 				});
-				if (period && period.status === "closed") {
-					return errors.badRequest(`Periode ${periodeCode} sudah ditutup`);
+				if (!activeYear) {
+					return errors.badRequest("Tidak ada tahun ajaran aktif");
+				}
+				const transactionDate = new Date(data.tanggal);
+				if (
+					transactionDate < activeYear.tanggalMulai ||
+					transactionDate > activeYear.tanggalSelesai
+				) {
+					return errors.badRequest(
+						"Tanggal transaksi di luar tahun ajaran aktif",
+					);
 				}
 
 				// Validate both accounts exist
@@ -181,19 +189,30 @@ export async function POST(request: NextRequest) {
 								kredit: jumlah,
 							},
 						],
-					});
+				});
 
-					// 3. Update account balances (both are Asset/debit-normal)
-					await tx.account.update({
-						where: { kodeAkun: data.ke },
-						data: { saldo: { increment: jumlah } },
+				// 3. Update account balances
+				const lines = [
+					{ kodeAkun: data.ke, debit: jumlah, kredit: 0 },
+					{ kodeAkun: data.dari, debit: 0, kredit: jumlah },
+				];
+				for (const line of lines) {
+					const account = await tx.account.findUnique({
+						where: { kodeAkun: line.kodeAkun },
 					});
-					await tx.account.update({
-						where: { kodeAkun: data.dari },
-						data: { saldo: { decrement: jumlah } },
-					});
+					if (account) {
+						const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
+						const saldoChange = isDebitNormal
+							? line.debit - line.kredit
+							: line.kredit - line.debit;
+						await tx.account.update({
+							where: { kodeAkun: line.kodeAkun },
+							data: { saldo: { increment: saldoChange } },
+						});
+					}
+				}
 
-					// 4. Create AuditTrail
+				// 4. Create AuditTrail
 					await tx.auditTrail.create({
 						data: {
 							action: "create",

@@ -11,6 +11,7 @@ import {
 import { validateBody } from "@/lib/api/api-validation";
 import { success, errors, error } from "@/lib/api/api-response";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
+import { postToJournal, type JournalEntryLine } from "@/lib/services/journal";
 
 /**
  * Helper to convert PrismaErrorResult to NextResponse
@@ -85,7 +86,32 @@ function sendValidationErrorResponse(
 	return errors.validation(errorsList);
 }
 
-// Process double-entry transaction
+// ISAK 35 Cash Flow Classification
+// Operasi (OPS): Revenue (4xx) and operational expenses (5xx)
+// Investasi (INV): Aktiva Tetap purchase/sale (107-110)
+// Pendanaan (FIN): Owner contributions (300), Prive (304)
+function classifyCashflow(kodeAkun: string): "OPS" | "INV" | "FIN" | null {
+	const code = kodeAkun;
+	// Revenue accounts (4xx) - Operasi
+	if (code.startsWith("4")) return "OPS";
+	// Expense accounts (5xx, 6xx) - Operasi
+	if (code.startsWith("5") || code.startsWith("6")) return "OPS";
+	// Aktiva Tetap (107-110) - Investasi
+	if (["107", "108", "109", "110"].includes(code)) return "INV";
+	// Owner contributions (300) and Prive (304) - Pendanaan
+	if (code === "300" || code === "304") return "FIN";
+	// Kas/Bank (101, 102) - inherit from transaction context (return null, set manually)
+	if (code === "101" || code === "102") return null;
+	// Piutang (103-106) - Operasi (related to revenue cycle)
+	if (["103", "104", "105", "106"].includes(code)) return "OPS";
+	// Liabilities (2xx) - Operasi
+	if (code.startsWith("2")) return "OPS";
+	// Equity (3xx except 300, 304) - Pendanaan
+	if (code.startsWith("3")) return "FIN";
+	return null;
+}
+
+// Process double-entry transaction with journal integration
 async function processDoubleEntry(
 	tx: PrismaTransactionClient,
 	entries: Array<{
@@ -95,6 +121,9 @@ async function processDoubleEntry(
 		keterangan: string;
 	}>,
 	transactionType: TransactionType,
+	tanggal: Date,
+	userRole: "owner" | "admin" | "user",
+	userEmail?: string,
 ): Promise<{
 	cashflows: Array<{
 		id: string;
@@ -106,55 +135,55 @@ async function processDoubleEntry(
 		kredit: number;
 	}>;
 	summary: { totalDebit: number; totalKredit: number };
+	journalEntryId: string;
+	journalStatus: string;
 }> {
+	// Build journal lines from entries
+	const journalLines: JournalEntryLine[] = entries.map((entry) => ({
+		kodeAkun: entry.kodeAkun,
+		debit: entry.debit,
+		kredit: entry.kredit,
+	}));
+
+	// Determine the main keterangan from first entry
+	const keterangan = entries[0]?.keterangan || `${transactionType} transaksi`;
+
+	// Post to Journal
+	const journalResult = await postToJournal(tx, {
+		tanggal,
+		keterangan,
+		reference: `cashflow-${transactionType}-${Date.now()}`,
+		entries: journalLines,
+		userRole,
+		userEmail,
+	});
+
+	// Create cashflow records for traceability
 	const createdCashflows = [];
 	let totalDebit = 0;
 	let totalKredit = 0;
 
 	for (const entry of entries) {
-		// Validate account exists
-		const account = await tx.account.findUnique({
-			where: { kodeAkun: entry.kodeAkun },
-		});
-
-		if (!account) {
-			throw new Error(`Akun dengan kode ${entry.kodeAkun} tidak ditemukan`);
-		}
-
-		// Calculate balance adjustment based on account type
-		const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-		let saldoChange = 0;
-
-		if (isDebitNormal) {
-			saldoChange = entry.debit - entry.kredit;
-		} else {
-			saldoChange = entry.kredit - entry.debit;
-		}
-
-		// Update account balance
-		await tx.account.update({
-			where: { kodeAkun: entry.kodeAkun },
-			data: {
-				saldo: { increment: saldoChange },
-			},
-		});
-
-		// Determine source based on account code (111x = bank, 110x = kas)
+		// Determine source based on account code
 		const isBankAccount =
 			entry.kodeAkun.startsWith("111") || entry.kodeAkun === "102";
 		const source = isBankAccount ? "bank" : "kas";
 
-		// Create cashflow record
+		// ISAK 35 cashflow classification
+		const cashflowCategory = classifyCashflow(entry.kodeAkun);
+
 		const cashflow = await tx.cashflow.create({
 			data: {
-				tanggal: new Date(),
+				tanggal,
 				keterangan: entry.keterangan,
 				kodeAkun: entry.kodeAkun,
 				kategori: transactionType,
+				cashflowCategory,
 				debit: entry.debit,
 				kredit: entry.kredit,
 				source,
-				status: "draft",
+				status: journalResult.status === "posted" ? "posted" : "draft",
+				referenceId: journalResult.journalEntryId,
 			} as never,
 		});
 
@@ -163,7 +192,12 @@ async function processDoubleEntry(
 		totalKredit += entry.kredit;
 	}
 
-	return { cashflows: createdCashflows, summary: { totalDebit, totalKredit } };
+	return {
+		cashflows: createdCashflows,
+		summary: { totalDebit, totalKredit },
+		journalEntryId: journalResult.journalEntryId,
+		journalStatus: journalResult.status,
+	};
 }
 
 export async function GET(request: NextRequest) {
@@ -218,14 +252,15 @@ export async function GET(request: NextRequest) {
 		}
 
 		try {
-			const [cashflows, total, summaryAgg] = await Promise.all([
+			// Fetch all matching cashflows with account info, grouped by referenceId
+			const [allCashflows, summaryAgg] = await Promise.all([
 				prisma.cashflow.findMany({
 					where,
 					orderBy: { tanggal: "desc" },
-					skip,
-					take: parseInt(limit),
+					include: {
+						account: { select: { namaAkun: true } },
+					},
 				}),
-				prisma.cashflow.count({ where }),
 				prisma.cashflow.aggregate({
 					where,
 					_sum: {
@@ -238,14 +273,67 @@ export async function GET(request: NextRequest) {
 			const totalDebit = summaryAgg._sum.debit || 0;
 			const totalKredit = summaryAgg._sum.kredit || 0;
 
-			return success(cashflows, {
+			// Group cashflows by referenceId (or by id for unlinked records)
+			const groupMap = new Map<
+				string,
+				{
+					id: string;
+					tanggal: Date;
+					keterangan: string;
+					kategori: string | null;
+					status: string;
+					entries: typeof allCashflows;
+				}
+			>();
+
+			for (const cf of allCashflows) {
+				const groupId = cf.referenceId || cf.id;
+				if (!groupMap.has(groupId)) {
+					groupMap.set(groupId, {
+						id: cf.id, // Use first cashflow's ID for API operations
+						tanggal: cf.tanggal,
+						keterangan: cf.keterangan,
+						kategori: cf.kategori,
+						status: cf.status,
+						entries: [],
+					});
+				}
+				groupMap.get(groupId)!.entries.push(cf);
+			}
+
+			// Convert to array and paginate groups
+			const allGroups = Array.from(groupMap.values());
+			const total = allGroups.length;
+			const totalPages = Math.ceil(total / parseInt(limit));
+			const paginatedGroups = allGroups.slice(skip, skip + parseInt(limit));
+
+			// Map entries to include namaAkun
+			const groupedCards = paginatedGroups.map((group) => ({
+				id: group.id,
+				tanggal: group.tanggal,
+				keterangan: group.keterangan,
+				kategori: group.kategori,
+				status: group.status,
+				entries: group.entries.map((e) => ({
+					id: e.id,
+					kodeAkun: e.kodeAkun,
+					namaAkun: e.account?.namaAkun || "",
+					debit: e.debit,
+					kredit: e.kredit,
+					source: e.source,
+				})),
+				totalDebit: group.entries.reduce((sum, e) => sum + e.debit, 0),
+				totalKredit: group.entries.reduce((sum, e) => sum + e.kredit, 0),
+			}));
+
+			return success(groupedCards, {
 				message: "Data arus kas berhasil diambil",
 				meta: {
 					pagination: {
 						page: parseInt(page),
 						limit: parseInt(limit),
 						total,
-						totalPages: Math.ceil(total / parseInt(limit)),
+						totalPages,
 					},
 					summary: {
 						totalDebit,
@@ -262,7 +350,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-	return withAuthAppRouter(request, async () => {
+	return withAuthAppRouter(request, async (user) => {
 		const ip = getClientIp(request);
 
 		// Rate limiting for create operations
@@ -306,14 +394,31 @@ export async function POST(request: NextRequest) {
 
 		// Handle double-entry transactions
 		if (transactionType && entries && entries.length > 0) {
+			// Validate no past-date transactions (unless owner)
+			const transactionDate = new Date(tanggal);
+			if (
+				user.role !== "owner" &&
+				transactionDate < new Date(new Date().setHours(0, 0, 0, 0))
+			) {
+				return errors.validation([
+					{
+						field: "tanggal",
+						message: "Tanggal transaksi tidak boleh di masa lalu",
+					},
+				]);
+			}
+
 			try {
 				const result = await prisma.$transaction(
 					async (tx) => {
-						// Process double entries
+						// Process double entries with journal integration
 						const processResult = await processDoubleEntry(
 							tx,
 							entries,
 							transactionType,
+							transactionDate,
+							user.role,
+							user.email,
 						);
 
 						// Create Asset record if this is an asset transaction with penyusutan options
@@ -325,7 +430,7 @@ export async function POST(request: NextRequest) {
 									nama: namaAset,
 									kategori: kategoriAset || "Inventaris",
 									lokasi: lokasiAset || "",
-									tanggalPerolehan: new Date(tanggal),
+									tanggalPerolehan: transactionDate,
 									hargaPerolehan:
 										typeof amount === "number"
 											? amount
@@ -358,7 +463,7 @@ export async function POST(request: NextRequest) {
 									jumlahAwal: jumlahAwal,
 									jumlahSisa: -Math.abs(jumlahAwal),
 									tenor: tenorNum,
-									tanggalMulai: new Date(tanggal),
+									tanggalMulai: transactionDate,
 									tanggalJatuhTempo: dueDate
 										? new Date(dueDate)
 										: new Date(
@@ -383,9 +488,13 @@ export async function POST(request: NextRequest) {
 				);
 
 				return success(result.cashflows, {
-					message: `Transaksi ${transactionType} berhasil dibuat dengan ${result.cashflows.length} entri`,
+					message: `Transaksi ${transactionType} berhasil dibuat dengan ${result.cashflows.length} entri. Jurnal: ${result.journalStatus === "posted" ? "langsung diposting" : "menunggu persetujuan"}`,
 					status: 201,
-					meta: { summary: result.summary },
+					meta: {
+						summary: result.summary,
+						journalEntryId: result.journalEntryId,
+						journalStatus: result.journalStatus,
+					},
 				});
 			} catch (error) {
 				console.error("Double-entry transaction error:", error);
@@ -396,6 +505,12 @@ export async function POST(request: NextRequest) {
 					return errors.notFound(
 						error.message.replace("Akun dengan kode ", "Account "),
 					);
+				}
+				if (
+					error instanceof Error &&
+					error.message.includes("Jurnal tidak seimbang")
+				) {
+					return errors.validation([{ field: "entries", message: error.message }]);
 				}
 				return prismaErrorToResponse(error);
 			}
@@ -431,53 +546,47 @@ export async function POST(request: NextRequest) {
 				);
 			}
 
+			// Post to journal for legacy single entries
+			const journalLines: JournalEntryLine[] = [
+				{ kodeAkun: kodeAkun!, debit: debitAmount, kredit: 0 },
+				{ kodeAkun: kodeAkun!, debit: 0, kredit: kreditAmount },
+			].filter((line) => line.debit > 0 || line.kredit > 0);
+
 			const result = await prisma.$transaction(
 				async (tx) => {
-					// 1. Get the account to determine type and current balance
-					const account = await tx.account.findUnique({
-						where: { kodeAkun },
+					// Post to journal
+					const journalResult = await postToJournal(tx, {
+						tanggal: new Date(tanggal),
+						keterangan,
+						reference: `cashflow-legacy-${Date.now()}`,
+						entries: journalLines.length > 0 ? journalLines : [
+							{ kodeAkun: kodeAkun!, debit: debitAmount, kredit: kreditAmount },
+						],
+						userRole: user.role,
+						userEmail: user.email,
 					});
 
-					if (!account) {
-						throw new Error(`Akun dengan kode ${kodeAkun} tidak ditemukan`);
-					}
-
-					// 2. Calculate balance adjustment based on account type
-					let saldoChange = 0;
-					const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-
-					if (isDebitNormal) {
-						saldoChange = debitAmount - kreditAmount;
-					} else {
-						saldoChange = kreditAmount - debitAmount;
-					}
-
-					// 3. Update account balance
-					await tx.account.update({
-						where: { kodeAkun },
-						data: {
-							saldo: { increment: saldoChange },
-						},
-					});
-
-					// 4. Create cashflow record
+					// Create cashflow record
 					if (!kodeAkun) {
 						throw new Error("Kode akun wajib diisi");
 					}
-					const cashflow = await tx.cashflow.create({
-						data: {
-							tanggal: new Date(tanggal),
-							keterangan,
-							kodeAkun,
-							kategori: kategori || null,
-							debit: debitAmount,
-							kredit: kreditAmount,
-							source: source as "kas" | "bank" | undefined,
-							status: "draft",
-						},
-					} as never);
+					const cashflowCategory = classifyCashflow(kodeAkun);
+				const cashflow = await tx.cashflow.create({
+					data: {
+						tanggal: new Date(tanggal),
+						keterangan,
+						kodeAkun,
+						kategori: kategori || null,
+						cashflowCategory,
+						debit: debitAmount,
+						kredit: kreditAmount,
+						source: source as "kas" | "bank" | undefined,
+						status: journalResult.status === "posted" ? "posted" : "draft",
+						referenceId: journalResult.journalEntryId,
+					},
+				} as never);
 
-					return cashflow;
+					return { cashflow, journalEntryId: journalResult.journalEntryId, journalStatus: journalResult.status };
 				},
 				{
 					maxWait: 10000,
@@ -487,11 +596,13 @@ export async function POST(request: NextRequest) {
 
 			return success(
 				{
-					...result,
+					...result.cashflow,
 					isNew: true,
+					journalEntryId: result.journalEntryId,
+					journalStatus: result.journalStatus,
 				},
 				{
-					message: "Transaksi berhasil dibuat",
+					message: `Transaksi berhasil dibuat. Jurnal: ${result.journalStatus === "posted" ? "langsung diposting" : "menunggu persetujuan"}`,
 					status: 201,
 				},
 			);

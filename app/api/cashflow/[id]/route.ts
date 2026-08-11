@@ -50,8 +50,16 @@ export async function PATCH(
 		}
 
 		const body = await request.json();
-		const { tanggal, keterangan, kodeAkun, kategori, debit, kredit, status } =
-			body;
+		const {
+			tanggal,
+			keterangan,
+			kodeAkun,
+			kategori,
+			debit,
+			kredit,
+			status,
+			entries,
+		} = body;
 
 		// Handle status update (approve/reject)
 		if (status) {
@@ -76,41 +84,51 @@ export async function PATCH(
 						throw new Error("Transaksi tidak ditemukan");
 					}
 
+					// Find all related cashflows in the same group
+					const groupCashflows = oldCashflow.referenceId
+						? await tx.cashflow.findMany({
+								where: { referenceId: oldCashflow.referenceId },
+							})
+						: [oldCashflow];
+
 					// If changing to 'posted' or 'approved', update account balances
 					if (
 						(status === "posted" || status === "approved") &&
 						oldCashflow.status === "draft"
 					) {
-						const account = await tx.account.findUnique({
-							where: { kodeAkun: oldCashflow.kodeAkun },
-						});
-
-						if (account) {
-							let saldoChange = 0;
-							const isDebitNormal = ["Asset", "Expense"].includes(
-								account.tipeAkun,
-							);
-
-							if (isDebitNormal) {
-								saldoChange = oldCashflow.debit - oldCashflow.kredit;
-							} else {
-								saldoChange = oldCashflow.kredit - oldCashflow.debit;
-							}
-
-							await tx.account.update({
-								where: { kodeAkun: oldCashflow.kodeAkun },
-								data: { saldo: { increment: saldoChange } },
+						for (const cf of groupCashflows) {
+							const account = await tx.account.findUnique({
+								where: { kodeAkun: cf.kodeAkun },
 							});
+
+							if (account) {
+								let saldoChange = 0;
+								const isDebitNormal = ["Asset", "Expense"].includes(
+									account.tipeAkun,
+								);
+
+								if (isDebitNormal) {
+									saldoChange = cf.debit - cf.kredit;
+								} else {
+									saldoChange = cf.kredit - cf.debit;
+								}
+
+								await tx.account.update({
+									where: { kodeAkun: cf.kodeAkun },
+									data: { saldo: { increment: saldoChange } },
+								});
+							}
 						}
 					}
 
-					// Update cashflow status
-					const updatedCashflow = await tx.cashflow.update({
-						where: { id },
+					// Update cashflow status for all in group
+					const groupIds = groupCashflows.map((cf) => cf.id);
+					await tx.cashflow.updateMany({
+						where: { id: { in: groupIds } },
 						data: { status },
 					});
 
-					return updatedCashflow;
+					return groupCashflows;
 				});
 
 				if (idempotencyKey) {
@@ -130,6 +148,188 @@ export async function PATCH(
 			}
 		}
 
+		// Handle grouped edit (entries array)
+		if (entries && Array.isArray(entries) && entries.length > 0) {
+			try {
+				const result = await prisma.$transaction(async (tx) => {
+					// 1. Get existing cashflow and its group
+					const oldCashflow = await tx.cashflow.findUnique({
+						where: { id },
+					});
+
+					if (!oldCashflow) {
+						throw new Error("Transaksi tidak ditemukan");
+					}
+
+					const groupCashflows = oldCashflow.referenceId
+						? await tx.cashflow.findMany({
+								where: { referenceId: oldCashflow.referenceId },
+							})
+						: [oldCashflow];
+
+					// 2. Reverse old balances for all entries in the group
+					for (const cf of groupCashflows) {
+						const account = await tx.account.findUnique({
+							where: { kodeAkun: cf.kodeAkun },
+						});
+
+						if (account) {
+							let reverseChange = 0;
+							const isDebitNormal = ["Asset", "Expense"].includes(
+								account.tipeAkun,
+							);
+
+							if (isDebitNormal) {
+								reverseChange = cf.kredit - cf.debit;
+							} else {
+								reverseChange = cf.debit - cf.kredit;
+							}
+
+							await tx.account.update({
+								where: { kodeAkun: cf.kodeAkun },
+								data: { saldo: { increment: reverseChange } },
+							});
+						}
+					}
+
+					// 3. Validate new entries balance
+					const totalDebit = entries.reduce(
+						(sum: number, e: { debit: number }) => sum + e.debit,
+						0,
+					);
+					const totalKredit = entries.reduce(
+						(sum: number, e: { kredit: number }) => sum + e.kredit,
+						0,
+					);
+
+					if (Math.abs(totalDebit - totalKredit) > 0.01) {
+						throw new Error(
+							`Jurnal tidak seimbang: total debit ${totalDebit} ≠ total kredit ${totalKredit}`,
+						);
+					}
+
+					// 4. Delete old cashflow records in the group
+					const oldGroupIds = groupCashflows.map((cf) => cf.id);
+					await tx.cashflow.deleteMany({
+						where: { id: { in: oldGroupIds } },
+					});
+
+					// 5. Create new cashflow records with updated data
+					const groupReferenceId =
+						oldCashflow.referenceId || oldCashflow.id;
+					const newCashflows = [];
+					for (const entry of entries) {
+						const isBankAccount =
+							entry.kodeAkun.startsWith("111") ||
+							entry.kodeAkun === "102";
+						const source = isBankAccount ? "bank" : "kas";
+
+						const cashflow = await tx.cashflow.create({
+							data: {
+								tanggal: tanggal ? new Date(tanggal) : oldCashflow.tanggal,
+								keterangan: keterangan || oldCashflow.keterangan,
+								kodeAkun: entry.kodeAkun,
+								kategori: kategori || oldCashflow.kategori,
+								debit: entry.debit,
+								kredit: entry.kredit,
+								source,
+								status: oldCashflow.status,
+								referenceId: groupReferenceId,
+							} as never,
+						});
+						newCashflows.push(cashflow);
+					}
+
+					// 6. Apply new balances for all entries
+					for (const entry of entries) {
+						const account = await tx.account.findUnique({
+							where: { kodeAkun: entry.kodeAkun },
+						});
+
+						if (account) {
+							let saldoChange = 0;
+							const isDebitNormal = ["Asset", "Expense"].includes(
+								account.tipeAkun,
+							);
+
+							if (isDebitNormal) {
+								saldoChange = entry.debit - entry.kredit;
+							} else {
+								saldoChange = entry.kredit - entry.debit;
+							}
+
+							await tx.account.update({
+								where: { kodeAkun: entry.kodeAkun },
+								data: { saldo: { increment: saldoChange } },
+							});
+						}
+					}
+
+					// 7. Update linked JournalEntry if exists
+					if (oldCashflow.referenceId) {
+						const journalEntry = await tx.journalEntry.findUnique({
+							where: { id: oldCashflow.referenceId },
+						});
+						if (journalEntry) {
+							await tx.journalEntryLine.deleteMany({
+								where: { journalEntryId: journalEntry.id },
+							});
+							await tx.journalEntryLine.createMany({
+								data: entries.map(
+									(entry: {
+										kodeAkun: string;
+										debit: number;
+										kredit: number;
+									}) => ({
+										journalEntryId: journalEntry.id,
+										kodeAkun: entry.kodeAkun,
+										debit: entry.debit,
+										kredit: entry.kredit,
+									}),
+								),
+							});
+							await tx.journalEntry.update({
+								where: { id: journalEntry.id },
+								data: {
+									tanggal: tanggal
+										? new Date(tanggal)
+										: journalEntry.tanggal,
+									keterangan: keterangan || journalEntry.keterangan,
+								},
+							});
+						}
+					}
+
+					return newCashflows;
+				});
+
+				// Cache result for idempotency
+				if (idempotencyKey) {
+					setIdempotencyResult(idempotencyKey, result);
+				}
+
+				return success(result, {
+					message: "Transaksi berhasil diperbarui",
+				});
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : "Unknown error";
+				if (message.includes("tidak ditemukan")) {
+					if (message.includes("Akun baru")) {
+						return errors.notFound("Akun");
+					}
+					return errors.notFound("Transaksi");
+				}
+				if (message.includes("Jurnal tidak seimbang")) {
+					return errors.validation([
+						{ field: "entries", message },
+					]);
+				}
+				return prismaErrorToResponse(error);
+			}
+		}
+
+		// Single entry edit (legacy)
 		const newDebit = parseFloat(debit) || 0;
 		const newKredit = parseFloat(kredit) || 0;
 
@@ -155,14 +355,9 @@ export async function PATCH(
 						oldAccount.tipeAkun,
 					);
 
-					// To reverse: subtract what was added
-					// If Asset (Debit Normal): Balance = Balance + Debit - Kredit
-					// Reverse: Balance = Balance - Debit + Kredit
 					if (isDebitNormal) {
 						reverseChange = oldCashflow.kredit - oldCashflow.debit;
 					} else {
-						// If Liability (Credit Normal): Balance = Balance + Kredit - Debit
-						// Reverse: Balance = Balance - Kredit + Debit
 						reverseChange = oldCashflow.debit - oldCashflow.kredit;
 					}
 
@@ -263,31 +458,58 @@ export async function DELETE(
 					throw new Error("Transaksi tidak ditemukan");
 				}
 
-				// 2. Reverse effect on Account
-				const account = await tx.account.findUnique({
-					where: { kodeAkun: cashflow.kodeAkun },
-				});
+				// 2. Find all related cashflows in the same group (by referenceId)
+				const groupCashflows = cashflow.referenceId
+					? await tx.cashflow.findMany({
+							where: { referenceId: cashflow.referenceId },
+						})
+					: [cashflow];
 
-				if (account) {
-					let reverseChange = 0;
-					const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-
-					if (isDebitNormal) {
-						reverseChange = cashflow.kredit - cashflow.debit;
-					} else {
-						reverseChange = cashflow.debit - cashflow.kredit;
-					}
-
-					await tx.account.update({
-						where: { kodeAkun: cashflow.kodeAkun },
-						data: { saldo: { increment: reverseChange } },
+				// 3. Reverse effect on Account for each cashflow in the group
+				for (const cf of groupCashflows) {
+					const account = await tx.account.findUnique({
+						where: { kodeAkun: cf.kodeAkun },
 					});
+
+					if (account) {
+						let reverseChange = 0;
+						const isDebitNormal = ["Asset", "Expense"].includes(
+							account.tipeAkun,
+						);
+
+						if (isDebitNormal) {
+							reverseChange = cf.kredit - cf.debit;
+						} else {
+							reverseChange = cf.debit - cf.kredit;
+						}
+
+						await tx.account.update({
+							where: { kodeAkun: cf.kodeAkun },
+							data: { saldo: { increment: reverseChange } },
+						});
+					}
 				}
 
-				// 3. Delete Cashflow
-				await tx.cashflow.delete({
-					where: { id },
+				// 4. Delete all cashflows in the group
+				const groupIds = groupCashflows.map((cf) => cf.id);
+				await tx.cashflow.deleteMany({
+					where: { id: { in: groupIds } },
 				});
+
+				// 5. Delete linked JournalEntry if referenceId matches a journal entry
+				if (cashflow.referenceId) {
+					const journalEntry = await tx.journalEntry.findUnique({
+						where: { id: cashflow.referenceId },
+					});
+					if (journalEntry) {
+						await tx.journalEntryLine.deleteMany({
+							where: { journalEntryId: journalEntry.id },
+						});
+						await tx.journalEntry.delete({
+							where: { id: journalEntry.id },
+						});
+					}
+				}
 			});
 
 			// Cache result for idempotency

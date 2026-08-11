@@ -11,23 +11,22 @@ import {
 import { success, errors } from "@/lib/api/api-response";
 import { ErrorCodes } from "@/lib/api/api-errors";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
+import { postToJournal, type JournalEntryLine } from "@/lib/services/journal";
+import { isBillingOverdue, getRevenueAccountCode } from "@/lib/services/billing";
 
 // Account codes
+const CASH_ACCOUNT_CODE = "101"; // Kas
 const BANK_ACCOUNT_CODE = "102"; // Bank
 const PIUTANG_ACCOUNT_CODE = "103"; // Piutang Siswa
 
-// Map billing type to revenue account code
-function getRevenueAccountCode(jenisBiaya: string): string {
+// Payment method to account code mapping
+function getPaymentAccountCode(metodeBayar: string): string {
 	const mapping: Record<string, string> = {
-		SPP: "405", // Penerimaan Uang SPP
-		"Uang Pangkal": "401", // Penerimaan Uang Gedung
-		"Uang Gedung": "401", // Penerimaan Uang Gedung
-		"Uang Kegiatan": "402", // Penerimaan Uang Kegiatan
-		"Uang Seragam": "403", // Penerimaan Uang Seragam
-		"Uang ATK": "404", // Penerimaan Uang ATK
-		Pendaftaran: "400", // Penerimaan Dana Pendaftaran
+		Cash: CASH_ACCOUNT_CODE,
+		Bank: BANK_ACCOUNT_CODE,
+		Transfer: BANK_ACCOUNT_CODE,
 	};
-	return mapping[jenisBiaya] || "406"; // Default to Pendapatan Lain-Lain
+	return mapping[metodeBayar] || CASH_ACCOUNT_CODE;
 }
 
 // Validation schema for manual payment
@@ -42,28 +41,18 @@ const manualPaymentSchema = z.object({
 		.refine((val) => val >= 0, "Jumlah pembayaran harus positif"),
 	tanggalBayar: z.string().optional(),
 	catatan: z.string().optional(),
+	metodeBayar: z.enum(["Cash", "Bank", "Transfer"]).default("Cash"),
 });
 
-// Check if billing is overdue based on period (end of month)
-function isBillingOverdue(billing: { periodeBulan: string }): boolean {
-	if (!billing.periodeBulan) return false;
-
-	// Parse the period (format: YYYY-MM)
-	const [year, month] = billing.periodeBulan.split("-").map(Number);
-
-	// Due date is end of the billing month
-	const dueDate = new Date(year, month - 1); // First day of next month
-	const now = new Date();
-
-	return now > dueDate;
-}
-
-// Process payment with double-entry
+// Process payment with double-entry + journal integration
 async function processStudentPayment(
 	billingId: string,
 	amount: number,
 	paymentDate: Date,
-	catatan?: string,
+	catatan: string | undefined,
+	metodeBayar: string,
+	userRole: "owner" | "admin" | "user",
+	userEmail?: string,
 ) {
 	return await prisma.$transaction(async (tx) => {
 		// 1. Get billing and student details
@@ -82,130 +71,118 @@ async function processStudentPayment(
 			throw new Error("Tagihan sudah lunas");
 		}
 
-		// 2. Determine revenue account based on billing type
-		const revenueCode = getRevenueAccountCode(billing.jenisBiaya);
+		// 2. Check if overdue
+		const overdue = isBillingOverdue({
+			tanggalJatuhTempo: billing.tanggalJatuhTempo,
+			statusBayar: billing.statusBayar,
+		});
 
-		// 3. Check if overdue
-		const overdue = isBillingOverdue(billing);
-
-		// 4. Create cashflow entries based on overdue status
-		const cashflowEntries = [];
+		// 3. Build journal entries based on on-time vs late
+		const journalLines: JournalEntryLine[] = [];
+		const paymentAccountCode = getPaymentAccountCode(metodeBayar);
 
 		if (overdue) {
-			// Case: Overdue payment
-			// - Piutang Siswa (103) Debit - reduces piutang
-			// - Bank (102) Debit - money received
-			// - Revenue (XXX) Kredit - recognize revenue
-
-			// Entry 1: Reduce Piutang (Debit)
-			cashflowEntries.push({
-				kodeAkun: PIUTANG_ACCOUNT_CODE,
-				debit: amount,
-				kredit: 0,
-				keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - Lunasi Piutang`,
-			});
-
-			// Entry 2: Bank receives money (Debit)
-			cashflowEntries.push({
-				kodeAkun: BANK_ACCOUNT_CODE,
-				debit: amount,
-				kredit: 0,
-				keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - Masuk Bank`,
-			});
-
-			// Entry 3: Revenue (Kredit)
-			cashflowEntries.push({
-				kodeAkun: revenueCode,
-				debit: 0,
-				kredit: amount,
-				keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - Pendapatan`,
-			});
+			// Late payment: revenue was already recognized when piutang was created
+			// Dr Kas/Bank, Cr Piutang Siswa
+			journalLines.push(
+				{
+					kodeAkun: paymentAccountCode,
+					debit: amount,
+					kredit: 0,
+				},
+				{
+					kodeAkun: PIUTANG_ACCOUNT_CODE,
+					debit: 0,
+					kredit: amount,
+				},
+			);
 		} else {
-			// Case: Normal payment (not overdue)
-			// - Bank (102) Debit - money received
-			// - Revenue (XXX) Kredit - recognize revenue
-
-			// Entry 1: Bank receives money (Debit)
-			cashflowEntries.push({
-				kodeAkun: BANK_ACCOUNT_CODE,
-				debit: amount,
-				kredit: 0,
-				keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - Masuk Bank`,
-			});
-
-			// Entry 2: Revenue (Kredit)
-			cashflowEntries.push({
-				kodeAkun: revenueCode,
-				debit: 0,
-				kredit: amount,
-				keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - Pendapatan`,
-			});
+			// On-time payment: recognize revenue directly
+			// Dr Kas/Bank, Cr Revenue
+			const revenueCode = getRevenueAccountCode(billing.jenisBiaya);
+			journalLines.push(
+				{
+					kodeAkun: paymentAccountCode,
+					debit: amount,
+					kredit: 0,
+				},
+				{
+					kodeAkun: revenueCode,
+					debit: 0,
+					kredit: amount,
+				},
+			);
 		}
 
-		// 5. Create cashflow records and update account balances
+		// 5. Post to Journal (creates JournalEntry + lines + updates accounts if owner)
+		const journalResult = await postToJournal(tx, {
+			tanggal: paymentDate,
+			keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama}${overdue ? " (Overdue)" : ""}`,
+			reference: `payment-${billingId}-${Date.now()}`,
+			entries: journalLines,
+			userRole,
+			userEmail,
+		});
+
+		// 6. Create cashflow records for traceability
 		const createdCashflows = [];
+		const paymentMethodLabel =
+			metodeBayar === "Cash"
+				? "Kas"
+				: metodeBayar === "Bank"
+					? "Bank"
+					: "Transfer";
 
-		for (const entry of cashflowEntries) {
-			// Get account to determine balance adjustment
-			const account = await tx.account.findUnique({
-				where: { kodeAkun: entry.kodeAkun },
-			});
-
-			if (!account) {
-				throw new Error(`Akun dengan kode ${entry.kodeAkun} tidak ditemukan`);
+		for (const line of journalLines) {
+			if (line.debit > 0) {
+				const cashflow = await tx.cashflow.create({
+					data: {
+						tanggal: paymentDate,
+						keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - Masuk ${paymentMethodLabel}`,
+						kodeAkun: line.kodeAkun,
+						kategori: "pemasukan",
+						cashflowCategory: "OPS",
+						debit: line.debit,
+						kredit: 0,
+						referenceId: billingId,
+					},
+				});
+				createdCashflows.push(cashflow);
+			} else if (line.kredit > 0) {
+				const isPiutang = line.kodeAkun === PIUTANG_ACCOUNT_CODE;
+				const cashflow = await tx.cashflow.create({
+					data: {
+						tanggal: paymentDate,
+						keterangan: `Pembayaran ${billing.jenisBiaya} - ${billing.student.nama} - ${isPiutang ? "Piutang" : "Pendapatan"}`,
+						kodeAkun: line.kodeAkun,
+						kategori: "pemasukan",
+						cashflowCategory: "OPS",
+						debit: 0,
+						kredit: line.kredit,
+						referenceId: billingId,
+					},
+				});
+				createdCashflows.push(cashflow);
 			}
-
-			// Calculate balance adjustment based on account type
-			const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-			let saldoChange = 0;
-
-			if (isDebitNormal) {
-				saldoChange = entry.debit - entry.kredit;
-			} else {
-				saldoChange = entry.kredit - entry.debit;
-			}
-
-			// Update account balance
-			await tx.account.update({
-				where: { kodeAkun: entry.kodeAkun },
-				data: {
-					saldo: { increment: saldoChange },
-				},
-			});
-
-			// Create cashflow record
-			const cashflow = await tx.cashflow.create({
-				data: {
-					tanggal: paymentDate,
-					keterangan: entry.keterangan,
-					kodeAkun: entry.kodeAkun,
-					kategori: "pemasukan",
-					debit: entry.debit,
-					kredit: entry.kredit,
-					referenceId: billingId,
-				},
-			});
-
-			createdCashflows.push(cashflow);
 		}
 
-		// 6. Update billing status to Lunas
+		// 7. Update billing status to Lunas
 		const updatedBilling = await tx.billing.update({
 			where: { id: billingId },
 			data: {
 				statusBayar: "Lunas",
 				tanggalBayar: paymentDate,
 				catatan: catatan || null,
-				cashflowId: createdCashflows[0]?.id, // Link to first cashflow
+				cashflowId: createdCashflows[0]?.id,
 			},
 		});
 
-		// 7. Update student payment totals
+		// 8. Update student payment totals
 		const studentUpdate = await tx.student.update({
 			where: { id: billing.studentId },
 			data: {
 				totalBayar: { increment: amount },
-				statusBayar: "Lunas", // Will be calculated based on remaining billings
+				statusBayar: "Lunas",
 			},
 		});
 
@@ -231,6 +208,8 @@ async function processStudentPayment(
 			cashflows: createdCashflows,
 			overdue,
 			studentUpdated: studentUpdate,
+			journalEntryId: journalResult.journalEntryId,
+			journalStatus: journalResult.status,
 		};
 	});
 }
@@ -270,7 +249,10 @@ export async function GET(request: NextRequest) {
 				// Add overdue status to each billing
 				const billingsWithOverdue = billings.map((billing) => ({
 					...billing,
-					isOverdue: isBillingOverdue(billing),
+					isOverdue: isBillingOverdue({
+						tanggalJatuhTempo: billing.tanggalJatuhTempo,
+						statusBayar: billing.statusBayar,
+					}),
 				}));
 
 				// If filter by overdue, apply it
@@ -305,7 +287,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
 	return withAuthAppRouter(
 		request,
-		async () => {
+		async (user) => {
 			const ip = getClientIp(request);
 
 			try {
@@ -328,7 +310,7 @@ export async function POST(request: NextRequest) {
 					);
 				}
 
-				const { billingId, jumlahBayar, tanggalBayar, catatan } =
+				const { billingId, jumlahBayar, tanggalBayar, catatan, metodeBayar } =
 					validationResult.data;
 
 				// Convert amount to number (handles both string and number from Zod transform)
@@ -344,12 +326,28 @@ export async function POST(request: NextRequest) {
 					]);
 				}
 
+				// Block past-date transactions (unless owner)
+				if (
+					user.role !== "owner" &&
+					paymentDate < new Date(new Date().setHours(0, 0, 0, 0))
+				) {
+					return errors.validation([
+						{
+							field: "tanggalBayar",
+							message: "Tanggal pembayaran tidak boleh di masa lalu",
+						},
+					]);
+				}
+
 				try {
 					const result = await processStudentPayment(
 						billingId,
 						amount,
 						paymentDate,
 						catatan,
+						metodeBayar,
+						user.role as "owner" | "admin" | "user",
+						user.email,
 					);
 
 					return success(
@@ -358,11 +356,13 @@ export async function POST(request: NextRequest) {
 							cashflows: result.cashflows,
 							isOverdue: result.overdue,
 							student: result.studentUpdated,
+							journalEntryId: result.journalEntryId,
+							journalStatus: result.journalStatus,
 						},
 						{
 							message: result.overdue
-								? "Pembayaran berhasil! Tagihan overdue telah dilunasi."
-								: "Pembayaran berhasil!",
+								? `Pembayaran berhasil! Tagihan overdue telah dilunasi. Jurnal: ${result.journalStatus === "posted" ? "langsung diposting" : "menunggu persetujuan"}`
+								: `Pembayaran berhasil! Jurnal: ${result.journalStatus === "posted" ? "langsung diposting" : "menunggu persetujuan"}`,
 							status: 201,
 						},
 					);
@@ -377,6 +377,12 @@ export async function POST(request: NextRequest) {
 
 					if (message.includes("sudah lunas")) {
 						return errors.conflict("Tagihan sudah lunas");
+					}
+
+					if (message.includes("Jurnal tidak seimbang")) {
+						return errors.validation([
+							{ field: "entries", message },
+						]);
 					}
 
 					// Handle Prisma errors

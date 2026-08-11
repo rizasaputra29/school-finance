@@ -10,24 +10,19 @@ import {
 } from "@/lib/api/api-rate-limit";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { postToJournal } from "@/lib/services/journal";
+import {
+	PIUTANG_SISWA_ACCOUNT_CODE,
+	PIUTANG_KARYAWAN_ACCOUNT_CODE,
+	HUTANG_USAHA_ACCOUNT_CODE,
+	getRevenueAccountCode,
+	getExpenseAccountCode,
+} from "@/lib/services/billing";
+import { autoCreatePiutangFromOverdueBillings } from "@/lib/services/piutang";
 
 // Account codes for double-entry
 const BANK_ACCOUNT_CODE = "102"; // Bank
 const PIUTANG_ACCOUNT_CODE = "103"; // Piutang Siswa
-
-// Map billing type to revenue account code
-function getRevenueAccountCode(jenisBiaya: string): string {
-	const mapping: Record<string, string> = {
-		SPP: "405", // Penerimaan Uang SPP
-		"Uang Pangkal": "401", // Penerimaan Uang Gedung
-		"Uang Gedung": "401", // Penerimaan Uang Gedung
-		"Uang Kegiatan": "402", // Penerimaan Uang Kegiatan
-		"Uang Seragam": "403", // Penerimaan Uang Seragam
-		"Uang ATK": "404", // Penerimaan Uang ATK
-		Pendaftaran: "400", // Penerimaan Dana Pendaftaran
-	};
-	return mapping[jenisBiaya] || "406";
-}
 
 // Calculate days overdue
 function calculateDaysOverdue(tanggalJatuhTempo: Date): number {
@@ -60,7 +55,6 @@ interface PiutangItem {
 	billing?: {
 		id: string;
 		jenisBiaya: string;
-		periodeBulan: string;
 		jumlah: number;
 	} | null;
 	cicilanKe: number | null;
@@ -105,7 +99,6 @@ async function getPiutangFromInstallments(): Promise<PiutangItem[]> {
 				select: {
 					id: true,
 					jenisBiaya: true,
-					periodeBulan: true,
 					jumlah: true,
 				},
 			},
@@ -298,21 +291,6 @@ async function processPiutangPayment(
 	});
 }
 
-// Auto-create piutang from overdue installments (mark as Jatuh Tempo)
-async function autoCreatePiutangFromOverdueInstallments() {
-	const result = await prisma.installment.updateMany({
-		where: {
-			status: "Belum Bayar",
-			tanggalJatuhTempo: { lt: new Date() },
-		},
-		data: {
-			status: "Jatuh Tempo",
-		},
-	});
-
-	return result.count;
-}
-
 // Calculate piutang summary
 function calculatePiutangSummary(piutangItems: PiutangItem[]) {
 	const totalPiutang = piutangItems.reduce((sum, item) => sum + item.jumlah, 0);
@@ -421,8 +399,7 @@ export async function POST(request: NextRequest) {
 				const { action } = body;
 
 				if (action === "auto-create") {
-					// Auto-create piutang: mark overdue installments as Jatuh Tempo
-					const count = await autoCreatePiutangFromOverdueInstallments();
+					const count = await autoCreatePiutangFromOverdueBillings();
 
 					return success(
 						{ count },

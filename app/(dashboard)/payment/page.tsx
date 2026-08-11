@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,29 +10,39 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import {
 	Plus,
 	Search,
-	ChevronLeft,
-	ChevronRight,
 	AlertCircle,
 	CheckCircle,
 	Clock,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import { formatMonthYear } from "@/lib/utils/utils-date";
 import { useDebounce } from "use-debounce";
-import * as Dialog from "@radix-ui/react-dialog";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { FormDialog } from "@/components/reusable/FormDialog";
+import {
+	Field,
+	FieldLabel,
+	FieldError,
+} from "@/components/reusable/Field";
+import { DataTable } from "@/components/reusable/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import type { Billing } from "@/types/billing";
 import type { Pagination } from "@/types/pagination";
 import type { PaymentSummary as Summary } from "@/types/summary";
+
+const paymentFormSchema = z.object({
+	jumlahBayar: z
+		.string()
+		.min(1, "Jumlah pembayaran wajib diisi"),
+	tanggalBayar: z.string().min(1, "Tanggal pembayaran wajib diisi"),
+	catatan: z.string().optional(),
+	metodeBayar: z.enum(["Cash", "Bank", "Transfer"]),
+});
+
+type PaymentFormValues = z.infer<typeof paymentFormSchema>;
 
 export default function PaymentPage() {
 	const { isAdmin } = useAuth();
@@ -47,31 +58,33 @@ export default function PaymentPage() {
 		totalUnpaid: 0,
 		totalOverdue: 0,
 	});
-	const [isLoading, setIsLoading] = useState(true);
 	const [searchTerm, setSearchTerm] = useState("");
 	const [statusFilter, setStatusFilter] = useState<
 		"all" | "Belum Lunas" | "Lunas"
 	>("Belum Lunas");
 	const [overdueFilter, setOverdueFilter] = useState(false);
 
-	// Dialog States
 	const [isPaymentOpen, setIsPaymentOpen] = useState(false);
 	const [selectedBilling, setSelectedBilling] = useState<Billing | null>(null);
-	const [paymentForm, setPaymentForm] = useState({
-		jumlahBayar: "",
-		tanggalBayar: new Date().toISOString().split("T")[0],
-		catatan: "",
-	});
-	const [paymentError, setPaymentError] = useState("");
-	const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-	// Debounce search
 	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
 
-	// Fetch billings
-	const fetchBillings = useCallback(async () => {
-		setIsLoading(true);
-		try {
+	const queryClient = useQueryClient();
+
+	const paymentForm = useForm<PaymentFormValues>({
+		resolver: zodResolver(paymentFormSchema),
+		defaultValues: {
+			jumlahBayar: "",
+			tanggalBayar: new Date().toISOString().split("T")[0],
+			catatan: "",
+			metodeBayar: "Cash",
+		},
+		mode: "onChange",
+	});
+
+	const { isLoading } = useQuery<Billing[]>({
+		queryKey: ["payments", pagination.page, pagination.limit, statusFilter, overdueFilter, debouncedSearchTerm],
+		queryFn: async () => {
 			const params = new URLSearchParams();
 			params.append("page", pagination.page.toString());
 			params.append("limit", pagination.limit.toString());
@@ -83,9 +96,7 @@ export default function PaymentPage() {
 			const result = await res.json();
 
 			if (!result.success) {
-				toast.error(result.error?.message || "Gagal memuat data tagihan");
-				setIsLoading(false);
-				return;
+				throw new Error(result.error?.message || "Gagal memuat data tagihan");
 			}
 
 			setBillings(result.data);
@@ -93,97 +104,75 @@ export default function PaymentPage() {
 			if (result.meta.pagination) {
 				setPagination((prev) => ({ ...prev, ...result.meta.pagination }));
 			}
-		} catch (error) {
-			console.error("Error fetching billings:", error);
-			toast.error("Terjadi kesalahan saat memuat data tagihan");
-		} finally {
-			setIsLoading(false);
-		}
-	}, [
-		pagination.page,
-		pagination.limit,
-		statusFilter,
-		overdueFilter,
-		debouncedSearchTerm,
-	]);
+			return result.data;
+		},
+		enabled: isAdmin,
+	});
 
-	useEffect(() => {
-		if (isAdmin) {
-			fetchBillings();
-		}
-	}, [fetchBillings, isAdmin]);
-
-	// Handle payment
-	const handlePayment = async () => {
-		if (!selectedBilling) return;
-
-		setPaymentError("");
-		setIsProcessingPayment(true);
-
-		try {
-			const amount = parseFloat(paymentForm.jumlahBayar.replace(/[^0-9]/g, ""));
-
-			if (isNaN(amount) || amount <= 0) {
-				setPaymentError("Jumlah pembayaran harus lebih dari 0");
-				return;
-			}
-
-			if (amount > selectedBilling.jumlah) {
-				setPaymentError("Jumlah pembayaran tidak boleh melebihi tagihan");
-				return;
-			}
-
+	const paymentMutation = useMutation({
+		mutationFn: async (data: { billingId: string; jumlahBayar: number; tanggalBayar: string; catatan?: string; metodeBayar: string }) => {
 			const res = await fetch("/api/payment/manual", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					billingId: selectedBilling.id,
-					jumlahBayar: amount,
-					tanggalBayar: paymentForm.tanggalBayar,
-					catatan: paymentForm.catatan || undefined,
-				}),
+				body: JSON.stringify(data),
 			});
-
 			const result = await res.json();
-
 			if (!result.success) {
-				setPaymentError(result.error?.message || "Terjadi kesalahan");
-				return;
+				throw new Error(result.error?.message || "Terjadi kesalahan");
 			}
-
-			// Close dialog and refresh
+			return result;
+		},
+		onSuccess: (result) => {
 			setIsPaymentOpen(false);
 			setSelectedBilling(null);
-			setPaymentForm({
-				jumlahBayar: "",
-				tanggalBayar: new Date().toISOString().split("T")[0],
-				catatan: "",
-			});
-			fetchBillings();
-
-			// Show success message
+			paymentForm.reset();
+			queryClient.invalidateQueries({ queryKey: ["payments"] });
 			toast.success(result.message || "Pembayaran berhasil!");
-		} catch (error) {
-			console.error("Payment error:", error);
-			setPaymentError("Terjadi kesalahan saat memproses pembayaran");
-		} finally {
-			setIsProcessingPayment(false);
-		}
-	};
+		},
+		onError: (error: Error) => {
+			toast.error(error.message);
+		},
+	});
 
-	// Open payment dialog with selected billing
 	const openPaymentDialog = (billing: Billing) => {
 		setSelectedBilling(billing);
-		setPaymentForm({
+		paymentForm.reset({
 			jumlahBayar: billing.jumlah.toString(),
 			tanggalBayar: new Date().toISOString().split("T")[0],
 			catatan: "",
+			metodeBayar: "Cash",
 		});
-		setPaymentError("");
 		setIsPaymentOpen(true);
 	};
 
-	// Calculate average billing amount - memoized for performance
+	const handlePayment = paymentForm.handleSubmit((data) => {
+		if (!selectedBilling) return;
+
+		const amount = parseFloat(data.jumlahBayar.replace(/[^0-9]/g, ""));
+
+		if (isNaN(amount) || amount <= 0) {
+			paymentForm.setError("jumlahBayar", {
+				message: "Jumlah pembayaran harus lebih dari 0",
+			});
+			return;
+		}
+
+		if (amount > selectedBilling.jumlah) {
+			paymentForm.setError("jumlahBayar", {
+				message: "Jumlah pembayaran tidak boleh melebihi tagihan",
+			});
+			return;
+		}
+
+		paymentMutation.mutate({
+			billingId: selectedBilling.id,
+			jumlahBayar: amount,
+			tanggalBayar: data.tanggalBayar,
+			catatan: data.catatan || undefined,
+			metodeBayar: data.metodeBayar,
+		});
+	});
+
 	const averageBilling = useMemo(
 		() =>
 			billings.length > 0
@@ -192,7 +181,6 @@ export default function PaymentPage() {
 		[billings],
 	);
 
-	// Get status badge color
 	const getStatusBadge = (billing: Billing) => {
 		if (billing.statusBayar === "Lunas") {
 			return (
@@ -217,6 +205,58 @@ export default function PaymentPage() {
 			</Badge>
 		);
 	};
+
+	const columns: ColumnDef<Billing>[] = [
+		{
+			accessorKey: "student",
+			header: "Siswa",
+			cell: ({ row }) => (
+				<div>
+					<div className="font-medium">{row.original.student.nama}</div>
+					<div className="text-sm text-gray-500">
+						NIS: {row.original.student.nis}
+					</div>
+					<div className="text-xs text-gray-400">
+						{row.original.student.kelas}
+					</div>
+				</div>
+			),
+		},
+		{
+			accessorKey: "jenisBiaya",
+			header: "Jenis Biaya",
+		},
+		{
+			accessorKey: "jumlah",
+			header: () => <div className="text-right">Jumlah</div>,
+			cell: ({ row }) => (
+				<div className="text-right">{formatRupiah(row.original.jumlah)}</div>
+			),
+		},
+		{
+			accessorKey: "statusBayar",
+			header: "Status",
+			cell: ({ row }) => getStatusBadge(row.original),
+		},
+		{
+			id: "actions",
+			header: () => <div className="text-center">Aksi</div>,
+			cell: ({ row }) => (
+				<div className="text-center">
+					{row.original.statusBayar !== "Lunas" && (
+						<Button
+							size="sm"
+							onClick={() => openPaymentDialog(row.original)}
+							className="bg-green-600 hover:bg-green-700"
+						>
+							<Plus className="w-4 h-4 mr-1" />
+							Bayar
+						</Button>
+					)}
+				</div>
+			),
+		},
+	];
 
 	if (!isAdmin) {
 		return (
@@ -320,217 +360,152 @@ export default function PaymentPage() {
 				<CardHeader>
 					<CardTitle>Daftar Tagihan Siswa</CardTitle>
 				</CardHeader>
-				<CardContent>
-					{isLoading ? (
-						<div className="text-center py-8 text-gray-500">Memuat data...</div>
-					) : billings.length === 0 ? (
-						<div className="text-center py-8 text-gray-500">
-							Tidak ada tagihan
-						</div>
-					) : (
-						<>
-							<div className="overflow-x-auto">
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>Siswa</TableHead>
-											<TableHead>Jenis Biaya</TableHead>
-											<TableHead>Periode</TableHead>
-											<TableHead className="text-right">Jumlah</TableHead>
-											<TableHead>Status</TableHead>
-											<TableHead className="text-center">Aksi</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{billings.map((billing) => (
-											<TableRow key={billing.id}>
-												<TableCell>
-													<div>
-														<div className="font-medium">
-															{billing.student.nama}
-														</div>
-														<div className="text-sm text-gray-500">
-															NIS: {billing.student.nis}
-														</div>
-														<div className="text-xs text-gray-400">
-															{billing.student.kelas}
-														</div>
-													</div>
-												</TableCell>
-												<TableCell>{billing.jenisBiaya}</TableCell>
-												<TableCell>
-{billing.periodeBulan
-												? formatMonthYear(new Date(billing.periodeBulan + "-01"))
-												: "-"}
-												</TableCell>
-												<TableCell className="text-right">
-													{formatRupiah(billing.jumlah)}
-												</TableCell>
-												<TableCell>{getStatusBadge(billing)}</TableCell>
-												<TableCell className="text-center">
-													{billing.statusBayar !== "Lunas" && (
-														<Button
-															size="sm"
-															onClick={() => openPaymentDialog(billing)}
-															className="bg-green-600 hover:bg-green-700"
-														>
-															<Plus className="w-4 h-4 mr-1" />
-															Bayar
-														</Button>
-													)}
-												</TableCell>
-											</TableRow>
-										))}
-									</TableBody>
-								</Table>
-							</div>
-
-							{/* Pagination */}
-							<div className="flex items-center justify-between mt-4">
-								<div className="text-sm text-gray-500">
-									Halaman {pagination.page} dari {pagination.totalPages} (
-									{pagination.total} total)
-								</div>
-								<div className="flex gap-2">
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() =>
-											setPagination((prev) => ({
-												...prev,
-												page: prev.page - 1,
-											}))
-										}
-										disabled={pagination.page <= 1}
-									>
-										<ChevronLeft className="w-4 h-4" />
-									</Button>
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={() =>
-											setPagination((prev) => ({
-												...prev,
-												page: prev.page + 1,
-											}))
-										}
-										disabled={pagination.page >= pagination.totalPages}
-									>
-										<ChevronRight className="w-4 h-4" />
-									</Button>
-								</div>
-							</div>
-						</>
-					)}
+				<CardContent className="p-0">
+					<DataTable
+						columns={columns}
+						data={billings}
+						loading={isLoading}
+						emptyMessage="Tidak ada tagihan"
+						serverPagination={{
+							pageIndex: pagination.page - 1,
+							pageSize: pagination.limit,
+							total: pagination.total,
+							onPaginationChange: (newPagination) => {
+								setPagination((prev) => ({
+									...prev,
+									page: newPagination.pageIndex + 1,
+								}));
+							},
+						}}
+					/>
 				</CardContent>
 			</Card>
 
 			{/* Payment Dialog */}
-			<Dialog.Root open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
-				<Dialog.Portal>
-					<Dialog.Overlay className="fixed inset-0 bg-black/50" />
-					<Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
-						<Dialog.Title className="text-lg font-semibold mb-4">
-							Input Pembayaran Manual
-						</Dialog.Title>
-
-						{selectedBilling && (
-							<div className="space-y-4">
-								{/* Billing Info */}
-								<div className="bg-gray-50 p-3 rounded-lg">
-									<div className="text-sm text-gray-500">Tagihan</div>
-									<div className="font-medium">
-										{selectedBilling.jenisBiaya}
-									</div>
-									<div className="text-sm">
-										{selectedBilling.student.nama} -{" "}
-										{selectedBilling.student.nis}
-									</div>
-									<div className="text-lg font-bold mt-2">
-										Total Tagihan: {formatRupiah(selectedBilling.jumlah)}
-									</div>
-									{selectedBilling.isOverdue && (
-										<div className="text-sm text-red-600 mt-1 flex items-center">
-											<AlertCircle className="w-4 h-4 mr-1" />
-											Tagihan Jatuh Tempo
-										</div>
-									)}
+			<FormDialog
+				title="Input Pembayaran Manual"
+				open={isPaymentOpen}
+				onOpenChange={setIsPaymentOpen}
+				form={paymentForm}
+			>
+				{selectedBilling && (
+					<form onSubmit={handlePayment} className="space-y-4">
+						{/* Billing Info */}
+						<div className="bg-gray-50 p-3 rounded-lg">
+							<div className="text-sm text-gray-500">Tagihan</div>
+							<div className="font-medium">
+								{selectedBilling.jenisBiaya}
+							</div>
+							<div className="text-sm">
+								{selectedBilling.student.nama} -{" "}
+								{selectedBilling.student.nis}
+							</div>
+							<div className="text-lg font-bold mt-2">
+								Total Tagihan: {formatRupiah(selectedBilling.jumlah)}
+							</div>
+							{selectedBilling.isOverdue && (
+								<div className="text-sm text-red-600 mt-1 flex items-center">
+									<AlertCircle className="w-4 h-4 mr-1" />
+									Tagihan Jatuh Tempo
 								</div>
+							)}
+						</div>
 
-								{/* Payment Form */}
-								<div>
-									<Label htmlFor="jumlahBayar">Jumlah Pembayaran</Label>
+						{/* Payment Form */}
+						<Controller
+							control={paymentForm.control}
+							name="metodeBayar"
+							render={({ field }) => (
+								<Field>
+									<FieldLabel htmlFor="metodeBayar">Metode Pembayaran</FieldLabel>
+									<select
+										{...field}
+										id="metodeBayar"
+										className="w-full p-2 border rounded-md"
+									>
+										<option value="Cash">Kas Tunai</option>
+										<option value="Bank">Bank</option>
+										<option value="Transfer">Transfer</option>
+									</select>
+								</Field>
+							)}
+						/>
+
+						<Controller
+							control={paymentForm.control}
+							name="jumlahBayar"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="jumlahBayar">Jumlah Pembayaran</FieldLabel>
 									<Input
+										{...field}
 										id="jumlahBayar"
 										type="text"
-										value={paymentForm.jumlahBayar}
+										placeholder="0"
 										onChange={(e) => {
 											const value = e.target.value.replace(/[^0-9]/g, "");
-											setPaymentForm((prev) => ({
-												...prev,
-												jumlahBayar: value
-													? formatRupiah(parseInt(value))
-													: "",
-											}));
+											field.onChange(
+												value ? formatRupiah(parseInt(value)) : ""
+											);
 										}}
-										placeholder="0"
+										aria-invalid={!!fieldState.error}
 									/>
-								</div>
+									<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+								</Field>
+							)}
+						/>
 
-								<div>
-									<Label htmlFor="tanggalBayar">Tanggal Pembayaran</Label>
+						<Controller
+							control={paymentForm.control}
+							name="tanggalBayar"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="tanggalBayar">Tanggal Pembayaran</FieldLabel>
 									<Input
+										{...field}
 										id="tanggalBayar"
 										type="date"
-										value={paymentForm.tanggalBayar}
-										onChange={(e) =>
-											setPaymentForm((prev) => ({
-												...prev,
-												tanggalBayar: e.target.value,
-											}))
-										}
+										aria-invalid={!!fieldState.error}
 									/>
-								</div>
+									<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+								</Field>
+							)}
+						/>
 
-								<div>
-									<Label htmlFor="catatan">Catatan (Opsional)</Label>
+						<Controller
+							control={paymentForm.control}
+							name="catatan"
+							render={({ field }) => (
+								<Field>
+									<FieldLabel htmlFor="catatan">Catatan (Opsional)</FieldLabel>
 									<Input
+										{...field}
 										id="catatan"
-										value={paymentForm.catatan}
-										onChange={(e) =>
-											setPaymentForm((prev) => ({
-												...prev,
-												catatan: e.target.value,
-											}))
-										}
 										placeholder="Catatan pembayaran..."
 									/>
-								</div>
+								</Field>
+							)}
+						/>
 
-								{paymentError && (
-									<div className="text-red-500 text-sm">{paymentError}</div>
-								)}
-
-								<div className="flex gap-2 justify-end">
-									<Button
-										variant="outline"
-										onClick={() => setIsPaymentOpen(false)}
-									>
-										Batal
-									</Button>
-									<Button
-										onClick={handlePayment}
-										disabled={isProcessingPayment || !paymentForm.jumlahBayar}
-										className="bg-green-600 hover:bg-green-700"
-									>
-										{isProcessingPayment ? "Memproses..." : "Simpan Pembayaran"}
-									</Button>
-								</div>
-							</div>
-						)}
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+						<div className="flex gap-2 justify-end">
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => setIsPaymentOpen(false)}
+							>
+								Batal
+							</Button>
+							<Button
+								type="submit"
+								disabled={paymentMutation.isPending || !paymentForm.formState.isValid}
+								className="bg-green-600 hover:bg-green-700"
+							>
+								{paymentMutation.isPending ? "Memproses..." : "Simpan Pembayaran"}
+							</Button>
+						</div>
+					</form>
+				)}
+			</FormDialog>
 		</div>
 	);
 }

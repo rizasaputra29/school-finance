@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
+import { useAcademicYear } from "@/context/AcademicYearContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,17 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { TransactionButtons } from "@/components/Transaction/TransactionButtons";
 import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import {
 	Search,
-	ChevronLeft,
-	ChevronRight,
 	TrendingUp,
 	TrendingDown,
 	Wallet,
@@ -32,423 +24,366 @@ import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
-import * as Dialog from "@radix-ui/react-dialog";
-import type { Cashflow } from "@/types/cashflow";
+import { useForm, Controller, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { FormDialog } from "@/components/reusable/FormDialog";
+import {
+	Field,
+	FieldLabel,
+	FieldError,
+} from "@/components/reusable/Field";
+import { DataTable } from "@/components/reusable/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
+import type { CashflowCard } from "@/types/cashflow";
 import type { Account } from "@/types/account";
 import type { Pagination } from "@/types/pagination";
 import type { CashflowSummary as Summary } from "@/types/summary";
+import * as Dialog from "@radix-ui/react-dialog";
 
-const INITIAL_FORM = {
-	tanggal: new Date().toISOString().split("T")[0],
-	keterangan: "",
-	kodeAkun: "",
-	kategori: "",
-	debit: "",
-	kredit: "",
-};
+const cashflowFormSchema = z.object({
+	tanggal: z.string().min(1, "Tanggal wajib diisi"),
+	keterangan: z.string().min(1, "Keterangan wajib diisi"),
+	kategori: z.string().optional(),
+	entries: z
+		.array(
+			z.object({
+				kodeAkun: z.string().min(1, "Akun wajib dipilih"),
+				debit: z.string(),
+				kredit: z.string(),
+			}),
+		)
+		.min(2, "Minimal 2 entri diperlukan"),
+});
 
-export default function CashflowPage() {
+type CashflowFormValues = z.infer<typeof cashflowFormSchema>;
+
+function CashflowInner() {
 	const { isAdmin } = useAuth();
-	const [cashflows, setCashflows] = useState<Cashflow[]>([]);
-	const [accounts, setAccounts] = useState<Account[]>([]);
-	const [pagination, setPagination] = useState<Pagination>({
+	const { selectedYear } = useAcademicYear();
+	const queryClient = useQueryClient();
+
+	const initialStart = selectedYear?.tanggalMulai?.split("T")[0] ?? "";
+	const initialEnd = selectedYear?.tanggalSelesai?.split("T")[0] ?? "";
+
+	const [searchTerm, setSearchTerm] = useState("");
+	const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all");
+	const [startDate, setStartDate] = useState(initialStart);
+	const [endDate, setEndDate] = useState(initialEnd);
+	const [currentPage, setCurrentPage] = useState(1);
+
+	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
+
+	const [isEditOpen, setIsEditOpen] = useState(false);
+	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+	const [selectedCard, setSelectedCard] = useState<CashflowCard | null>(null);
+
+	const [accountSearch, setAccountSearch] = useState("");
+	const [debouncedAccountSearch] = useDebounce(accountSearch, 200);
+	const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+	const [editingEntryIndex, setEditingEntryIndex] = useState<number | null>(null);
+
+	const cashflowForm = useForm<CashflowFormValues>({
+		resolver: zodResolver(cashflowFormSchema),
+		defaultValues: {
+			tanggal: new Date().toISOString().split("T")[0],
+			keterangan: "",
+			kategori: "",
+			entries: [
+				{ kodeAkun: "", debit: "", kredit: "" },
+				{ kodeAkun: "", debit: "", kredit: "" },
+			],
+		},
+		mode: "onChange",
+	});
+
+	const watchedEntries = useWatch({ control: cashflowForm.control, name: "entries" });
+
+	const { data: accountsData } = useQuery({
+		queryKey: ["accounts"],
+		queryFn: async () => {
+			const res = await fetch("/api/accounts");
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat data akun");
+			return result.data as Account[];
+		},
+	});
+
+	const accounts = accountsData ?? [];
+
+	const { data: cashflowData, isLoading } = useQuery({
+		queryKey: [
+			"cashflows",
+			currentPage,
+			typeFilter,
+			startDate,
+			endDate,
+			debouncedSearchTerm,
+			selectedYear?.id,
+		],
+		queryFn: async () => {
+			let url = `/api/cashflow?page=${currentPage}&limit=10`;
+			if (selectedYear?.id) url += `&academicYearId=${selectedYear.id}`;
+			if (startDate) url += `&startDate=${startDate}`;
+			if (endDate) url += `&endDate=${endDate}`;
+			if (typeFilter !== "all") url += `&type=${typeFilter}`;
+			if (debouncedSearchTerm)
+				url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
+
+			const res = await fetch(url);
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat data cashflow");
+			return result;
+		},
+	});
+
+	const cashflows: CashflowCard[] = cashflowData?.data ?? [];
+	const pagination: Pagination = cashflowData?.meta?.pagination ?? {
 		page: 1,
 		limit: 10,
 		total: 0,
 		totalPages: 0,
-	});
-	const [summary, setSummary] = useState<Summary>({
+	};
+	const summary: Summary = cashflowData?.meta?.summary ?? {
 		totalDebit: 0,
 		totalKredit: 0,
 		saldo: 0,
-	});
-	const [isLoading, setIsLoading] = useState(true);
-	const [searchTerm, setSearchTerm] = useState("");
-	const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">(
-		"all",
-	);
-	const [startDate, setStartDate] = useState("");
-	const [endDate, setEndDate] = useState("");
+	};
 
-	// Debounce search term to avoid excessive API calls
-	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
-
-	// Dialog States
-
-	const [isEditOpen, setIsEditOpen] = useState(false);
-	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-	const [selectedCashflow, setSelectedCashflow] = useState<Cashflow | null>(
-		null,
-	);
-	const [formData, setFormData] = useState(INITIAL_FORM);
-	const [error, setError] = useState("");
-	const [accountSearch, setAccountSearch] = useState("");
-	const [debouncedAccountSearch] = useDebounce(accountSearch, 200);
-	const [showAccountDropdown, setShowAccountDropdown] = useState(false);
-	const fetchAccounts = useCallback(async () => {
-		try {
-			const res = await fetch("/api/accounts");
-			const result = await res.json();
-			if (!result.success) {
-				toast.error(result.error?.message || "Gagal memuat data akun");
-				return;
-			}
-			setAccounts(result.data);
-		} catch (error) {
-			console.error("Failed to fetch accounts:", error);
-			toast.error("Terjadi kesalahan saat memuat akun");
-		}
-	}, []);
-
-	const fetchData = useCallback(
-		async (page = 1) => {
-			setIsLoading(true);
-			try {
-				let url = `/api/cashflow?page=${page}&limit=10`;
-				if (startDate) url += `&startDate=${startDate}`;
-				if (endDate) url += `&endDate=${endDate}`;
-				if (typeFilter !== "all") url += `&type=${typeFilter}`;
-				if (debouncedSearchTerm)
-					url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
-
-				const res = await fetch(url);
-				const result = await res.json();
-				if (!result.success) {
-					toast.error(result.error?.message || "Gagal memuat data cashflow");
-					return;
-				}
-				setCashflows(result.data);
-				setPagination(result.meta.pagination);
-				setSummary(
-					result.meta.summary || { totalDebit: 0, totalKredit: 0, saldo: 0 },
-				);
-			} catch (error) {
-				console.error("Failed to fetch cashflows:", error);
-				toast.error("Terjadi kesalahan saat memuat cashflow");
-			} finally {
-				setIsLoading(false);
-			}
-		},
-		[typeFilter, startDate, endDate, debouncedSearchTerm],
-	);
-
-	useEffect(() => {
-		fetchAccounts();
-	}, [fetchAccounts]);
-
-	useEffect(() => {
-		fetchData();
-	}, [fetchData]);
-
-	const handleEdit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		if (!selectedCashflow) return;
-		setError("");
-
-		const submitData = {
-			...formData,
-			debit: parseFormattedNumber(String(formData.debit)),
-			kredit: parseFormattedNumber(String(formData.kredit)),
-		};
-
-		const promise = fetch(`/api/cashflow/${selectedCashflow.id}`, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(submitData),
-		}).then(async (res) => {
+	const editMutation = useMutation({
+		mutationFn: async (data: CashflowFormValues) => {
+			const res = await fetch(`/api/cashflow/${selectedCard!.id}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					tanggal: data.tanggal,
+					keterangan: data.keterangan,
+					kategori: data.kategori,
+					entries: data.entries
+						.filter((e) => e.kodeAkun)
+						.map((e) => ({
+							kodeAkun: e.kodeAkun,
+							debit: parseFormattedNumber(String(e.debit)) || 0,
+							kredit: parseFormattedNumber(String(e.kredit)) || 0,
+						})),
+				}),
+			});
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal mengupdate transaksi");
 			return result;
-		});
+		},
+		onSuccess: () => {
+			setIsEditOpen(false);
+			setSelectedCard(null);
+			cashflowForm.reset();
+			queryClient.invalidateQueries({ queryKey: ["cashflows"] });
+			toast.success("Transaksi berhasil diupdate");
+		},
+		onError: (err: Error) => {
+			toast.error(err.message);
+		},
+	});
 
-		toast.promise(promise, {
-			loading: "Mengupdate transaksi...",
-			success: (result) => {
-				setIsEditOpen(false);
-				setSelectedCashflow(null);
-				setFormData(INITIAL_FORM);
-				fetchData(pagination.page);
-				return `Transaksi ${result.data.keterangan} berhasil diupdate`;
-			},
-			error: (err) => {
-				setError(err.message);
-				return err.message;
-			},
-		});
-	};
-
-	const handleDelete = async () => {
-		if (!selectedCashflow) return;
-
-		const promise = fetch(`/api/cashflow/${selectedCashflow.id}`, {
-			method: "DELETE",
-		}).then(async (res) => {
-			// Handle 204 No Content for DELETE
-			if (res.status === 204) {
-				return { success: true, data: selectedCashflow };
-			}
+	const deleteMutation = useMutation({
+		mutationFn: async () => {
+			const res = await fetch(`/api/cashflow/${selectedCard!.id}`, {
+				method: "DELETE",
+			});
+			if (res.status === 204) return { success: true, data: selectedCard };
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal menghapus transaksi");
 			return result;
-		});
+		},
+		onSuccess: (result) => {
+			setIsDeleteOpen(false);
+			setSelectedCard(null);
+			queryClient.invalidateQueries({ queryKey: ["cashflows"] });
+			toast.success(
+				`Transaksi ${result.data?.keterangan || selectedCard?.keterangan} berhasil dihapus`,
+			);
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
 
-		toast.promise(promise, {
-			loading: "Menghapus transaksi...",
-			success: (result) => {
-				setIsDeleteOpen(false);
-				setSelectedCashflow(null);
-				fetchData(pagination.page);
-				return `Transaksi ${result.data?.keterangan || selectedCashflow.keterangan} berhasil dihapus`;
-			},
-			error: (err) => err.message,
-		});
+	const handleEdit = cashflowForm.handleSubmit((data) => {
+		editMutation.mutate(data);
+	});
+
+	const handleDelete = () => {
+		if (!selectedCard) return;
+		deleteMutation.mutate();
 	};
 
-	const openEditDialog = (cf: Cashflow) => {
-		setSelectedCashflow(cf);
-		setFormData({
-			tanggal: new Date(cf.tanggal).toISOString().split("T")[0],
-			keterangan: cf.keterangan,
-			kodeAkun: cf.kodeAkun,
-			kategori: cf.kategori || "",
-			debit: cf.debit > 0 ? formatNumberInput(cf.debit) : "",
-			kredit: cf.kredit > 0 ? formatNumberInput(cf.kredit) : "",
+	const openEditDialog = (card: CashflowCard) => {
+		setSelectedCard(card);
+		const entry1 = card.entries[0] || { kodeAkun: "", debit: 0, kredit: 0 };
+		const entry2 = card.entries[1] || { kodeAkun: "", debit: 0, kredit: 0 };
+		cashflowForm.reset({
+			tanggal: new Date(card.tanggal).toISOString().split("T")[0],
+			keterangan: card.keterangan,
+			kategori: card.kategori || "",
+			entries: [
+				{
+					kodeAkun: entry1.kodeAkun,
+					debit: entry1.debit > 0 ? formatNumberInput(entry1.debit) : "",
+					kredit: entry1.kredit > 0 ? formatNumberInput(entry1.kredit) : "",
+				},
+				{
+					kodeAkun: entry2.kodeAkun,
+					debit: entry2.debit > 0 ? formatNumberInput(entry2.debit) : "",
+					kredit: entry2.kredit > 0 ? formatNumberInput(entry2.kredit) : "",
+				},
+			],
 		});
 		setIsEditOpen(true);
 	};
 
-	// Note: Filtering is now done server-side via API
-	// Client-side filtering kept for immediate UI feedback
 	const clearFilters = () => {
 		setTypeFilter("all");
-		setStartDate("");
-		setEndDate("");
+		setStartDate(initialStart);
+		setEndDate(initialEnd);
 		setSearchTerm("");
 	};
 
-	const renderForm = (
-		onSubmit: (e: React.FormEvent) => Promise<void>,
-		submitLabel: string,
-	) => (
-		<form onSubmit={onSubmit} className="mt-6 space-y-4">
-			{error && (
-				<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-					{error}
-				</div>
-			)}
+	const selectAccount = (index: number, kodeAkun: string) => {
+		cashflowForm.setValue(`entries.${index}.kodeAkun`, kodeAkun, {
+			shouldValidate: true,
+		});
+		setAccountSearch("");
+		setShowAccountDropdown(false);
+		setEditingEntryIndex(null);
+	};
 
-			<div className="space-y-2">
-				<Label htmlFor="tanggal">Tanggal</Label>
-				<Input
-					id="tanggal"
-					type="date"
-					value={formData.tanggal}
-					onChange={(e) =>
-						setFormData({ ...formData, tanggal: e.target.value })
-					}
-					required
-				/>
-			</div>
-
-			<div className="space-y-2">
-				<Label htmlFor="keterangan">Keterangan</Label>
-				<Input
-					id="keterangan"
-					value={formData.keterangan}
-					onChange={(e) =>
-						setFormData({ ...formData, keterangan: e.target.value })
-					}
-					placeholder="Contoh: Pembayaran Listrik"
-					required
-				/>
-			</div>
-
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label htmlFor="kodeAkun">Akun</Label>
-					<div className="relative">
-						<Input
-							type="text"
-							placeholder="Cari kode atau nama akun..."
-							value={accountSearch}
-							onChange={(e) => setAccountSearch(e.target.value)}
-							onFocus={() => setShowAccountDropdown(true)}
-							onBlur={() =>
-								setTimeout(() => setShowAccountDropdown(false), 200)
-							}
-						/>
-						{showAccountDropdown && (
-							<div className="absolute z-10 left-0 right-0 mt-1 max-h-64 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
-							{accounts
-								.filter(
-									(acc) =>
-										debouncedAccountSearch === "" ||
-										acc.kodeAkun
-											.toLowerCase()
-											.includes(debouncedAccountSearch.toLowerCase()) ||
-										acc.namaAkun
-											.toLowerCase()
-											.includes(debouncedAccountSearch.toLowerCase()) ||
-										acc.tipeAkun
-											.toLowerCase()
-											.includes(debouncedAccountSearch.toLowerCase()),
-								)
-									.map((acc) => (
-										<button
-											key={acc.id}
-											type="button"
-											onClick={() => {
-												setFormData({ ...formData, kodeAkun: acc.kodeAkun });
-												setAccountSearch("");
-												setShowAccountDropdown(false);
-											}}
-											className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors border-b border-gray-50 last:border-b-0 ${
-												formData.kodeAkun === acc.kodeAkun
-													? "bg-[#059DEA]/30 font-medium"
-													: ""
-											}`}
-										>
-											<span className="font-mono font-medium">
-												{acc.kodeAkun}
-											</span>{" "}
-											- {acc.namaAkun}
-											<span className="ml-2 text-xs text-gray-400">
-												({acc.tipeAkun})
-											</span>
-										</button>
-									))}
-								{accounts.filter(
-									(acc) =>
-										debouncedAccountSearch === "" ||
-										acc.kodeAkun
-											.toLowerCase()
-											.includes(debouncedAccountSearch.toLowerCase()) ||
-										acc.namaAkun
-											.toLowerCase()
-											.includes(debouncedAccountSearch.toLowerCase()),
-								).length === 0 && (
-									<p className="px-3 py-2 text-sm text-gray-500">
-										Tidak ada akun ditemukan
-									</p>
-								)}
-							</div>
-						)}
-					</div>
-					{formData.kodeAkun && (
-						<div className="flex items-center gap-2 mt-1">
-							<Badge variant="secondary" className="font-mono">
-								{formData.kodeAkun}
-							</Badge>
-							<span className="text-sm text-slate-600">
-								{
-									accounts.find((a) => a.kodeAkun === formData.kodeAkun)
-										?.namaAkun
-								}
-							</span>
-							<button
-								type="button"
-								onClick={() => setFormData({ ...formData, kodeAkun: "" })}
-								className="text-xs text-red-500 hover:text-red-700"
-							>
-								✕
-							</button>
-						</div>
+	const columns: ColumnDef<CashflowCard>[] = [
+		{
+			accessorKey: "tanggal",
+			header: "Tanggal",
+			cell: ({ row }) => (
+				<span className="whitespace-nowrap">{formatShortDate(row.original.tanggal)}</span>
+			),
+		},
+		{
+			accessorKey: "keterangan",
+			header: "Keterangan",
+			cell: ({ row }) => (
+				<div>
+					{row.original.keterangan}
+					{row.original.kategori && (
+						<Badge variant="secondary" className="ml-2 text-xs">
+							{row.original.kategori}
+						</Badge>
 					)}
-					<input
-						type="hidden"
-						name="kodeAkun"
-						value={formData.kodeAkun}
-						required
-					/>
 				</div>
-				<div className="space-y-2">
-					<Label htmlFor="kategori">Kategori</Label>
-					<Input
-						id="kategori"
-						value={formData.kategori}
-						onChange={(e) =>
-							setFormData({ ...formData, kategori: e.target.value })
-						}
-						placeholder="Contoh: Operasional"
-					/>
-				</div>
-			</div>
-
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label htmlFor="debit">Debit (Masuk)</Label>
-					<div className="relative">
-						<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-							Rp
+			),
+		},
+		{
+			id: "debitAccount",
+			header: "Debit (Akun)",
+			cell: ({ row }) => {
+				const debitEntry = row.original.entries.find((e) => e.debit > 0);
+				return debitEntry ? (
+					<div className="flex items-center gap-1">
+						<Badge variant="secondary" className="font-mono">
+							{debitEntry.kodeAkun}
+						</Badge>
+						<span className="text-sm text-slate-600 truncate max-w-[120px]">
+							{debitEntry.namaAkun}
 						</span>
-						<Input
-							id="debit"
-							value={formData.debit}
-							onChange={(e) =>
-								setFormData({
-									...formData,
-									debit: formatNumberInput(e.target.value),
-								})
-							}
-							placeholder="0"
-							className="pl-10"
-							disabled={!!formData.kredit && formData.kredit !== "0"}
-						/>
 					</div>
+				) : (
+					"-"
+				);
+			},
+		},
+		{
+			accessorKey: "totalDebit",
+			header: () => <div className="text-right">Debit</div>,
+			cell: ({ row }) => (
+				<div className="text-right font-semibold text-emerald-600">
+					{row.original.totalDebit > 0 ? formatRupiah(row.original.totalDebit) : "-"}
 				</div>
-				<div className="space-y-2">
-					<Label htmlFor="kredit">Kredit (Keluar)</Label>
-					<div className="relative">
-						<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-							Rp
+			),
+		},
+		{
+			id: "creditAccount",
+			header: "Kredit (Akun)",
+			cell: ({ row }) => {
+				const creditEntry = row.original.entries.find((e) => e.kredit > 0);
+				return creditEntry ? (
+					<div className="flex items-center gap-1">
+						<Badge variant="secondary" className="font-mono">
+							{creditEntry.kodeAkun}
+						</Badge>
+						<span className="text-sm text-slate-600 truncate max-w-[120px]">
+							{creditEntry.namaAkun}
 						</span>
-						<Input
-							id="kredit"
-							value={formData.kredit}
-							onChange={(e) =>
-								setFormData({
-									...formData,
-									kredit: formatNumberInput(e.target.value),
-								})
-							}
-							placeholder="0"
-							className="pl-10"
-							disabled={!!formData.debit && formData.debit !== "0"}
-						/>
 					</div>
+				) : (
+					"-"
+				);
+			},
+		},
+		{
+			accessorKey: "totalKredit",
+			header: () => <div className="text-right">Kredit</div>,
+			cell: ({ row }) => (
+				<div className="text-right font-semibold text-red-600">
+					{row.original.totalKredit > 0 ? formatRupiah(row.original.totalKredit) : "-"}
 				</div>
-			</div>
-
-			<div className="flex justify-end gap-3 pt-4">
-				<Dialog.Close asChild>
-					<Button type="button" variant="outline">
-						Batal
-					</Button>
-				</Dialog.Close>
-				<Button type="submit">{submitLabel}</Button>
-			</div>
-		</form>
-	);
+			),
+		},
+		...(isAdmin
+			? [
+					{
+						id: "actions" as const,
+						header: "Aksi",
+						cell: ({ row }: { row: { original: CashflowCard } }) => (
+							<div className="flex gap-1">
+								<Button
+									size="sm"
+									variant="ghost"
+									onClick={() => openEditDialog(row.original)}
+								>
+									<Pencil className="h-4 w-4" />
+								</Button>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="text-red-600 hover:text-red-700"
+									onClick={() => {
+										setSelectedCard(row.original);
+										setIsDeleteOpen(true);
+									}}
+								>
+									<Trash2 className="h-4 w-4" />
+								</Button>
+							</div>
+						),
+					},
+				]
+			: []),
+	];
 
 	return (
 		<div className="space-y-6">
 			{/* Header */}
 			<div className="flex items-center justify-between gap-2">
 				<div>
-					<h1 className="text-xl md:text-2xl font-bold text-gray-900">
-						Cashflow
-					</h1>
+					<h1 className="text-xl md:text-2xl font-bold text-gray-900">Cashflow</h1>
 					<p className="text-xs md:text-sm text-gray-500">
 						Kelola arus kas masuk dan keluar
 					</p>
 				</div>
-
 				{isAdmin && (
 					<TransactionButtons
 						accounts={accounts}
-						onSuccess={() => fetchData(pagination.page)}
+						onSuccess={() =>
+							queryClient.invalidateQueries({ queryKey: ["cashflows"] })
+						}
 					/>
 				)}
 			</div>
@@ -496,9 +431,7 @@ export default function CashflowPage() {
 							<p className="text-[10px] md:text-xs font-medium text-white/80 truncate">
 								Saldo Akhir
 							</p>
-							<p
-								className={`text-sm md:text-xl font-bold truncate ${(summary.saldo ?? 0) >= 0 ? "text-white" : "text-white"}`}
-							>
+							<p className="text-sm md:text-xl font-bold text-white truncate">
 								{formatRupiah(summary.saldo ?? 0)}
 							</p>
 						</div>
@@ -521,6 +454,16 @@ export default function CashflowPage() {
 							/>
 						</div>
 						<div className="flex flex-col sm:flex-row gap-3">
+							{selectedYear && (
+								<div className="space-y-1 min-w-[200px]">
+									<Label className="text-xs text-gray-500">Tahun Ajaran</Label>
+									<div className="flex items-center h-9 px-3 rounded-lg border border-gray-200 bg-gray-50">
+										<Badge variant="secondary" className="text-xs">
+											{selectedYear.tahunAjaran}
+										</Badge>
+									</div>
+								</div>
+							)}
 							<div className="space-y-1 min-w-[200px]">
 								<Label className="text-xs text-gray-500">Tipe Transaksi</Label>
 								<div className="flex w-full rounded-lg border border-gray-200 p-1">
@@ -578,7 +521,7 @@ export default function CashflowPage() {
 								</div>
 							</div>
 
-							{(typeFilter !== "all" || startDate || endDate) && (
+							{(typeFilter !== "all" || startDate !== initialStart || endDate !== initialEnd || searchTerm) && (
 								<Button
 									variant="outline"
 									size="sm"
@@ -609,142 +552,266 @@ export default function CashflowPage() {
 						)}
 					</CardTitle>
 				</CardHeader>
-				<CardContent>
-					{isLoading ? (
-						<div className="flex h-48 items-center justify-center">
-							<div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-						</div>
-					) : cashflows.length > 0 ? (
-						<div className="overflow-x-auto -mx-4 px-4">
-							<Table className="min-w-[800px]">
-								<TableHeader>
-									<TableRow>
-										<TableHead>Tanggal</TableHead>
-										<TableHead>Keterangan</TableHead>
-										<TableHead>Akun</TableHead>
-										<TableHead>Kategori</TableHead>
-										<TableHead className="text-right">Debit</TableHead>
-										<TableHead className="text-right">Kredit</TableHead>
-										<TableHead>Tipe</TableHead>
-										{isAdmin && <TableHead>Aksi</TableHead>}
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{cashflows.map((cf) => (
-										<TableRow key={cf.id}>
-											<TableCell className="font-medium whitespace-nowrap">
-												{formatShortDate(cf.tanggal)}
-											</TableCell>
-											<TableCell>
-												{cf.keterangan}
-												{cf.referenceId && (
-													<Badge variant="secondary" className="ml-2 text-xs">
-														Auto
-													</Badge>
-												)}
-											</TableCell>
-											<TableCell>
-												<Badge variant="secondary">{cf.kodeAkun}</Badge>
-											</TableCell>
-											<TableCell className="text-slate-500">
-												{cf.kategori || "-"}
-											</TableCell>
-											<TableCell className="text-right font-semibold text-emerald-600">
-												{cf.debit > 0 ? formatRupiah(cf.debit) : "-"}
-											</TableCell>
-											<TableCell className="text-right font-semibold text-red-600">
-												{cf.kredit > 0 ? formatRupiah(cf.kredit) : "-"}
-											</TableCell>
-											<TableCell>
-												<Badge variant={cf.debit > 0 ? "income" : "expense"}>
-													{cf.debit > 0 ? "Masuk" : "Keluar"}
-												</Badge>
-											</TableCell>
-											{isAdmin && (
-												<TableCell>
-													<div className="flex gap-1">
-														<Button
-															size="sm"
-															variant="ghost"
-															onClick={() => openEditDialog(cf)}
-															disabled={!!cf.referenceId} // Disable edit for auto-generated transactions
-														>
-															<Pencil className="h-4 w-4" />
-														</Button>
-														<Button
-															size="sm"
-															variant="ghost"
-															className="text-red-600 hover:text-red-700"
-															onClick={() => {
-																setSelectedCashflow(cf);
-																setIsDeleteOpen(true);
-															}}
-															disabled={!!cf.referenceId} // Disable delete for auto-generated transactions
-														>
-															<Trash2 className="h-4 w-4" />
-														</Button>
-													</div>
-												</TableCell>
-											)}
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</div>
-					) : (
-						<div className="flex h-48 items-center justify-center text-slate-400">
-							Tidak ada data transaksi
-						</div>
-					)}
-
-					{/* Pagination */}
-					{pagination.totalPages > 1 && (
-						<div className="mt-4 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
-							<p className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
-								Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
-								{Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
-								dari {pagination.total} transaksi
-							</p>
-							<div className="flex justify-center gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={pagination.page === 1}
-									onClick={() => fetchData(pagination.page - 1)}
-									className="w-10 p-0"
-								>
-									<ChevronLeft className="h-4 w-4" />
-								</Button>
-								<span className="flex items-center px-4 text-sm font-medium border border-gray-200 rounded-md">
-									{pagination.page} / {pagination.totalPages}
-								</span>
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={pagination.page === pagination.totalPages}
-									onClick={() => fetchData(pagination.page + 1)}
-									className="w-10 p-0"
-								>
-									<ChevronRight className="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					)}
+				<CardContent className="p-0">
+					<DataTable
+						columns={columns}
+						data={cashflows}
+						loading={isLoading}
+						emptyMessage="Tidak ada data transaksi"
+						serverPagination={{
+							pageIndex: pagination.page - 1,
+							pageSize: pagination.limit,
+							total: pagination.total,
+							onPaginationChange: (newPagination) => {
+								setCurrentPage(newPagination.pageIndex + 1);
+							},
+						}}
+					/>
 				</CardContent>
 			</Card>
 
 			{/* Edit Dialog */}
-			<Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
-				<Dialog.Portal>
-					<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-					<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl">
-						<Dialog.Title className="text-lg font-semibold text-slate-900">
-							Edit Transaksi
-						</Dialog.Title>
-						{renderForm(handleEdit, "Update")}
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+			<FormDialog
+				title="Edit Transaksi"
+				open={isEditOpen}
+				onOpenChange={setIsEditOpen}
+				form={cashflowForm}
+			>
+				<form onSubmit={handleEdit} className="space-y-4">
+					<Controller
+						control={cashflowForm.control}
+						name="tanggal"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="tanggal">Tanggal</FieldLabel>
+								<Input
+									{...field}
+									id="tanggal"
+									type="date"
+									aria-invalid={!!fieldState.error}
+								/>
+								<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+							</Field>
+						)}
+					/>
+
+					<Controller
+						control={cashflowForm.control}
+						name="keterangan"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="keterangan">Keterangan</FieldLabel>
+								<Input
+									{...field}
+									id="keterangan"
+									placeholder="Contoh: Pembayaran Listrik"
+									aria-invalid={!!fieldState.error}
+								/>
+								<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+							</Field>
+						)}
+					/>
+
+					<Controller
+						control={cashflowForm.control}
+						name="kategori"
+						render={({ field }) => (
+							<Field>
+								<FieldLabel htmlFor="kategori">Kategori</FieldLabel>
+								<Input
+									{...field}
+									id="kategori"
+									placeholder="Contoh: Operasional"
+								/>
+							</Field>
+						)}
+					/>
+
+					{[0, 1].map((index) => (
+						<div
+							key={index}
+							className="rounded-lg border border-gray-200 p-4 space-y-3"
+						>
+							<div className="flex items-center justify-between">
+								<Label className="text-sm font-semibold text-gray-700">
+									{index === 0 ? "Debit (Masuk)" : "Kredit (Keluar)"}
+								</Label>
+								{watchedEntries?.[index]?.kodeAkun && (
+									<Badge variant="secondary" className="font-mono">
+										{watchedEntries?.[index]?.kodeAkun}
+									</Badge>
+								)}
+							</div>
+
+							<Controller
+								control={cashflowForm.control}
+								name={`entries.${index}.kodeAkun`}
+								render={({ fieldState }) => (
+									<Field data-invalid={!!fieldState.error}>
+										<FieldLabel className="text-xs text-gray-500">Akun</FieldLabel>
+										<div className="relative">
+											<Input
+												type="text"
+												placeholder="Cari kode atau nama akun..."
+												value={editingEntryIndex === index ? accountSearch : ""}
+												onChange={(e) => {
+													setEditingEntryIndex(index);
+													setAccountSearch(e.target.value);
+												}}
+												onFocus={() => {
+													setEditingEntryIndex(index);
+													setShowAccountDropdown(true);
+												}}
+												onBlur={() =>
+													setTimeout(() => {
+														setShowAccountDropdown(false);
+														setEditingEntryIndex(null);
+													}, 200)
+												}
+											/>
+											{showAccountDropdown && editingEntryIndex === index && (
+												<div className="absolute z-10 left-0 right-0 mt-1 max-h-64 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-lg">
+													{accounts
+														.filter(
+															(acc) =>
+																debouncedAccountSearch === "" ||
+																acc.kodeAkun
+																	.toLowerCase()
+																	.includes(debouncedAccountSearch.toLowerCase()) ||
+																acc.namaAkun
+																	.toLowerCase()
+																	.includes(debouncedAccountSearch.toLowerCase()) ||
+																acc.tipeAkun
+																	.toLowerCase()
+																	.includes(debouncedAccountSearch.toLowerCase()),
+														)
+														.map((acc) => (
+															<button
+																key={acc.id}
+																type="button"
+																onClick={() => selectAccount(index, acc.kodeAkun)}
+																className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors border-b border-gray-50 last:border-b-0 ${
+																	watchedEntries?.[index]?.kodeAkun === acc.kodeAkun
+																		? "bg-[#059DEA]/30 font-medium"
+																		: ""
+																}`}
+															>
+																<span className="font-mono font-medium">
+																	{acc.kodeAkun}
+																</span>{" "}
+																- {acc.namaAkun}
+																<span className="ml-2 text-xs text-gray-400">
+																	({acc.tipeAkun})
+																</span>
+															</button>
+														))}
+													{accounts.filter(
+														(acc) =>
+															debouncedAccountSearch === "" ||
+															acc.kodeAkun
+																.toLowerCase()
+																.includes(debouncedAccountSearch.toLowerCase()) ||
+															acc.namaAkun
+																.toLowerCase()
+																.includes(debouncedAccountSearch.toLowerCase()),
+													).length === 0 && (
+														<p className="px-3 py-2 text-sm text-gray-500">
+															Tidak ada akun ditemukan
+														</p>
+													)}
+												</div>
+											)}
+										</div>
+										{watchedEntries?.[index]?.kodeAkun && (
+											<div className="flex items-center gap-2 mt-1">
+												<span className="text-sm text-slate-600">
+													{accounts.find(
+														(a) =>
+															a.kodeAkun ===
+															watchedEntries?.[index]?.kodeAkun,
+													)?.namaAkun}
+												</span>
+												<button
+													type="button"
+													onClick={() =>
+														cashflowForm.setValue(`entries.${index}.kodeAkun`, "", {
+															shouldValidate: true,
+														})
+													}
+													className="text-xs text-red-500 hover:text-red-700"
+												>
+													✕
+												</button>
+											</div>
+										)}
+										<FieldError errors={fieldState.error ? [fieldState.error] : []} />
+									</Field>
+								)}
+							/>
+
+							<div className="grid grid-cols-2 gap-3">
+								<Controller
+									control={cashflowForm.control}
+									name={`entries.${index}.debit`}
+									render={({ field }) => (
+										<Field>
+											<FieldLabel className="text-xs text-gray-500">Debit</FieldLabel>
+											<div className="relative">
+												<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+													Rp
+												</span>
+												<Input
+													value={field.value}
+													onChange={(e) =>
+														field.onChange(formatNumberInput(e.target.value))
+													}
+													placeholder="0"
+													className="pl-10"
+												/>
+											</div>
+										</Field>
+									)}
+								/>
+								<Controller
+									control={cashflowForm.control}
+									name={`entries.${index}.kredit`}
+									render={({ field }) => (
+										<Field>
+											<FieldLabel className="text-xs text-gray-500">Kredit</FieldLabel>
+											<div className="relative">
+												<span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+													Rp
+												</span>
+												<Input
+													value={field.value}
+													onChange={(e) =>
+														field.onChange(formatNumberInput(e.target.value))
+													}
+													placeholder="0"
+													className="pl-10"
+												/>
+											</div>
+										</Field>
+									)}
+								/>
+							</div>
+						</div>
+					))}
+
+					<div className="flex justify-end gap-3 pt-4">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setIsEditOpen(false)}
+						>
+							Batal
+						</Button>
+						<Button type="submit" disabled={editMutation.isPending}>
+							{editMutation.isPending ? "Menyimpan..." : "Update"}
+						</Button>
+					</div>
+				</form>
+			</FormDialog>
 
 			{/* Delete Confirmation Dialog */}
 			<Dialog.Root open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
@@ -771,4 +838,8 @@ export default function CashflowPage() {
 			</Dialog.Root>
 		</div>
 	);
+}
+
+export default function CashflowPage() {
+	return <CashflowInner key={useAcademicYear().selectedYear?.id} />;
 }
