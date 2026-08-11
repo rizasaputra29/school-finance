@@ -22,6 +22,9 @@ import {
   BarChart3,
   ClipboardCheck,
   Calendar,
+  Package,
+  Landmark,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react"
 import {
@@ -56,28 +59,30 @@ const mainNav: NavItem[] = [
 ]
 
 const navGroups: NavGroup[] = [
-  {
-    label: "Siswa",
-    icon: Users,
-    items: [
-      { name: "Data Siswa", href: "/students", icon: Users },
-      { name: "Biaya Siswa", href: "/billing", icon: Receipt },
-    ],
-  },
-  {
-    label: "Karyawan",
-    icon: Briefcase,
-    items: [
-      { name: "Data Karyawan", href: "/karyawan", icon: Briefcase, matchPaths: ["/karyawan"] },
-      { name: "Gaji & Tunjangan", href: "/karyawan/payroll", icon: Wallet, matchPaths: ["/karyawan/payroll"] },
-    ],
-  },
+	{
+		label: "Siswa",
+		icon: Users,
+		items: [
+			{ name: "Data Siswa", href: "/students", icon: Users },
+			{ name: "Biaya Siswa", href: "/billing", icon: Receipt },
+		],
+	},
+	{
+		label: "Karyawan",
+		icon: Briefcase,
+		items: [
+			{ name: "Data Karyawan", href: "/karyawan", icon: Briefcase, matchPaths: ["/karyawan"] },
+			{ name: "Biaya Karyawan", href: "/karyawan/billing", icon: Receipt, matchPaths: ["/karyawan/billing"] },
+		],
+	},
   {
     label: "Keuangan",
     icon: Building2,
     items: [
       { name: "Akun (COA)", href: "/accounts", icon: BookOpen },
       { name: "Kas & Bank", href: "/keuangan", icon: Building2 },
+      { name: "Aset", href: "/assets", icon: Package },
+      { name: "Hutang", href: "/debt", icon: Landmark },
     ],
   },
   {

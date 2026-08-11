@@ -28,6 +28,11 @@ const updateEmployeeSchema = createEmployeeSchema.partial().extend({
 	id: z.string().min(1),
 });
 
+const MONTH_NAMES = [
+	"Januari", "Februari", "Maret", "April", "Mei", "Juni",
+	"Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
 export async function GET(request: NextRequest) {
 	return withAuthAppRouter(request, async () => {
 		try {
@@ -59,7 +64,7 @@ export async function GET(request: NextRequest) {
 					skip,
 					take,
 					include: {
-						_count: { select: { payrolls: true } },
+						_count: { select: { employeeBillings: true } },
 					},
 				}),
 				prisma.employee.count({ where }),
@@ -142,6 +147,44 @@ export async function POST(request: NextRequest) {
 				},
 			});
 
+			// Auto-generate 12 monthly Gaji billings if gajiPokok > 0
+			if (gajiPokok > 0) {
+				const activeYear = await prisma.academicYear.findFirst({
+					where: { isActive: true },
+				});
+				if (activeYear) {
+					const billings = [];
+					const startYear = activeYear.tanggalMulai.getFullYear();
+					const startMonth = activeYear.tanggalMulai.getMonth();
+					for (let month = 1; month <= 12; month++) {
+						const dueYear = month - 1 >= startMonth ? startYear : startYear + 1;
+						const dueDate = new Date(dueYear, month - 1, 1);
+						billings.push({
+							employeeId: employee.id,
+							academicYearId: activeYear.id,
+							jenisBiaya: "Gaji",
+							jumlah: gajiPokok,
+							bulan: month,
+							statusBayar: "Belum Lunas",
+							tipe: "pembayaran",
+							tanggalJatuhTempo: dueDate,
+							keterangan: `Gaji Bulan ${MONTH_NAMES[month - 1]}`,
+						});
+					}
+					await prisma.employeeBilling.createMany({
+						data: billings,
+						skipDuplicates: true,
+					});
+					await prisma.employee.update({
+						where: { id: employee.id },
+						data: {
+							totalTagihan: gajiPokok * 12,
+							statusBayar: "Belum Lunas",
+						},
+					});
+				}
+			}
+
 			return success(employee, {
 				message: "Karyawan berhasil ditambahkan",
 				status: 201,
@@ -207,6 +250,53 @@ export async function PUT(request: NextRequest) {
 					...(data.status && { status: data.status }),
 				},
 			});
+
+			// If gajiPokok changed and > 0, regenerate salary billings
+			if (gajiPokok !== undefined && gajiPokok > 0 && gajiPokok !== existing.gajiPokok) {
+				const activeYear = await prisma.academicYear.findFirst({
+					where: { isActive: true },
+				});
+				if (activeYear) {
+					await prisma.employeeBilling.deleteMany({
+						where: {
+							employeeId: employee.id,
+							jenisBiaya: "Gaji",
+							academicYearId: activeYear.id,
+							statusBayar: "Belum Lunas",
+						},
+					});
+					const billings = [];
+					const startYear = activeYear.tanggalMulai.getFullYear();
+					const startMonth = activeYear.tanggalMulai.getMonth();
+					for (let month = 1; month <= 12; month++) {
+						const dueYear = month - 1 >= startMonth ? startYear : startYear + 1;
+						const dueDate = new Date(dueYear, month - 1, 1);
+						billings.push({
+							employeeId: employee.id,
+							academicYearId: activeYear.id,
+							jenisBiaya: "Gaji",
+							jumlah: gajiPokok,
+							bulan: month,
+							statusBayar: "Belum Lunas",
+							tipe: "pembayaran",
+							tanggalJatuhTempo: dueDate,
+							keterangan: `Gaji Bulan ${MONTH_NAMES[month - 1]}`,
+						});
+					}
+					await prisma.employeeBilling.createMany({
+						data: billings,
+						skipDuplicates: true,
+					});
+					const total = await prisma.employeeBilling.aggregate({
+						where: { employeeId: employee.id },
+						_sum: { jumlah: true },
+					});
+					await prisma.employee.update({
+						where: { id: employee.id },
+						data: { totalTagihan: total._sum.jumlah || 0 },
+					});
+				}
+			}
 
 			return success(employee, { message: "Karyawan berhasil diperbarui" });
 		} catch (error) {
