@@ -34,6 +34,7 @@ const createDebtSchema = z.object({
 		.min(1, "Nama hutang wajib diisi")
 		.max(200, "Nama maksimal 200 karakter"),
 	kodeAkun: z.string().min(1, "Kode akun wajib diisi"),
+	kodeAkunPembayaran: z.string().min(1, "Kode akun pembayaran wajib dipilih dari COA"),
 	jumlahAwal: z
 		.union([z.number(), z.string()])
 		.transform((val) => (typeof val === "string" ? parseFloat(val) : val))
@@ -57,7 +58,7 @@ const debtPaymentSchema = z.object({
 		.union([z.number(), z.string()])
 		.transform((val) => (typeof val === "string" ? parseFloat(val) : val))
 		.pipe(z.number().positive("Jumlah pembayaran harus lebih dari 0")),
-	kodeAkun: z.string().min(1, "Kode akun (Kas/Bank) wajib diisi"),
+	kodeAkun: z.string().min(1, "Kode akun pembayaran wajib dipilih dari COA"),
 	tanggalPembayaran: z.string().optional(),
 	keterangan: z.string().optional(),
 });
@@ -85,24 +86,6 @@ function isOverdue(tanggalJatuhTempo: Date): boolean {
 }
 
 /**
- * Find cash or bank account for transactions
- */
-async function findCashAccount(
-	tx: PrismaTransactionClient,
-): Promise<string | null> {
-	const cashAccount = await tx.account.findFirst({
-		where: {
-			OR: [
-				{ namaAkun: { contains: "Kas", mode: "insensitive" } },
-				{ namaAkun: { contains: "Bank", mode: "insensitive" } },
-			],
-			tipeAkun: "Asset",
-		},
-	});
-	return cashAccount?.kodeAkun || null;
-}
-
-/**
  * Process debt creation with double-entry bookkeeping
  * Debit: Kas (asset increase from receiving debt proceeds)
  * Credit: Hutang (liability increase)
@@ -112,6 +95,7 @@ async function processDebtCreation(
 	debtData: {
 		nama: string;
 		kodeAkun: string;
+		kodeAkunPembayaran: string;
 		jumlahAwal: number;
 		tanggalMulai: Date;
 		tanggalJatuhTempo: Date;
@@ -119,10 +103,18 @@ async function processDebtCreation(
 		kreditur?: string;
 	},
 ) {
-	// Find cash/bank account
-	const cashAccount = await findCashAccount(tx);
-	if (!cashAccount) {
-		throw new Error("Akun Kas/Bank tidak ditemukan");
+	// Validate cash/bank account exists and is an Asset account
+	const cashAccount = debtData.kodeAkunPembayaran;
+	const cashAccountRecord = await tx.account.findUnique({
+		where: { kodeAkun: cashAccount },
+	});
+	if (!cashAccountRecord) {
+		throw new Error(
+			`Akun pembayaran dengan kode ${cashAccount} tidak ditemukan`,
+		);
+	}
+	if (cashAccountRecord.tipeAkun !== "Asset") {
+		throw new Error(`Akun pembayaran ${cashAccount} harus bertipe Asset`);
 	}
 
 	// Create the debt record with negative value for liability
@@ -140,38 +132,69 @@ async function processDebtCreation(
 		},
 	});
 
+	// Create journal entry for proper double-entry bookkeeping
+	const transactionKeterangan = `${debtData.nama} - Penerimaan Pinjaman`;
+	const journalEntry = await tx.journalEntry.create({
+		data: {
+			tanggal: debtData.tanggalMulai,
+			keterangan: transactionKeterangan,
+			reference: `debt-creation-${debt.id}`,
+		},
+	});
+
+	await tx.journalEntryLine.create({
+		data: {
+			journalEntryId: journalEntry.id,
+			kodeAkun: cashAccount,
+			debit: debtData.jumlahAwal,
+			kredit: 0,
+		},
+	});
+
+	await tx.journalEntryLine.create({
+		data: {
+			journalEntryId: journalEntry.id,
+			kodeAkun: debtData.kodeAkun,
+			debit: 0,
+			kredit: debtData.jumlahAwal,
+		},
+	});
+
 	// Create cashflow entries for double-entry:
 	// Kas (Debit) - Receive money from debt
 	// Hutang (Kredit) - Record liability
-	const isBank = cashAccount.startsWith("111");
+	const isBank = cashAccountRecord.namaAkun.toLowerCase().includes("bank");
 	await tx.cashflow.create({
 		data: {
 			tanggal: debtData.tanggalMulai,
-			keterangan: `${debtData.nama} - Penerimaan Pinjaman`,
+			keterangan: transactionKeterangan,
 			kodeAkun: cashAccount,
 			kategori: "hutang",
+			cashflowCategory: "FIN",
 			debit: debtData.jumlahAwal,
 			kredit: 0,
 			source: isBank ? "bank" : "kas",
+			referenceId: journalEntry.id,
 		},
 	} as never);
 
 	await tx.cashflow.create({
 		data: {
 			tanggal: debtData.tanggalMulai,
-			keterangan: `${debtData.nama} - Pembentukan Hutang`,
+			keterangan: transactionKeterangan,
 			kodeAkun: debtData.kodeAkun,
 			kategori: "hutang",
+			cashflowCategory: "FIN",
 			debit: 0,
 			kredit: debtData.jumlahAwal,
+			referenceId: journalEntry.id,
 		},
 	} as never);
 
 	// Update account balances
-	const [cashAccountRecord, liabilityAccount] = await Promise.all([
-		tx.account.findUnique({ where: { kodeAkun: cashAccount } }),
-		tx.account.findUnique({ where: { kodeAkun: debtData.kodeAkun } }),
-	]);
+	const liabilityAccount = await tx.account.findUnique({
+		where: { kodeAkun: debtData.kodeAkun },
+	});
 
 	if (cashAccountRecord) {
 		const isCashDebitNormal = ["Asset", "Expense"].includes(
@@ -192,6 +215,52 @@ async function processDebtCreation(
 		});
 	}
 
+	// Update AccountBalance snapshots for the debt creation year
+	const academicYearForDebt = await tx.academicYear.findFirst({
+		where: {
+			tanggalMulai: { lte: debtData.tanggalMulai },
+			tanggalSelesai: { gte: debtData.tanggalMulai },
+		},
+	});
+
+	if (academicYearForDebt) {
+		const accountsToBalance = [
+			{
+				kodeAkun: cashAccount,
+				tipeAkun: cashAccountRecord?.tipeAkun,
+				change: debtData.jumlahAwal,
+			},
+			{
+				kodeAkun: debtData.kodeAkun,
+				tipeAkun: liabilityAccount?.tipeAkun,
+				change: debtData.jumlahAwal,
+			},
+		];
+
+		for (const acct of accountsToBalance) {
+			if (!acct.tipeAkun) continue;
+			const isDebitNormal = ["Asset", "Expense"].includes(acct.tipeAkun);
+			const saldoChange = isDebitNormal ? acct.change : -acct.change;
+
+			await tx.accountBalance
+				.upsert({
+					where: {
+						kodeAkun_academicYearId: {
+							kodeAkun: acct.kodeAkun,
+							academicYearId: academicYearForDebt.id,
+						},
+					},
+					update: { saldo: { increment: saldoChange } },
+					create: {
+						kodeAkun: acct.kodeAkun,
+						academicYearId: academicYearForDebt.id,
+						saldo: saldoChange,
+					},
+				})
+				.catch(() => {});
+		}
+	}
+
 	return debt;
 }
 
@@ -210,6 +279,18 @@ async function processDebtPayment(
 		keterangan?: string;
 	},
 ) {
+	// Validate payment account exists in COA
+	const paymentAccountCode = paymentData.kodeAkun;
+	const paymentAccount = await tx.account.findUnique({
+		where: { kodeAkun: paymentAccountCode },
+	});
+	if (!paymentAccount) {
+		throw new Error(`Akun pembayaran dengan kode ${paymentAccountCode} tidak ditemukan`);
+	}
+	if (paymentAccount.tipeAkun !== "Asset") {
+		throw new Error(`Akun pembayaran ${paymentAccountCode} harus bertipe Asset`);
+	}
+
 	// Get existing debt
 	const existingDebt = await tx.debt.findUnique({
 		where: { id: paymentData.debtId },
@@ -238,38 +319,70 @@ async function processDebtPayment(
 		},
 	});
 
-	// Create cashflow entries for double-entry:
-	// Hutang (Debit) - Reduce liability
-	// Kas (Kredit) - Payment made
-	await tx.cashflow.create({
+	// Create journal entry for proper double-entry bookkeeping
+	const transactionKeterangan =
+		paymentData.keterangan || `${existingDebt.nama} - Pembayaran Hutang`;
+	const journalEntry = await tx.journalEntry.create({
 		data: {
 			tanggal: paymentData.tanggalPembayaran,
-			keterangan:
-				paymentData.keterangan || `${existingDebt.nama} - Pembayaran Hutang`,
+			keterangan: transactionKeterangan,
+			reference: `debt-payment-${existingDebt.id}-${Date.now()}`,
+		},
+	});
+
+	await tx.journalEntryLine.create({
+		data: {
+			journalEntryId: journalEntry.id,
 			kodeAkun: existingDebt.kodeAkun,
-			kategori: "hutang",
 			debit: paymentAmount,
 			kredit: 0,
 		},
-	} as never);
+	});
 
-	const isBank = paymentData.kodeAkun.startsWith("111");
+	await tx.journalEntryLine.create({
+		data: {
+			journalEntryId: journalEntry.id,
+			kodeAkun: paymentAccountCode,
+			debit: 0,
+			kredit: paymentAmount,
+		},
+	});
+
+	// Create cashflow entries for double-entry:
+	// Hutang (Debit) - Reduce liability
+	// Kas (Kredit) - Payment made
+	const isBank = paymentAccount.namaAkun.toLowerCase().includes("bank");
 	await tx.cashflow.create({
 		data: {
 			tanggal: paymentData.tanggalPembayaran,
-			keterangan: paymentData.keterangan || `${existingDebt.nama} - Pembayaran`,
-			kodeAkun: paymentData.kodeAkun,
+			keterangan: transactionKeterangan,
+			kodeAkun: existingDebt.kodeAkun,
 			kategori: "hutang",
+			cashflowCategory: "FIN",
+			debit: paymentAmount,
+			kredit: 0,
+			referenceId: journalEntry.id,
+		},
+	} as never);
+
+	await tx.cashflow.create({
+		data: {
+			tanggal: paymentData.tanggalPembayaran,
+			keterangan: transactionKeterangan,
+			kodeAkun: paymentAccountCode,
+			kategori: "hutang",
+			cashflowCategory: "FIN",
 			debit: 0,
 			kredit: paymentAmount,
 			source: isBank ? "bank" : "kas",
+			referenceId: journalEntry.id,
 		},
 	} as never);
 
 	// Update account balances
 	const [liabilityAccount, cashAccount] = await Promise.all([
 		tx.account.findUnique({ where: { kodeAkun: existingDebt.kodeAkun } }),
-		tx.account.findUnique({ where: { kodeAkun: paymentData.kodeAkun } }),
+		tx.account.findUnique({ where: { kodeAkun: paymentAccountCode } }),
 	]);
 
 	// Reduce liability balance
@@ -283,9 +396,55 @@ async function processDebtPayment(
 	// Reduce cash/bank balance
 	if (cashAccount && cashAccount.tipeAkun === "Asset") {
 		await tx.account.update({
-			where: { kodeAkun: paymentData.kodeAkun },
+			where: { kodeAkun: paymentAccountCode },
 			data: { saldo: { decrement: paymentAmount } },
 		});
+	}
+
+	// Update AccountBalance snapshots for the payment year
+	const academicYearForPayment = await tx.academicYear.findFirst({
+		where: {
+			tanggalMulai: { lte: paymentData.tanggalPembayaran },
+			tanggalSelesai: { gte: paymentData.tanggalPembayaran },
+		},
+	});
+
+	if (academicYearForPayment) {
+		const accountsToBalance = [
+			{
+				kodeAkun: existingDebt.kodeAkun,
+				tipeAkun: liabilityAccount?.tipeAkun,
+				change: -paymentAmount,
+			},
+			{
+				kodeAkun: paymentAccountCode,
+				tipeAkun: cashAccount?.tipeAkun,
+				change: -paymentAmount,
+			},
+		];
+
+		for (const acct of accountsToBalance) {
+			if (!acct.tipeAkun) continue;
+			const isDebitNormal = ["Asset", "Expense"].includes(acct.tipeAkun);
+			const saldoChange = isDebitNormal ? acct.change : -acct.change;
+
+			await tx.accountBalance
+				.upsert({
+					where: {
+						kodeAkun_academicYearId: {
+							kodeAkun: acct.kodeAkun,
+							academicYearId: academicYearForPayment.id,
+						},
+					},
+					update: { saldo: { increment: saldoChange } },
+					create: {
+						kodeAkun: acct.kodeAkun,
+						academicYearId: academicYearForPayment.id,
+						saldo: saldoChange,
+					},
+				})
+				.catch(() => {});
+		}
 	}
 
 	return updatedDebt;
@@ -301,9 +460,23 @@ export async function GET(request: NextRequest) {
 				const limit = searchParams.get("limit") || "10";
 				const status = searchParams.get("status");
 				const search = searchParams.get("search");
+				const academicYearId = searchParams.get("academicYearId");
 
 				const skip = (parseInt(page) - 1) * parseInt(limit);
 				const where: Record<string, unknown> = {};
+
+				// Carry-forward filter: debts started on or before the academic year end
+				let academicYear: Awaited<
+					ReturnType<typeof prisma.academicYear.findUnique>
+				> = null;
+				if (academicYearId) {
+					academicYear = await prisma.academicYear.findUnique({
+						where: { id: academicYearId },
+					});
+					if (academicYear) {
+						where.tanggalMulai = { lte: academicYear.tanggalSelesai };
+					}
+				}
 
 				// Filter by status
 				if (status) {
@@ -331,24 +504,76 @@ export async function GET(request: NextRequest) {
 					prisma.debt.count({ where }),
 				]);
 
-				// Calculate overdue status for each debt
-				const debtsWithOverdueStatus = debts.map((debt) => ({
-					...debt,
-					jumlahSisaDisplay: Math.abs(debt.jumlahSisa), // Positive for display
-					isOverdue:
-						debt.status === "Aktif" && isOverdue(debt.tanggalJatuhTempo),
-				}));
+				// Compute per-academic-year values for each debt
+				const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000;
 
-				// Calculate summary
-				const summary = await prisma.debt.aggregate({
-					where: { status: "Aktif" },
-					_sum: {
-						jumlahAwal: true,
-						jumlahSisa: true,
-					},
+				function computeDebtYearValues(debt: (typeof debts)[number]) {
+					if (!academicYear) {
+						return {
+							computedSisa: Math.abs(debt.jumlahSisa),
+							computedPaid: debt.jumlahAwal - Math.abs(debt.jumlahSisa),
+							computedSisaTenor: debt.tenor,
+							nextDueDate: debt.tanggalMulai,
+							isOverdue:
+								debt.status === "Aktif" && isOverdue(debt.tanggalJatuhTempo),
+						};
+					}
+
+					const yearEnd = academicYear.tanggalSelesai;
+					const startDate = debt.tanggalMulai;
+
+					const monthsElapsed = Math.max(
+						0,
+						Math.floor(
+							(yearEnd.getTime() - startDate.getTime()) / MS_PER_MONTH,
+						),
+					);
+
+					const cicilanTerbayar = Math.min(monthsElapsed, debt.tenor);
+					const totalDibayar = cicilanTerbayar * debt.cicilanPerBulan;
+					const computedSisa = Math.max(0, debt.jumlahAwal - totalDibayar);
+					const sisaTenor = Math.max(0, debt.tenor - cicilanTerbayar);
+
+					const nextDue = new Date(startDate);
+					nextDue.setMonth(nextDue.getMonth() + cicilanTerbayar);
+
+					const nextDueEndOfMonth = new Date(nextDue);
+					nextDueEndOfMonth.setMonth(nextDueEndOfMonth.getMonth() + 1);
+
+					const overdue =
+						sisaTenor > 0 &&
+						debt.status === "Aktif" &&
+						yearEnd > nextDueEndOfMonth;
+
+					return {
+						computedSisa,
+						computedPaid: totalDibayar,
+						computedSisaTenor: sisaTenor,
+						nextDueDate: nextDue,
+						isOverdue: overdue,
+					};
+				}
+
+				// Apply carry-forward values and compute summary
+				let summaryHutangAwal = 0;
+				let summaryHutangSisa = 0;
+
+				const debtsWithCarryForward = debts.map((debt) => {
+					const computed = computeDebtYearValues(debt);
+					summaryHutangAwal += debt.jumlahAwal;
+					summaryHutangSisa += computed.computedSisa;
+
+					return {
+						...debt,
+						jumlahSisaDisplay: computed.computedSisa,
+						computedPaid: computed.computedPaid,
+						computedSisaTenor: computed.computedSisaTenor,
+						nextDueDate: computed.nextDueDate,
+						isOverdue: computed.isOverdue,
+					};
 				});
 
-				return success(debtsWithOverdueStatus, {
+				return success(debtsWithCarryForward, {
 					message: "Debts retrieved successfully",
 					meta: {
 						pagination: {
@@ -358,8 +583,8 @@ export async function GET(request: NextRequest) {
 							totalPages: Math.ceil(total / parseInt(limit)),
 						},
 						summary: {
-							totalHutangAwal: summary._sum.jumlahAwal || 0,
-							totalHutangSisa: Math.abs(summary._sum.jumlahSisa || 0), // Display as positive
+							totalHutangAwal: summaryHutangAwal,
+							totalHutangSisa: summaryHutangSisa,
 						},
 					},
 				});
@@ -408,26 +633,26 @@ export async function POST(request: NextRequest) {
 						);
 					}
 
-					const {
-						debtId,
-						jumlahPembayaran,
-						kodeAkun,
-						tanggalPembayaran,
-						keterangan,
-					} = validationErrors.data;
+				const {
+					debtId,
+					jumlahPembayaran,
+					kodeAkun,
+					tanggalPembayaran,
+					keterangan,
+				} = validationErrors.data;
 
-					try {
-						const result = await prisma.$transaction(async (tx) => {
-							return processDebtPayment(tx, {
-								debtId,
-								jumlahPembayaran,
-								kodeAkun,
-								tanggalPembayaran: tanggalPembayaran
-									? new Date(tanggalPembayaran)
-									: new Date(),
-								keterangan,
-							});
+				try {
+					const result = await prisma.$transaction(async (tx) => {
+						return processDebtPayment(tx, {
+							debtId,
+							jumlahPembayaran,
+							kodeAkun,
+							tanggalPembayaran: tanggalPembayaran
+								? new Date(tanggalPembayaran)
+								: new Date(),
+							keterangan,
 						});
+					});
 
 						return success(
 							{
@@ -475,6 +700,7 @@ export async function POST(request: NextRequest) {
 					const {
 						nama,
 						kodeAkun,
+						kodeAkunPembayaran,
 						jumlahAwal,
 						tenor,
 						tanggalMulai,
@@ -483,9 +709,10 @@ export async function POST(request: NextRequest) {
 					} = validationErrors.data;
 
 					// Validate account exists and is a liability account
-					const account = await prisma.account.findUnique({
-						where: { kodeAkun },
-					});
+					const [account, paymentAccount] = await Promise.all([
+						prisma.account.findUnique({ where: { kodeAkun } }),
+						prisma.account.findUnique({ where: { kodeAkun: kodeAkunPembayaran } }),
+					]);
 
 					if (!account) {
 						return errors.notFound(`Akun dengan kode ${kodeAkun}`);
@@ -500,6 +727,21 @@ export async function POST(request: NextRequest) {
 						]);
 					}
 
+					if (!paymentAccount) {
+						return errors.notFound(
+							`Akun pembayaran dengan kode ${kodeAkunPembayaran}`,
+						);
+					}
+
+					if (paymentAccount.tipeAkun !== "Asset") {
+						return errors.validation([
+							{
+								field: "kodeAkunPembayaran",
+								message: "Akun pembayaran harus bertipe Asset",
+							},
+						]);
+					}
+
 					const tanggalMulaiDate = new Date(tanggalMulai);
 					const tanggalJatuhTempo = calculateDueDate(tanggalMulaiDate, tenor);
 
@@ -508,6 +750,7 @@ export async function POST(request: NextRequest) {
 							return processDebtCreation(tx, {
 								nama,
 								kodeAkun,
+								kodeAkunPembayaran,
 								jumlahAwal,
 								tanggalMulai: tanggalMulaiDate,
 								tanggalJatuhTempo,
