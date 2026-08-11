@@ -3,42 +3,50 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { signIn } from "@/lib/auth/auth-client";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldLabel, FieldError } from "@/components/reusable/Field";
 import { Eye, EyeOff, ArrowLeft, Info } from "lucide-react";
 
+const loginSchema = z.object({
+	email: z.string().min(1, "Email wajib diisi").email("Format email tidak valid"),
+	password: z.string().min(1, "Password wajib diisi"),
+});
+
+type LoginForm = z.infer<typeof loginSchema>;
+
 export default function LoginForm() {
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
-	const [error, setError] = useState("");
+	const [serverError, setServerError] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const { user, isLoading: isAuthLoading } = useAuth();
 
-	// Check if redirected due to expired session
 	const expired = searchParams.get("expired") === "true";
 	const redirectUrl = searchParams.get("redirect") || "/";
 
-	// Redirect to dashboard if already logged in
+	const form = useForm<LoginForm>({
+		resolver: zodResolver(loginSchema),
+		mode: "onChange",
+		defaultValues: {
+			email: "",
+			password: "",
+		},
+	});
+
 	useEffect(() => {
 		if (!isAuthLoading && user) {
 			router.push(redirectUrl);
 		}
 	}, [user, isAuthLoading, router, redirectUrl]);
 
-	// Show loading state while checking auth
 	if (isAuthLoading) {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -47,27 +55,24 @@ export default function LoginForm() {
 		);
 	}
 
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setError("");
+	const onSubmit = async (data: LoginForm) => {
+		setServerError("");
 		setIsLoading(true);
 
 		try {
 			const result = await signIn.email({
-				email,
-				password,
+				email: data.email,
+				password: data.password,
 				callbackURL: redirectUrl,
 			});
 
 			if (result.error) {
 				throw new Error(result.error.message || "Login gagal");
 			}
-
-			// Better Auth handles redirect via callbackURL
 		} catch (err: unknown) {
 			const errorMessage =
 				err instanceof Error ? err.message : "Email atau password salah";
-			setError(errorMessage);
+			setServerError(errorMessage);
 		} finally {
 			setIsLoading(false);
 		}
@@ -75,14 +80,12 @@ export default function LoginForm() {
 
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-			{/* Background decoration */}
 			<div className="absolute inset-0 overflow-hidden">
 				<div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#059DEA]/20 blur-3xl" />
 				<div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-[#059DEA]/10 blur-3xl" />
 			</div>
 
 			<Card className="relative w-full max-w-md border border-gray-200 bg-white shadow-xl rounded-2xl">
-				{/* Back Button */}
 				<button
 					onClick={() => router.push("/")}
 					className="absolute top-4 left-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-white/80 transition-all"
@@ -112,49 +115,67 @@ export default function LoginForm() {
 				</CardHeader>
 
 				<CardContent className="space-y-6 pt-4">
-					<form onSubmit={handleSubmit} className="space-y-4">
-						<div className="space-y-2">
-							<Label htmlFor="email" className="text-gray-700">
-								Email
-							</Label>
-							<Input
-								id="email"
-								type="email"
-								placeholder="owner@school.finance"
-								value={email}
-								onChange={(e) => setEmail(e.target.value)}
-								required
-								className="h-11"
-							/>
-						</div>
+					<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+						<Controller
+							control={form.control}
+							name="email"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={fieldState.invalid}>
+									<FieldLabel htmlFor="email">Email</FieldLabel>
+									<Input
+										{...field}
+										id="email"
+										type="email"
+										placeholder="owner@school.finance"
+										className="h-11"
+									/>
+									<FieldError
+										errors={
+											form.formState.errors.email
+												? [form.formState.errors.email]
+												: []
+										}
+									/>
+								</Field>
+							)}
+						/>
 
-						<div className="space-y-2">
-							<Label htmlFor="password" className="text-gray-700">
-								Password
-							</Label>
-							<div className="relative">
-								<Input
-									id="password"
-									type={showPassword ? "text" : "password"}
-									placeholder="••••••••"
-									value={password}
-									onChange={(e) => setPassword(e.target.value)}
-									required
-									className="h-11 pr-10"
-								/>
-								<button
-									type="button"
-									onClick={() => setShowPassword(!showPassword)}
-									className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-								>
-									{showPassword ? (
-										<EyeOff className="h-5 w-5" />
-									) : (
-										<Eye className="h-5 w-5" />
-									)}
-								</button>
-							</div>
-						</div>
+						<Controller
+							control={form.control}
+							name="password"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={fieldState.invalid}>
+									<FieldLabel htmlFor="password">Password</FieldLabel>
+									<div className="relative">
+										<Input
+											{...field}
+											id="password"
+											type={showPassword ? "text" : "password"}
+											placeholder="••••••••"
+											className="h-11 pr-10"
+										/>
+										<button
+											type="button"
+											onClick={() => setShowPassword(!showPassword)}
+											className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+										>
+											{showPassword ? (
+												<EyeOff className="h-5 w-5" />
+											) : (
+												<Eye className="h-5 w-5" />
+											)}
+										</button>
+									</div>
+									<FieldError
+										errors={
+											form.formState.errors.password
+												? [form.formState.errors.password]
+												: []
+										}
+									/>
+								</Field>
+							)}
+						/>
 
 						{expired && (
 							<div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-600 flex items-center gap-2">
@@ -163,9 +184,9 @@ export default function LoginForm() {
 							</div>
 						)}
 
-						{error && (
+						{serverError && (
 							<div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-600">
-								{error}
+								{serverError}
 							</div>
 						)}
 
