@@ -16,7 +16,6 @@ interface PiutangAgingItem {
 	billing: {
 		id: string;
 		jenisBiaya: string;
-		periodeBulan: string;
 		jumlah: number;
 	} | null;
 	cicilanKe: number | null;
@@ -80,7 +79,6 @@ export async function GET(request: NextRequest) {
 						select: {
 							id: true,
 							jenisBiaya: true,
-							periodeBulan: true,
 							jumlah: true,
 						},
 					},
@@ -99,14 +97,13 @@ export async function GET(request: NextRequest) {
 						nama: inst.student.nama,
 						kelas: inst.student.kelas,
 					},
-					billing: inst.billing
-						? {
-								id: inst.billing.id,
-								jenisBiaya: inst.billing.jenisBiaya,
-								periodeBulan: inst.billing.periodeBulan,
-								jumlah: inst.billing.jumlah,
-							}
-						: null,
+				billing: inst.billing
+					? {
+							id: inst.billing.id,
+							jenisBiaya: inst.billing.jenisBiaya,
+							jumlah: inst.billing.jumlah,
+						}
+					: null,
 					cicilanKe: inst.cicilanKe,
 					jumlah: inst.jumlah,
 					tanggalJatuhTempo: inst.tanggalJatuhTempo,

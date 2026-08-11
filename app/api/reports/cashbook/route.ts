@@ -35,9 +35,9 @@ export async function GET(request: NextRequest) {
 				orderBy: [{ tanggal: "asc" }, { createdAt: "asc" }],
 			})) as CashflowRecord[];
 
-			// Get initial cash balance from Kas account (account 1100)
+			// Get initial cash balance from Kas account (account 101)
 			const kasAccount = await prisma.account.findUnique({
-				where: { kodeAkun: "1100" },
+				where: { kodeAkun: "101" },
 			});
 
 			// Calculate running balance like Excel Buku Kas

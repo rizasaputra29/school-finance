@@ -29,19 +29,45 @@ interface ReportWhere {
 
 const DEBIT_NORMAL_ACCOUNTS = ["Asset", "Aset", "Expense", "Beban"];
 
-function parseQueryParams(query: Record<string, string>) {
+async function parseQueryParams(query: Record<string, string>) {
 	const page = parseInt(query.page) || 1;
 	const limit = Math.min(parseInt(query.limit) || 1000, 5000);
-	const startDate = query.startDate ? new Date(query.startDate) : null;
-	const endDate = query.endDate ? new Date(query.endDate) : null;
+	let startDate = query.startDate ? new Date(query.startDate) : null;
+	let endDate = query.endDate ? new Date(query.endDate) : null;
 	const kodeAkun = query.kodeAkun || undefined;
+	let academicYearId = query.academicYearId || undefined;
 
-	return { startDate, endDate, kodeAkun, page, limit };
+	// If academicYearId is provided, use its date range
+	if (academicYearId) {
+		const academicYear = await prisma.academicYear.findUnique({
+			where: { id: academicYearId },
+		});
+		if (academicYear) {
+			startDate = academicYear.tanggalMulai;
+			endDate = academicYear.tanggalSelesai;
+		}
+	}
+
+	// If no explicit dates or academic year, default to active academic year
+	if (!startDate && !endDate) {
+		const activeYear = await prisma.academicYear.findFirst({
+			where: { isActive: true },
+		});
+		if (activeYear) {
+			startDate = activeYear.tanggalMulai;
+			endDate = activeYear.tanggalSelesai;
+			academicYearId = activeYear.id;
+		}
+	}
+
+	return { startDate, endDate, kodeAkun, academicYearId, page, limit };
 }
+
+type QueryParams = Awaited<ReturnType<typeof parseQueryParams>>;
 
 async function getLedgerForAccount(
 	account: Account,
-	params: ReturnType<typeof parseQueryParams>,
+	params: QueryParams,
 	priorBalances: Map<string, number>,
 	periodLines: Map<string, JournalEntryLineWithJournal[]>,
 ) {
@@ -50,8 +76,14 @@ async function getLedgerForAccount(
 	// Calculate opening balance using pre-fetched aggregate
 	let openingBalance = account.saldo;
 	if (params.startDate) {
-		const priorNet = priorBalances.get(account.kodeAkun) || 0;
-		openingBalance += isDebitNormal ? priorNet : -priorNet;
+		// Revenue/Expense accounts reset to 0 at the start of each academic year
+		const isRevenueExpense = ["Revenue", "Expense"].includes(account.tipeAkun);
+		if (isRevenueExpense && params.academicYearId) {
+			openingBalance = 0;
+		} else {
+			const priorNet = priorBalances.get(account.kodeAkun) || 0;
+			openingBalance += isDebitNormal ? priorNet : -priorNet;
+		}
 	}
 
 	// Get lines for this account from pre-fetched data
@@ -112,7 +144,7 @@ export async function GET(request: NextRequest) {
 	return withAuthAppRouter(request, async () => {
 		try {
 			const query = getQueryParams(request);
-			const params = parseQueryParams(query);
+			const params = await parseQueryParams(query);
 
 			let targetAccounts: Account[] = [];
 

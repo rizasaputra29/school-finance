@@ -4,43 +4,52 @@ import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { success } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 
-interface AccountRecord {
-	id: string;
-	kodeAkun: string;
-	namaAkun: string;
-	tipeAkun: string;
-	saldo: number;
-	isContra: boolean;
-}
-
 const DEBIT_NORMAL_ACCOUNTS = ["Asset", "Aset", "Expense", "Beban"];
 
 export async function GET(request: NextRequest) {
 	return withAuthAppRouter(request, async () => {
 		try {
 			const query = getQueryParams(request);
-			const { bulan, tahun } = query;
+			const { academicYearId } = query;
 
-			let endDate = new Date();
-			if (bulan && tahun) {
-				const month = parseInt(bulan, 10);
-				const year = parseInt(tahun, 10);
-				endDate = new Date(year, month, 0, 23, 59, 59);
-			} else if (tahun) {
-				const year = parseInt(tahun, 10);
-				endDate = new Date(year, 11, 31, 23, 59, 59);
+			let startDate: Date;
+			let endDate: Date;
+
+			if (academicYearId) {
+				const academicYear = await prisma.academicYear.findUnique({
+					where: { id: academicYearId },
+				});
+				if (!academicYear) {
+					return success({ aset: { aktivaLancar: [], aktivaTetap: [], totalAktivaLancar: 0, totalAktivaTetap: 0 }, kewajiban: [], ekuitas: [] }, {
+						message: "Tahun ajaran tidak ditemukan",
+						meta: { summary: { totalAset: 0, totalKewajiban: 0, totalEkuitas: 0, isBalance: true } },
+					});
+				}
+				startDate = academicYear.tanggalMulai;
+				endDate = academicYear.tanggalSelesai;
+			} else {
+				const activeYear = await prisma.academicYear.findFirst({
+					where: { isActive: true },
+				});
+				if (!activeYear) {
+					return success({ aset: { aktivaLancar: [], aktivaTetap: [], totalAktivaLancar: 0, totalAktivaTetap: 0 }, kewajiban: [], ekuitas: [] }, {
+						message: "Tidak ada tahun ajaran aktif",
+						meta: { summary: { totalAset: 0, totalKewajiban: 0, totalEkuitas: 0, isBalance: true } },
+					});
+				}
+				startDate = activeYear.tanggalMulai;
+				endDate = activeYear.tanggalSelesai;
 			}
 
-			const accounts = (await prisma.account.findMany({
+			// Only Asset, Liability, Equity accounts on balance sheet (Revenue/Expense close to laba rugi)
+			const accounts = await prisma.account.findMany({
 				where: {
-					tipeAkun: {
-						in: ["Asset", "Liability", "Equity", "Revenue", "Expense"],
-					},
+					tipeAkun: { in: ["Asset", "Liability", "Equity"] },
 				},
 				orderBy: [{ tipeAkun: "asc" }, { kodeAkun: "asc" }],
-			})) as AccountRecord[];
+			});
 
-			// Use JournalEntryLine for proper accounting
+			// All journal entries up to endDate for Asset/Liability/Equity
 			const lineTotals = await prisma.journalEntryLine.groupBy({
 				by: ["kodeAkun"],
 				_sum: { debit: true, kredit: true },
@@ -60,89 +69,138 @@ export async function GET(request: NextRequest) {
 				});
 			}
 
-			let calculatedLabaRugiAccumulated = 0;
 			const netBalances = new Map<string, number>();
 
-			// Calculate balances
 			for (const account of accounts) {
-				const movements = accountMap.get(account.kodeAkun) || {
-					debit: 0,
-					kredit: 0,
-				};
+				const movements = accountMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
 				const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
-
 				const netMovement = isDebitNormal
 					? movements.debit - movements.kredit
 					: movements.kredit - movements.debit;
-				const totalBalance = account.saldo + netMovement;
+				netBalances.set(account.kodeAkun, account.saldo + netMovement);
+			}
 
-				netBalances.set(account.kodeAkun, totalBalance);
+			// Calculate laba rugi split
+			const revenueExpenseAccounts = await prisma.account.findMany({
+				where: { tipeAkun: { in: ["Revenue", "Expense"] } },
+			});
 
-				if (account.tipeAkun === "Revenue") {
-					calculatedLabaRugiAccumulated += totalBalance;
-				} else if (account.tipeAkun === "Expense") {
-					calculatedLabaRugiAccumulated -= totalBalance;
+			// Current year Revenue/Expense, excluding closing entries
+			const currentYearLines = await prisma.journalEntryLine.groupBy({
+				by: ["kodeAkun"],
+				_sum: { debit: true, kredit: true },
+				where: {
+					journalEntry: {
+						tanggal: { gte: startDate, lte: endDate },
+						status: "posted",
+						reference: { not: { startsWith: "closing:" } },
+					},
+				},
+			});
+
+			const currentMap = new Map<string, { debit: number; kredit: number }>();
+			for (const line of currentYearLines) {
+				currentMap.set(line.kodeAkun, { debit: line._sum.debit || 0, kredit: line._sum.kredit || 0 });
+			}
+
+			let labaRugiBerjalan = 0;
+
+			for (const account of revenueExpenseAccounts) {
+				const isRevenue = account.tipeAkun === "Revenue";
+				const current = currentMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
+
+				const currentBal = isRevenue
+					? current.kredit - current.debit
+					: current.debit - current.kredit;
+
+				if (isRevenue) {
+					labaRugiBerjalan += currentBal;
+				} else {
+					labaRugiBerjalan -= currentBal;
 				}
 			}
 
+			// 302 Laba Rugi Periode Sebelumnya: read actual account balance (carried forward from prior years)
+			let labaRugiSebelumnya = 0;
+			if (academicYearId) {
+				const balance302 = await prisma.accountBalance.findUnique({
+					where: { kodeAkun_academicYearId: { kodeAkun: "302", academicYearId } },
+				});
+				labaRugiSebelumnya = balance302?.saldo ?? 0;
+			} else {
+				const account302 = await prisma.account.findFirst({
+					where: { kodeAkun: "302" },
+				});
+				labaRugiSebelumnya = account302?.saldo ?? 0;
+			}
+
 			const assetAccounts = accounts.filter((a) => a.tipeAkun === "Asset");
-			const liabilityAccounts = accounts.filter(
-				(a) => a.tipeAkun === "Liability",
-			);
+			const liabilityAccounts = accounts.filter((a) => a.tipeAkun === "Liability");
 			const equityAccounts = accounts.filter((a) => a.tipeAkun === "Equity");
 
-			const asetData = assetAccounts.map((account) => {
+			const lancarCodes = ["101", "102", "103", "104", "105", "106"];
+			const tetapCodes = ["107", "108", "109", "110", "111"];
+
+			const mapAccount = (account: { kodeAkun: string; namaAkun: string; isContra: boolean }) => {
 				const jumlah = netBalances.get(account.kodeAkun) || 0;
 				return {
 					kodeAkun: account.kodeAkun,
 					namaAkun: account.namaAkun,
 					jumlah: account.isContra ? -Math.abs(jumlah) : jumlah,
 				};
-			});
+			};
 
-			const totalAset = asetData.reduce((sum, item) => sum + item.jumlah, 0);
+			const aktivaLancar = assetAccounts.filter((a) => lancarCodes.includes(a.kodeAkun)).map(mapAccount);
+			const aktivaTetap = assetAccounts.filter((a) => tetapCodes.includes(a.kodeAkun)).map(mapAccount);
 
-			const kewajibanData = liabilityAccounts.map((account) => {
-				const jumlah = netBalances.get(account.kodeAkun) || 0;
-				return {
+			const totalAktivaLancar = aktivaLancar.reduce((sum, item) => sum + item.jumlah, 0);
+			const totalAktivaTetap = aktivaTetap.reduce((sum, item) => sum + item.jumlah, 0);
+			const totalAset = totalAktivaLancar + totalAktivaTetap;
+
+			const kewajibanData = liabilityAccounts.map((account) => ({
+				kodeAkun: account.kodeAkun,
+				namaAkun: account.namaAkun,
+				jumlah: netBalances.get(account.kodeAkun) || 0,
+			}));
+			const totalKewajiban = kewajibanData.reduce((sum, item) => sum + item.jumlah, 0);
+
+			const ekuitasData = equityAccounts
+				.filter((a) => a.kodeAkun !== "302" && a.kodeAkun !== "303")
+				.map((account) => ({
 					kodeAkun: account.kodeAkun,
 					namaAkun: account.namaAkun,
-					jumlah,
-				};
-			});
+					jumlah: netBalances.get(account.kodeAkun) || 0,
+				}));
 
-			const totalKewajiban = kewajibanData.reduce(
-				(sum, item) => sum + item.jumlah,
-				0,
-			);
-
-			const ekuitasData = equityAccounts.map((account) => {
-				const jumlah = netBalances.get(account.kodeAkun) || 0;
-				return {
-					kodeAkun: account.kodeAkun,
-					namaAkun: account.namaAkun,
-					jumlah,
-				};
-			});
-
-			const labaRugiItem = {
-				kodeAkun: "LABA_RUGI",
-				namaAkun: "Laba/Rugi Berjalan",
-				jumlah: calculatedLabaRugiAccumulated,
+			const labaRugiSebelumnyaItem = {
+				kodeAkun: "302",
+				namaAkun: "Laba (Rugi) Periode Sebelumnya",
+				jumlah: labaRugiSebelumnya,
+			};
+			const labaRugiBerjalanItem = {
+				kodeAkun: "303",
+				namaAkun: "Laba (Rugi) Periode Berjalan",
+				jumlah: labaRugiBerjalan,
 			};
 
 			const totalEkuitas =
 				ekuitasData.reduce((sum, item) => sum + item.jumlah, 0) +
-				calculatedLabaRugiAccumulated;
+				labaRugiSebelumnya +
+				labaRugiBerjalan;
 			const totalLiabilitasEkuitas = totalKewajiban + totalEkuitas;
 			const balanceDifference = totalAset - totalLiabilitasEkuitas;
 			const isBalance = Math.abs(balanceDifference) < 0.01;
 
 			return success(
 				{
-					aset: asetData,
+					aset: {
+						aktivaLancar,
+						aktivaTetap,
+						totalAktivaLancar,
+						totalAktivaTetap,
+					},
 					kewajiban: kewajibanData,
-					ekuitas: [...ekuitasData, labaRugiItem],
+					ekuitas: [...ekuitasData, labaRugiSebelumnyaItem, labaRugiBerjalanItem],
 				},
 				{
 					message: "Laporan neraca berhasil diambil",
@@ -154,11 +212,10 @@ export async function GET(request: NextRequest) {
 							totalLiabilitasEkuitas,
 							isBalance,
 							balanceDifference,
+							labaRugiSebelumnya,
+							labaRugiBerjalan,
 						},
-						filters: {
-							bulan: bulan ? parseInt(bulan, 10) : null,
-							tahun: tahun ? parseInt(tahun, 10) : null,
-						},
+						academicYear: { startDate, endDate },
 					},
 				},
 			);

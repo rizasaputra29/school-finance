@@ -44,18 +44,20 @@ interface JournalEntryRecord {
 interface QueryParams {
 	startDate: Date | null;
 	endDate: Date | null;
+	academicYearId: string | null;
 	status: string | null;
 	search: string | null;
 	page: number;
 	limit: number;
 }
 
-function parseQueryParams(query: Record<string, string>): QueryParams {
+async function parseQueryParams(query: Record<string, string>): Promise<QueryParams> {
 	const page = Math.max(1, parseInt(query.page) || 1);
 	const limit = Math.min(100, Math.max(1, parseInt(query.limit) || 20));
 
 	let startDate: Date | null = null;
 	let endDate: Date | null = null;
+	let academicYearId = query.academicYearId || null;
 
 	if (query.startDate) {
 		startDate = new Date(query.startDate);
@@ -65,9 +67,20 @@ function parseQueryParams(query: Record<string, string>): QueryParams {
 		endDate = new Date(query.endDate);
 	}
 
+	// If no explicit dates or academicYearId, default to active academic year
+	if (!startDate && !endDate && !academicYearId) {
+		const activeYear = await prisma.academicYear.findFirst({
+			where: { isActive: true },
+		});
+		if (activeYear) {
+			academicYearId = activeYear.id;
+		}
+	}
+
 	return {
 		startDate,
 		endDate,
+		academicYearId,
 		status: query.status || null,
 		search: query.search || null,
 		page,
@@ -79,14 +92,27 @@ function parseQueryParams(query: Record<string, string>): QueryParams {
 // Where Clause Builder
 // ============================================================================
 
-function buildWhereClause(params: QueryParams): Record<string, unknown> {
+async function buildWhereClause(params: QueryParams): Promise<Record<string, unknown>> {
 	const where: Record<string, unknown> = {};
 
-	// Date range filter
-	if (params.startDate && params.endDate) {
+	// Date range filter: prioritize explicit dates, then academic year
+	let startDate = params.startDate;
+	let endDate = params.endDate;
+
+	if (!startDate && !endDate && params.academicYearId) {
+		const academicYear = await prisma.academicYear.findUnique({
+			where: { id: params.academicYearId },
+		});
+		if (academicYear) {
+			startDate = academicYear.tanggalMulai;
+			endDate = academicYear.tanggalSelesai;
+		}
+	}
+
+	if (startDate && endDate) {
 		where.tanggal = {
-			gte: params.startDate,
-			lte: new Date(params.endDate.getTime() + 24 * 60 * 60 * 1000 - 1), // End of day
+			gte: startDate,
+			lte: new Date(endDate.getTime() + 24 * 60 * 60 * 1000 - 1), // End of day
 		};
 	}
 
@@ -141,6 +167,7 @@ function buildFilters(params: QueryParams) {
 	return {
 		startDate: params.startDate?.toISOString().split("T")[0] || null,
 		endDate: params.endDate?.toISOString().split("T")[0] || null,
+		academicYearId: params.academicYearId,
 		status: params.status || null,
 		search: params.search || null,
 	};
@@ -154,8 +181,8 @@ export async function GET(request: NextRequest) {
 	return withAuthAppRouter(request, async () => {
 		try {
 			const query = getQueryParams(request);
-			const params = parseQueryParams(query);
-			const where = buildWhereClause(params);
+			const params = await parseQueryParams(query);
+			const where = await buildWhereClause(params);
 			const skip = (params.page - 1) * params.limit;
 
 			// Fetch journal entries with pagination

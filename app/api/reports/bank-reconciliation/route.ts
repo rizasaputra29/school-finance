@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 		if (!bankCode) {
 			const bankAccount = await prisma.account.findFirst({
 				where: {
-					OR: [{ kodeAkun: "1110" }, { kodeAkun: "102" }],
+					OR: [{ kodeAkun: "102" }],
 					tipeAkun: "Asset",
 				},
 			});
@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
 		// Get all cash transactions (Kas) for related report
 		const kasTransactions = await prisma.cashflow.findMany({
 			where: {
-				kodeAkun: "1100",
+				kodeAkun: "101",
 				...(start && end ? { tanggal: { gte: start, lte: end } } : {}),
 			},
 			orderBy: { tanggal: "asc" },

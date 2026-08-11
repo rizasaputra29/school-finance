@@ -15,27 +15,16 @@ import {
 import { roundAmount } from "@/lib/accounting/accounting-validation";
 import { success, errors } from "@/lib/api/api-response";
 
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
 const createSnapshotSchema = z.object({
-	periode: z.string().regex(/^\d{4}-\d{2}$/, "Format periode: YYYY-MM"),
+	academicYearId: z.string().min(1, "Tahun ajaran wajib dipilih"),
 	tipe: z.enum(["neraca", "labarugi", "cashflow"]),
 });
 
 const reopenSchema = z.object({
-	periode: z.string().regex(/^\d{4}-\d{2}$/, "Format periode: YYYY-MM"),
+	academicYearId: z.string().min(1, "Tahun ajaran wajib dipilih"),
 	reason: z.string().optional(),
 });
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Calculate balances for a period
- */
 async function calculatePeriodBalances(): Promise<{
 	accounts: Array<{
 		kodeAkun: string;
@@ -58,7 +47,6 @@ async function calculatePeriodBalances(): Promise<{
 		},
 	});
 
-	// Calculate totals by type
 	const accountsWithBalances = accounts.map((a) => ({
 		...a,
 		saldo: roundAmount(a.saldo),
@@ -94,19 +82,14 @@ async function calculatePeriodBalances(): Promise<{
 	};
 }
 
-/**
- * Create snapshot for a report type
- */
 async function createSnapshot(
-	periode: string,
+	academicYearId: string,
 	tipe: "neraca" | "labarugi" | "cashflow",
 	userId?: string,
 ): Promise<{ success: boolean; error?: string }> {
 	try {
-		// Calculate balances
 		const balances = await calculatePeriodBalances();
 
-		// Calculate totals for the snapshot
 		let totalDebit = 0;
 		let totalKredit = 0;
 
@@ -120,7 +103,6 @@ async function createSnapshot(
 				totalKredit = balances.totalPendapatan;
 				break;
 			case "cashflow":
-				// For cashflow, calculate from cash accounts
 				const cashAccounts = balances.accounts.filter(
 					(a) => a.kodeAkun.startsWith("111") || a.kodeAkun === "102",
 				);
@@ -129,15 +111,13 @@ async function createSnapshot(
 				break;
 		}
 
-		// Delete existing snapshot if any
 		await prisma.snapshot.deleteMany({
-			where: { periode, tipe },
+			where: { academicYearId, tipe },
 		});
 
-		// Create new snapshot
 		await prisma.snapshot.create({
 			data: {
-				periode,
+				academicYearId,
 				tipe,
 				data: balances as unknown as import("@prisma/client").Prisma.InputJsonValue,
 				totalDebit: roundAmount(totalDebit),
@@ -153,24 +133,20 @@ async function createSnapshot(
 	}
 }
 
-// ============================================================================
-// API Handlers
-// ============================================================================
-
 export async function GET(request: NextRequest) {
 	return withAuthAppRouter(
 		request,
 		async () => {
 			const query = getQueryParams(request);
-			const { periode, tipe } = query;
+			const { academicYearId, tipe } = query;
 
-			if (!periode) {
+			if (!academicYearId) {
 				return errors.validation([
-					{ field: "periode", message: "Periode wajib diisi" },
+					{ field: "academicYearId", message: "Tahun ajaran wajib dipilih" },
 				]);
 			}
 
-			const where: Record<string, unknown> = { periode };
+			const where: Record<string, unknown> = { academicYearId };
 
 			if (tipe) {
 				where.tipe = tipe;
@@ -192,7 +168,7 @@ export async function GET(request: NextRequest) {
 				})),
 				{
 					message: "Data snapshot berhasil diambil",
-					meta: { periode },
+					meta: { academicYearId },
 				},
 			);
 		},
@@ -204,9 +180,6 @@ export async function POST(request: NextRequest) {
 	return withAuthAppRouter(
 		request,
 		async (user: AuthUser) => {
-			// Create snapshot (typically called when closing period)
-
-			// Validate request
 			const body = await request.json();
 			const validation = createSnapshotSchema.safeParse(body);
 			if (!validation.success) {
@@ -218,21 +191,23 @@ export async function POST(request: NextRequest) {
 				);
 			}
 
-			const { periode, tipe } = validation.data;
+			const { academicYearId, tipe } = validation.data;
 
-			// Check if period is closed
-			const periodRecord = await prisma.period.findUnique({
-				where: { kode: periode },
+			const yearRecord = await prisma.academicYear.findUnique({
+				where: { id: academicYearId },
 			});
 
-			if (!periodRecord || periodRecord.status !== "closed") {
+			if (!yearRecord) {
+				return errors.badRequest("Tahun ajaran tidak ditemukan");
+			}
+
+			if (!yearRecord.isArchived) {
 				return errors.badRequest(
-					`Periode ${periode} belum ditutup. Snapshot hanya bisa dibuat untuk periode yang sudah ditutup.`,
+					"Tahun ajaran belum diarsipkan. Snapshot hanya bisa dibuat untuk tahun ajaran yang sudah ditutup/diarsipkan.",
 				);
 			}
 
-			// Create snapshot
-			const result = await createSnapshot(periode, tipe, user.id);
+			const result = await createSnapshot(academicYearId, tipe, user.id);
 
 			if (!result.success) {
 				return errors.internal(result.error || "Gagal membuat snapshot");
@@ -240,11 +215,11 @@ export async function POST(request: NextRequest) {
 
 			return success(
 				{
-					periode,
+					academicYearId,
 					tipe,
 				},
 				{
-					message: `Snapshot ${tipe} untuk periode ${periode} berhasil dibuat`,
+					message: `Snapshot ${tipe} untuk tahun ajaran ${yearRecord.tahunAjaran} berhasil dibuat`,
 					status: 201,
 				},
 			);
@@ -257,12 +232,9 @@ export async function DELETE(request: NextRequest) {
 	return withAuthAppRouter(
 		request,
 		async (user: AuthUser) => {
-			// Reopen period and regenerate snapshot
-			// Only owner can reopen closed periods
-
 			if (user.role !== "owner") {
 				return errors.forbidden(
-					"Hanya owner yang dapat membuka kembali periode yang ditutup",
+					"Hanya owner yang dapat menghapus snapshot tahun ajaran",
 				);
 			}
 
@@ -277,40 +249,41 @@ export async function DELETE(request: NextRequest) {
 				);
 			}
 
-			const { periode, reason } = validation.data;
+			const { academicYearId, reason } = validation.data;
 
-			// Delete snapshots for this period
 			await prisma.snapshot.deleteMany({
-				where: { periode },
+				where: { academicYearId },
 			});
 
-			// Reopen period
-			await prisma.period.update({
-				where: { kode: periode },
+			await prisma.academicYear.update({
+				where: { id: academicYearId },
 				data: {
-					status: "open",
-					reopenedAt: new Date(),
-					reopenedBy: user.id,
+					isArchived: false,
+					isActive: true,
 				},
 			});
 
-			// Create audit trail
 			await prisma.auditTrail.create({
 				data: {
 					action: "reopen",
-					entity: "period",
-					entityId: periode,
+					entity: "academicYear",
+					entityId: academicYearId,
 					userId: user.id,
 					newData: JSON.stringify({ reason }),
 				},
 			});
 
+			const yearRecord = await prisma.academicYear.findUnique({
+				where: { id: academicYearId },
+				select: { tahunAjaran: true },
+			});
+
 			return success(
 				{
-					periode,
+					academicYearId,
 				},
 				{
-					message: `Periode ${periode} berhasil dibuka kembali. Snapshot telah dihapus.`,
+					message: `Tahun ajaran ${yearRecord?.tahunAjaran || ""} berhasil dibuka kembali. Snapshot telah dihapus.`,
 				},
 			);
 		},

@@ -296,6 +296,42 @@ async function runConsistencyCheck(
 		difference: cashflowCheck.difference,
 	});
 
+	// Check 6: Aset Neto cross-validation (Neraca vs Perubahan Aset Neto)
+	const equityAccounts = await prisma.account.findMany({
+		where: { tipeAkun: "Equity" },
+		select: { kodeAkun: true, namaAkun: true, saldo: true },
+	});
+	const neracaAsetNeto = roundAmount(
+		equityAccounts.reduce((sum, a) => sum + roundAmount(a.saldo), 0) +
+			reportTotals.totalPendapatan -
+			reportTotals.totalBeban,
+	);
+	// Calculate Perubahan Aset Neto ending balance
+	const equityCodes = ["300", "301", "302"];
+	const saldoAwal = roundAmount(
+		equityAccounts
+			.filter((a) => equityCodes.includes(a.kodeAkun))
+			.reduce((sum, a) => sum + roundAmount(a.saldo), 0),
+	);
+	const prive = roundAmount(
+		equityAccounts.find((a) => a.kodeAkun === "304")?.saldo || 0,
+	);
+	const perubahanAsetNetoAkhir = roundAmount(
+		saldoAwal + reportTotals.totalPendapatan - reportTotals.totalBeban - prive,
+	);
+	const asetNetoDiff = roundAmount(neracaAsetNeto - perubahanAsetNetoAkhir);
+	const asetNetoPassed = isAmountEqual(neracaAsetNeto, perubahanAsetNetoAkhir);
+	checks.push({
+		name: "ASET_NETO_CROSS_VALIDATION",
+		description:
+			"Aset Neto Neraca harus sama dengan Saldo Akhir Perubahan Aset Neto",
+		passed: asetNetoPassed,
+		details: asetNetoPassed
+			? `Neraca Aset Neto: ${neracaAsetNeto.toLocaleString("id-ID")} = Perubahan Aset Neto: ${perubahanAsetNetoAkhir.toLocaleString("id-ID")}`
+			: `Selisih: ${asetNetoDiff.toLocaleString("id-ID")} (Neraca: ${neracaAsetNeto.toLocaleString("id-ID")}, Perubahan: ${perubahanAsetNetoAkhir.toLocaleString("id-ID")})`,
+		difference: asetNetoDiff,
+	});
+
 	// Calculate summary
 	const passed = checks.filter((c) => c.passed).length;
 	const failed = checks.filter((c) => !c.passed).length;
