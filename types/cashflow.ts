@@ -47,3 +47,24 @@ export interface CashflowRecord {
 		namaAkun: string;
 	};
 }
+
+// Grouped cashflow card (double-entry)
+export interface CashflowEntry {
+	id: string;
+	kodeAkun: string;
+	namaAkun: string;
+	debit: number;
+	kredit: number;
+	source?: string | null;
+}
+
+export interface CashflowCard {
+	id: string;
+	tanggal: string;
+	keterangan: string;
+	kategori?: string | null;
+	status: string;
+	entries: CashflowEntry[];
+	totalDebit: number;
+	totalKredit: number;
+}

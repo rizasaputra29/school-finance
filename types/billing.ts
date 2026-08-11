@@ -11,12 +11,18 @@ export interface Billing {
 	studentId: string;
 	student: StudentMinimal;
 	jenisBiaya: string;
-	periodeBulan: string;
+	tipe: string;
+	bulan?: number | null;
 	jumlah: number;
 	statusBayar: string;
 	tanggalBayar: string | null;
+	tanggalJatuhTempo?: string | null;
+	keterangan?: string | null;
 	catatan: string | null;
-	// Optional fields for extended usage
+	isCicilan: boolean;
+	tenor: number | null;
+	cicilanGroupId?: string | null;
+	cashflowId?: string | null;
 	isOverdue?: boolean;
 	createdAt?: string;
 }
@@ -25,9 +31,28 @@ export interface BillingSummary {
 	totalTagihan: number;
 	totalBelumLunas: number;
 	totalLunas: number;
+	totalCicilan: number;
 	countBelumLunas: number;
 	countLunas: number;
+	countCicilan: number;
+	countOverdue: number;
 }
+
+// Grouped billing for expandable rows (cicilan, SPP bulanan, Gaji bulanan)
+export interface BillingGroup {
+	isGroup: true;
+	id: string;
+	studentId: string;
+	student: StudentMinimal;
+	jenisBiaya: string;
+	label: string;
+	totalJumlah: number;
+	statusBayar: string;
+	children: Billing[];
+}
+
+// Union type for table rows
+export type BillingRow = Billing | BillingGroup;
 
 // Export record type for use in export routes
 export interface BillingRecord {
@@ -39,7 +64,6 @@ export interface BillingRecord {
 		kelas: string;
 	};
 	jenisBiaya: string;
-	periodeBulan: string;
 	jumlah: number;
 	statusBayar: string;
 	tanggalBayar: string | null;

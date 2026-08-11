@@ -16,37 +16,20 @@ export interface Employee {
 	gajiPokok: number;
 	tunjangan?: number;
 	status: string;
+	totalTagihan?: number;
+	totalBayar?: number;
+	statusBayar?: string;
 	_count?: {
-		payrolls?: number;
+		employeeBillings?: number;
+		billings?: number;
 	};
 }
 
-// Minimal employee for payroll
+// Minimal employee for billing context
 export interface EmployeeMinimal {
 	id: string;
 	nip?: string;
 	nama: string;
 	jabatan: string;
 	gajiPokok?: number;
-}
-
-export interface PayrollRecord {
-	id: string;
-	employeeId: string;
-	employee: {
-		nip?: string;
-		nama: string;
-		jabatan: string;
-	};
-	periode?: string;
-	periodeBulan?: string;
-	jenisPembayaran?: string;
-	gajiPokok?: number;
-	tunjangan?: number;
-	potongan?: number;
-	totalGaji?: number;
-	jumlah?: number;
-	status: string;
-	tanggalBayar?: string | null;
-	keterangan?: string | null;
 }

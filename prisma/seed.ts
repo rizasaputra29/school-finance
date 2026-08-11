@@ -131,21 +131,21 @@ const ACCOUNTS = [
 		kodeAkun: "301",
 		namaAkun: "Modal Awal",
 		tipeAkun: "Equity",
-		saldo: 500000000,
+		saldo: 0,
 		kategori: "Modal",
 	},
 	{
 		kodeAkun: "302",
 		namaAkun: "Laba (Rugi) Periode Sebelumnya",
 		tipeAkun: "Equity",
-		saldo: 200000000,
+		saldo: 87000000,
 		kategori: "Laba",
 	},
 	{
 		kodeAkun: "303",
 		namaAkun: "Laba (Rugi) Periode Berjalan",
 		tipeAkun: "Equity",
-		saldo: 100000000,
+		saldo: 0,
 		kategori: "Laba",
 	},
 	{
@@ -154,6 +154,13 @@ const ACCOUNTS = [
 		tipeAkun: "Equity",
 		saldo: 0,
 		kategori: "Prive",
+	},
+	{
+		kodeAkun: "3201",
+		namaAkun: "Ekuitas Saldo Awal",
+		tipeAkun: "Equity",
+		saldo: 0,
+		kategori: "Modal",
 	},
 
 	// PENDAPATAN (Revenue) - 400-407
@@ -209,6 +216,13 @@ const ACCOUNTS = [
 	{
 		kodeAkun: "407",
 		namaAkun: "Penerimaan piutang siswa",
+		tipeAkun: "Revenue",
+		saldo: 0,
+		kategori: "Pendapatan",
+	},
+	{
+		kodeAkun: "408",
+		namaAkun: "Penerimaan Uang Hibah",
 		tipeAkun: "Revenue",
 		saldo: 0,
 		kategori: "Pendapatan",
@@ -287,14 +301,14 @@ const ACCOUNTS = [
 	},
 	{
 		kodeAkun: "510",
-		namaAkun: "Biaya Konsumsi",
+		namaAkun: "Biaya Konsumsi dan Rumah tangga",
 		tipeAkun: "Expense",
 		saldo: 0,
 		kategori: "Beban Operasional",
 	},
 	{
 		kodeAkun: "511",
-		namaAkun: "Biaya Jamuan dan Resepresntasi lainya",
+		namaAkun: "Evaluasi Pembelajaran",
 		tipeAkun: "Expense",
 		saldo: 0,
 		kategori: "Beban Operasional",
@@ -322,7 +336,7 @@ const ACCOUNTS = [
 	},
 	{
 		kodeAkun: "515",
-		namaAkun: "Biaya Pemasaran",
+		namaAkun: "Biaya learning kit",
 		tipeAkun: "Expense",
 		saldo: 0,
 		kategori: "Beban Pemasaran",
@@ -343,7 +357,7 @@ const ACCOUNTS = [
 	},
 	{
 		kodeAkun: "518",
-		namaAkun: "Biaya Perpustakaan",
+		namaAkun: "Biaya Kunjungan Dinas",
 		tipeAkun: "Expense",
 		saldo: 0,
 		kategori: "Beban Operasional",
@@ -375,6 +389,13 @@ const ACCOUNTS = [
 		tipeAkun: "Expense",
 		saldo: 0,
 		kategori: "Beban Operasional",
+	},
+	{
+		kodeAkun: "600",
+		namaAkun: "Beban Penyusutan Aktiva Tetap",
+		tipeAkun: "Expense",
+		saldo: 0,
+		kategori: "Beban Penyusutan",
 	},
 ];
 
@@ -467,6 +488,8 @@ const CATEGORY_TO_ACCOUNT: Record<string, string> = {
 	"Penerimaan Konsumsi": "406",
 	Piutang: "407",
 	"Penerimaan piutang siswa": "407",
+	Hibah: "408",
+	"Penerimaan Uang Hibah": "408",
 
 	// BIAYA/BEBAN (Expenses) - 500-522
 	Gaji: "500",
@@ -487,16 +510,16 @@ const CATEGORY_TO_ACCOUNT: Record<string, string> = {
 	"Admin bank": "508",
 	"Biaya PPDB": "509",
 	PPDB: "509",
-	"Biaya Konsumsi": "510", // School expense for food/catering
-	"Biaya Jamuan dan Resepresntasi lainya": "511",
+	"Biaya Konsumsi dan Rumah tangga": "510",
+	"Evaluasi Pembelajaran": "511",
 	"Biaya Kegiatan Kesiswaan": "512",
 	"Biaya Peningkatan SDM": "513",
 	"Biaya Parenting": "514",
-	"Biaya Pemasaran": "515",
+	"Biaya learning kit": "515",
 	"Biaya sarana dan prasarana": "516",
 	Sarpras: "516",
 	"Biaya sewa": "517",
-	"Biaya Perpustakaan": "518",
+	"Biaya Kunjungan Dinas": "518",
 	"Biaya owner": "519",
 	"Biaya Seragam Siswa": "520",
 	"Biaya ATK Siswa": "521",
@@ -556,10 +579,10 @@ async function main() {
 	console.log("1. Cleaning existing data...");
 	await prisma.journalEntryLine.deleteMany();
 	await prisma.journalEntry.deleteMany();
-	await prisma.payroll.deleteMany();
 	await prisma.cashflow.deleteMany();
 	await prisma.billing.deleteMany();
 	await prisma.installment.deleteMany();
+	await prisma.employeeBilling.deleteMany();
 	await prisma.student.deleteMany();
 	await prisma.employee.deleteMany();
 	await prisma.academicYear.deleteMany();
@@ -567,7 +590,6 @@ async function main() {
 	await prisma.account.deleteMany();
 	await prisma.asset.deleteMany();
 	await prisma.debt.deleteMany();
-	await prisma.period.deleteMany();
 	await prisma.notification.deleteMany();
 	await prisma.auditTrail.deleteMany();
 	await prisma.snapshot.deleteMany();
@@ -678,48 +700,6 @@ async function main() {
 	]);
 	const activeAcademicYear = academicYears[1];
 	console.log(`   ✅ Created ${academicYears.length} academic years\n`);
-
-	// 4. CREATE PERIODS (for all months)
-	console.log("4. Creating periods...");
-	const periodData = [];
-	const monthNames = [
-		"Januari",
-		"Februari",
-		"Maret",
-		"April",
-		"Mei",
-		"Juni",
-		"Juli",
-		"Agustus",
-		"September",
-		"Oktober",
-		"November",
-		"Desember",
-	];
-
-	for (const year of [2024, 2025, 2026]) {
-		for (let month = 0; month < 12; month++) {
-			const kode = `${year}-${String(month + 1).padStart(2, "0")}`;
-			const tanggalMulai = new Date(year, month, 1);
-			const tanggalAkhir = new Date(year, month + 1, 0, 23, 59, 59);
-
-			periodData.push({
-				kode,
-				nama: `${monthNames[month]} ${year}`,
-				tahun: year,
-				bulan: month + 1,
-				status: year === 2025 ? "open" : "archived",
-				tanggalMulai,
-				tanggalAkhir,
-			});
-		}
-	}
-
-	const periodChunks = chunkArray(periodData, BATCH_SIZE);
-	for (const chunk of periodChunks) {
-		await prisma.period.createMany({ data: chunk });
-	}
-	console.log(`   ✅ Created ${periodData.length} periods\n`);
 
 	// 5. CREATE STUDENTS (40 students with varied statuses)
 	console.log("5. Creating students...");
@@ -912,10 +892,12 @@ async function main() {
 		studentId: string;
 		academicYearId: string;
 		jenisBiaya: string;
-		periodeBulan: string;
 		jumlah: number;
 		statusBayar: string;
 		tanggalBayar?: Date;
+		isCicilan?: boolean;
+		tenor?: number;
+		tanggalMulaiCicilan?: Date;
 	}> = [];
 
 	for (const student of students) {
@@ -942,7 +924,6 @@ async function main() {
 					studentId: student.id,
 					academicYearId,
 					jenisBiaya: fee.type,
-					periodeBulan: "2025-07",
 					jumlah: fee.amount,
 					statusBayar: isPaid ? "Lunas" : "Belum Lunas",
 					tanggalBayar: isPaid
@@ -952,38 +933,37 @@ async function main() {
 			}
 		}
 
-		// Monthly SPP and Konsumsi
-		for (const m of ALL_MONTHS) {
-			const prob = m.startsWith("2026") ? 0.3 : 0.7;
-			const isPaid = Math.random() < prob;
+		// Annual SPP (12 months total, cicilan)
+		const sppPaid = Math.random() < 0.5;
+		billingData.push({
+			studentId: student.id,
+			academicYearId,
+			jenisBiaya: "SPP",
+			jumlah: fees.SPP * 12,
+			statusBayar: sppPaid ? "Lunas" : "Belum Lunas",
+			tanggalBayar: sppPaid
+				? new Date(`2025-07-${1 + Math.floor(Math.random() * 20)}`)
+				: undefined,
+			isCicilan: !sppPaid,
+			tenor: sppPaid ? undefined : 12,
+			tanggalMulaiCicilan: sppPaid ? undefined : new Date("2025-07-01"),
+		});
 
-			// SPP
-			billingData.push({
-				studentId: student.id,
-				academicYearId,
-				jenisBiaya: "SPP",
-				periodeBulan: m,
-				jumlah: fees.SPP,
-				statusBayar: isPaid ? "Lunas" : "Belum Lunas",
-				tanggalBayar: isPaid
-					? new Date(`${m}-${10 + Math.floor(Math.random() * 15)}`)
-					: undefined,
-			});
-
-			// Konsumsi
-			const konsumsiPaid = Math.random() < prob;
-			billingData.push({
-				studentId: student.id,
-				academicYearId,
-				jenisBiaya: "Konsumsi",
-				periodeBulan: m,
-				jumlah: fees.Konsumsi,
-				statusBayar: konsumsiPaid ? "Lunas" : "Belum Lunas",
-				tanggalBayar: konsumsiPaid
-					? new Date(`${m}-${10 + Math.floor(Math.random() * 15)}`)
-					: undefined,
-			});
-		}
+		// Annual Konsumsi (12 months total, cicilan)
+		const konsumsiPaid = Math.random() < 0.5;
+		billingData.push({
+			studentId: student.id,
+			academicYearId,
+			jenisBiaya: "Konsumsi",
+			jumlah: fees.Konsumsi * 12,
+			statusBayar: konsumsiPaid ? "Lunas" : "Belum Lunas",
+			tanggalBayar: konsumsiPaid
+				? new Date(`2025-07-${1 + Math.floor(Math.random() * 20)}`)
+				: undefined,
+			isCicilan: !konsumsiPaid,
+			tenor: konsumsiPaid ? undefined : 12,
+			tanggalMulaiCicilan: konsumsiPaid ? undefined : new Date("2025-07-01"),
+		});
 	}
 
 	// Insert billings in batches
@@ -992,20 +972,35 @@ async function main() {
 	for (const chunk of billingChunks) {
 		await prisma.billing.createMany({ data: chunk });
 	}
-	const billings = await prisma.billing.findMany({ orderBy: { id: "asc" } });
+	const billings = await prisma.billing.findMany({
+		orderBy: { id: "asc" },
+		select: {
+			id: true,
+			studentId: true,
+			jenisBiaya: true,
+			jumlah: true,
+			statusBayar: true,
+			tanggalBayar: true,
+			isCicilan: true,
+			tenor: true,
+			student: true,
+		},
+	});
 	console.log(`   ✅ Created ${billings.length} billings\n`);
 
-	// 8. CREATE INSTALLMENTS for some unpaid billings
+	// 8. CREATE INSTALLMENTS for unpaid cicilan billings
 	console.log("8. Creating installments...");
-	const unpaidBillings = billings.filter(
-		(b) => b.statusBayar === "Belum Lunas" && b.jenisBiaya === "Uang Gedung",
+	const unpaidCicilanBillings = billings.filter(
+		(b) => b.statusBayar === "Belum Lunas" && b.isCicilan && b.tenor,
 	);
 	const installmentData = [];
 
-	for (const billing of unpaidBillings.slice(0, 10)) {
-		const jumlahCicilan = Math.ceil(billing.jumlah / 3);
-		for (let i = 1; i <= 3; i++) {
-			const dueDate = new Date(billing.periodeBulan + "-28");
+	for (const billing of unpaidCicilanBillings) {
+		const tenor = billing.tenor || 3;
+		const jumlahCicilan = Math.ceil(billing.jumlah / tenor);
+		const startDate = new Date();
+		for (let i = 1; i <= tenor; i++) {
+			const dueDate = new Date(startDate);
 			dueDate.setMonth(dueDate.getMonth() + i - 1);
 
 			installmentData.push({
@@ -1014,7 +1009,7 @@ async function main() {
 				cicilanKe: i,
 				jumlah: jumlahCicilan,
 				tanggalJatuhTempo: dueDate,
-				status: i === 1 ? "Belum Bayar" : "Belum Bayar",
+				status: "Belum Bayar",
 			});
 		}
 	}
@@ -1023,6 +1018,46 @@ async function main() {
 		const installmentChunks = chunkArray(installmentData, BATCH_SIZE);
 		for (const chunk of installmentChunks) {
 			await prisma.installment.createMany({ data: chunk });
+		}
+	}
+
+	// Force lifecycle coverage for installment/piutang flows:
+	// - Belum Bayar (default)
+	// - Jatuh Tempo (overdue)
+	// - Bayar (paid)
+	const createdInstallments = await prisma.installment.findMany({
+		orderBy: [{ studentId: "asc" }, { cicilanKe: "asc" }],
+	});
+
+	if (createdInstallments.length > 0) {
+		const now = new Date();
+		const daysAgo = (days: number) =>
+			new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+		// Mark some installments as explicitly overdue / jatuh tempo
+		const overdueInstallments = createdInstallments.slice(0, 6);
+		for (let index = 0; index < overdueInstallments.length; index++) {
+			const inst = overdueInstallments[index];
+			const overdueDaysPattern = [14, 45, 75, 120, 10, 33];
+			const overdueDate = daysAgo(overdueDaysPattern[index] || 30);
+			await prisma.installment.update({
+				where: { id: inst.id },
+				data: {
+					status: "Jatuh Tempo",
+					tanggalJatuhTempo: overdueDate,
+				},
+			});
+		}
+
+		// Mark some installments as already paid
+		for (const inst of createdInstallments.slice(6, 10)) {
+			await prisma.installment.update({
+				where: { id: inst.id },
+				data: {
+					status: "Bayar",
+					tanggalBayar: daysAgo(5),
+				},
+			});
 		}
 	}
 	console.log(`   ✅ Created ${installmentData.length} installments\n`);
@@ -1038,7 +1073,6 @@ async function main() {
 		debit: number;
 		kredit: number;
 		status: string;
-		periode: string;
 		source: string;
 	}> = [];
 
@@ -1055,7 +1089,6 @@ async function main() {
 			debit: billing.jumlah,
 			kredit: 0,
 			status: "posted",
-			periode: billing.periodeBulan,
 			source: "kas",
 		});
 	}
@@ -1076,7 +1109,6 @@ async function main() {
 				debit: 0,
 				kredit: totalGaji,
 				status: "posted",
-				periode: m,
 				source: "kas",
 			});
 
@@ -1094,7 +1126,6 @@ async function main() {
 					debit: 0,
 					kredit: 2000000,
 					status: "posted",
-					periode: m,
 					source: "kas",
 				});
 			}
@@ -1110,7 +1141,6 @@ async function main() {
 			debit: 0,
 			kredit: 1500000 + Math.random() * 500000,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 
@@ -1123,7 +1153,6 @@ async function main() {
 			debit: 0,
 			kredit: 800000 + Math.random() * 400000,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 
@@ -1136,7 +1165,6 @@ async function main() {
 			debit: 0,
 			kredit: 600000 + Math.random() * 300000,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 
@@ -1149,7 +1177,6 @@ async function main() {
 			debit: 0,
 			kredit: 1000000 + Math.random() * 500000,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 
@@ -1164,7 +1191,6 @@ async function main() {
 				debit: 0,
 				kredit: 2000000 + Math.random() * 3000000,
 				status: "posted",
-				periode: m,
 				source: "kas",
 			});
 		}
@@ -1196,7 +1222,6 @@ async function main() {
 				debit: 0,
 				kredit: totalGaji,
 				status: "posted",
-				periode: m,
 				source: "kas",
 			});
 		}
@@ -1216,7 +1241,6 @@ async function main() {
 					debit: sppAmount,
 					kredit: 0,
 					status: "posted",
-					periode: m,
 					source: "kas",
 				});
 			}
@@ -1232,7 +1256,6 @@ async function main() {
 			debit: 0,
 			kredit: 1400000 + Math.random() * 400000,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 
@@ -1245,7 +1268,6 @@ async function main() {
 			debit: 0,
 			kredit: 700000 + Math.random() * 350000,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 
@@ -1259,7 +1281,6 @@ async function main() {
 			debit: 20000000 + Math.random() * 10000000,
 			kredit: 0,
 			status: "posted",
-			periode: m,
 			source: "bank",
 		});
 	}
@@ -1312,58 +1333,76 @@ async function main() {
 	}
 	console.log(`   ✅ Created ${transferData.length} transfer records\n`);
 
-	// 11. CREATE PAYROLLS
-	console.log("11. Creating payrolls...");
-	const payrollData: Array<{
+	// 11. CREATE EMPLOYEE BILLINGS
+	console.log("11. Creating employee billings...");
+	const employeeBillingData: Array<{
 		employeeId: string;
-		periode: string;
-		jenisPembayaran: string;
+		academicYearId: string;
+		jenisBiaya: string;
 		jumlah: number;
-		status: string;
+		statusBayar: string;
 		tanggalBayar?: Date;
-		keterangan?: string;
+		tipe: string;
 	}> = [];
 
-	for (const m of ALL_MONTHS) {
-		for (const emp of employees) {
-			// Gaji Pokok
-			const totalGaji = emp.gajiPokok + 500000;
-			const isPaid =
-				m.startsWith("2025-07") ||
-				m.startsWith("2025-08") ||
-				m.startsWith("2025-09") ||
-				m.startsWith("2025-10");
+	for (const emp of employees) {
+		const academicYearId = activeAcademicYear.id;
 
-			payrollData.push({
-				employeeId: emp.id,
-				periode: m,
-				jenisPembayaran: "Gaji",
-				jumlah: totalGaji,
-				status: isPaid ? "Lunas" : "Belum Bayar",
-				tanggalBayar: isPaid ? new Date(`${m}-25`) : undefined,
-				keterangan: "Gaji pokok + tunjangan transport",
-			});
+		// Gaji (annual)
+		const gajiPaid = Math.random() < 0.6;
+		employeeBillingData.push({
+			employeeId: emp.id,
+			academicYearId,
+			jenisBiaya: "Gaji",
+			jumlah: (emp.gajiPokok + 500000) * 12,
+			statusBayar: gajiPaid ? "Lunas" : "Belum Lunas",
+			tanggalBayar: gajiPaid
+				? new Date("2025-07-25")
+				: undefined,
+			tipe: "tagihan",
+		});
 
-			// Bonus THR for June
-			if (m === "2025-06" || m === "2026-06") {
-				payrollData.push({
-					employeeId: emp.id,
-					periode: m,
-					jenisPembayaran: "Bonus",
-					jumlah: emp.gajiPokok,
-					status: "Lunas",
-					tanggalBayar: new Date(`${m}-20`),
-					keterangan: "THR",
-				});
-			}
-		}
+		// Tunjangan (annual)
+		const tunjanganPaid = Math.random() < 0.5;
+		employeeBillingData.push({
+			employeeId: emp.id,
+			academicYearId,
+			jenisBiaya: "Tunjangan",
+			jumlah: 500000 * 12,
+			statusBayar: tunjanganPaid ? "Lunas" : "Belum Lunas",
+			tanggalBayar: tunjanganPaid
+				? new Date("2025-07-20")
+				: undefined,
+			tipe: "tagihan",
+		});
+
+		// Bonus THR (one-time, lunas)
+		employeeBillingData.push({
+			employeeId: emp.id,
+			academicYearId,
+			jenisBiaya: "Bonus",
+			jumlah: emp.gajiPokok,
+			statusBayar: "Lunas",
+			tanggalBayar: new Date("2025-06-20"),
+			tipe: "tagihan",
+		});
 	}
 
-	const payrollChunks = chunkArray(payrollData, BATCH_SIZE);
-	for (const chunk of payrollChunks) {
-		await prisma.payroll.createMany({ data: chunk });
+	const employeeBillingChunks = chunkArray(employeeBillingData, BATCH_SIZE);
+	for (const chunk of employeeBillingChunks) {
+		await prisma.employeeBilling.createMany({ data: chunk });
 	}
-	console.log(`   ✅ Created ${payrollData.length} payrolls\n`);
+	const employeeBillings = await prisma.employeeBilling.findMany({
+		orderBy: { id: "asc" },
+		select: {
+			id: true,
+			employeeId: true,
+			jenisBiaya: true,
+			jumlah: true,
+			statusBayar: true,
+		},
+	});
+	console.log(`   ✅ Created ${employeeBillingData.length} employee billings\n`);
 
 	// 12. PREPARE JOURNAL ENTRIES
 	console.log("12. Preparing journal entries...");
@@ -1531,8 +1570,88 @@ async function main() {
 		await prisma.journalEntry.createMany({ data: draftJournalEntries });
 		await prisma.journalEntryLine.createMany({ data: draftJournalLines });
 	}
+
+	// Add explicit non-draft/backdated journal workflow scenarios
+	const specialJournalEntries = [
+		{
+			id: createId(),
+			tanggal: new Date("2025-10-27"),
+			keterangan: "Jurnal Telah Disetujui - Menunggu Posting",
+			status: "approved",
+			reference: "APPROVED-2025-001",
+			version: 2,
+		},
+		{
+			id: createId(),
+			tanggal: new Date("2025-10-28"),
+			keterangan: "Jurnal Ditolak - Koreksi Diperlukan",
+			status: "rejected",
+			reference: "REJECTED-2025-001",
+			version: 2,
+		},
+		{
+			id: createId(),
+			tanggal: new Date("2024-11-15"),
+			keterangan: "Jurnal Koreksi Backdated Tahun Ajaran Ditutup",
+			status: "draft",
+			reference: "BACKDATED-2024-001",
+			version: 1,
+			isBackdated: true,
+			adjustmentType: "adjusting",
+			backdatedBy: "owner-1",
+			backdatedAt: new Date("2025-01-16"),
+			reason: "Koreksi jurnal tahun ajaran ditutup",
+		},
+	];
+	await prisma.journalEntry.createMany({ data: specialJournalEntries });
+
+	const specialJournalLines = [
+		{
+			id: createId(),
+			journalEntryId: specialJournalEntries[0].id,
+			kodeAkun: "502",
+			debit: 1750000,
+			kredit: 0,
+		},
+		{
+			id: createId(),
+			journalEntryId: specialJournalEntries[0].id,
+			kodeAkun: "101",
+			debit: 0,
+			kredit: 1750000,
+		},
+		{
+			id: createId(),
+			journalEntryId: specialJournalEntries[1].id,
+			kodeAkun: "504",
+			debit: 2100000,
+			kredit: 0,
+		},
+		{
+			id: createId(),
+			journalEntryId: specialJournalEntries[1].id,
+			kodeAkun: "102",
+			debit: 0,
+			kredit: 2100000,
+		},
+		{
+			id: createId(),
+			journalEntryId: specialJournalEntries[2].id,
+			kodeAkun: "103",
+			debit: 1200000,
+			kredit: 0,
+		},
+		{
+			id: createId(),
+			journalEntryId: specialJournalEntries[2].id,
+			kodeAkun: "405",
+			debit: 0,
+			kredit: 1200000,
+		},
+	];
+	await prisma.journalEntryLine.createMany({ data: specialJournalLines });
 	console.log(
-		`   ✅ Created ${draftJournalEntries.length} draft journal entries with ${draftJournalLines.length} lines\n`,
+		`   ✅ Created ${draftJournalEntries.length} draft journal entries with ${draftJournalLines.length} lines (+${specialJournalEntries.length} workflow journals)\n`,
 	);
 
 	// 12c. CREATE CASH WITHDRAWAL RECORDS
@@ -1551,7 +1670,6 @@ async function main() {
 			debit: 0,
 			kredit: amount,
 			status: "posted",
-			periode: m,
 			source: "bank",
 		});
 
@@ -1564,7 +1682,6 @@ async function main() {
 			debit: amount,
 			kredit: 0,
 			status: "posted",
-			periode: m,
 			source: "kas",
 		});
 	}
@@ -1575,32 +1692,54 @@ async function main() {
 			await prisma.cashflow.createMany({ data: chunk });
 		}
 	}
-	console.log(
-		`   ✅ Created ${withdrawalData.length} cash withdrawal records\n`,
-	);
 
-	// 12d. CLOSE SOME PERIODS (for period closing workflow testing)
-	console.log("12d. Closing periods for 2024...");
-	const closedPeriods = [
-		"2024-07",
-		"2024-08",
-		"2024-09",
-		"2024-10",
-		"2024-11",
-		"2024-12",
+	// Add explicit approval-workflow cashflow states for /admin/approve and status APIs
+	const approvalScenarioCashflows = [
+		{
+			tanggal: new Date("2025-11-12"),
+			keterangan: "Draft Pengeluaran ATK - Menunggu Persetujuan",
+			kodeAkun: "502",
+			kategori: "pengeluaran",
+			debit: 0,
+			kredit: 1250000,
+			status: "draft",
+			source: "kas",
+		},
+		{
+			tanggal: new Date("2025-11-13"),
+			keterangan: "Draft Pemasukan SPP - Menunggu Persetujuan",
+			kodeAkun: "405",
+			kategori: "pemasukan",
+			debit: 1800000,
+			kredit: 0,
+			status: "draft",
+			source: "bank",
+		},
+		{
+			tanggal: new Date("2025-10-20"),
+			keterangan: "Approved Transfer Operasional",
+			kodeAkun: "102",
+			kategori: "mutasi",
+			debit: 3000000,
+			kredit: 0,
+			status: "approved",
+			source: "bank",
+		},
+		{
+			tanggal: new Date("2025-10-22"),
+			keterangan: "Rejected Pengeluaran Tidak Valid",
+			kodeAkun: "510",
+			kategori: "pengeluaran",
+			debit: 0,
+			kredit: 950000,
+			status: "rejected",
+			source: "kas",
+		},
 	];
-
-	for (const periodCode of closedPeriods) {
-		await prisma.period.update({
-			where: { kode: periodCode },
-			data: {
-				status: "closed",
-				closedAt: new Date("2025-01-15"),
-				closedBy: "admin-1",
-			},
-		});
-	}
-	console.log(`   ✅ Closed ${closedPeriods.length} periods for 2024\n`);
+	await prisma.cashflow.createMany({ data: approvalScenarioCashflows });
+	console.log(
+		`   ✅ Created ${withdrawalData.length} cash withdrawal records (+${approvalScenarioCashflows.length} workflow cashflows)\n`,
+	);
 
 	// 13. CREATE ASSETS
 	console.log("13. Creating assets...");
@@ -2030,7 +2169,6 @@ async function main() {
 	// 15. CREATE DEBTS
 	console.log("14. Creating debts...");
 	const today = new Date();
-	const in30Days = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 	const in10Days = new Date(today.getTime() + 10 * 24 * 60 * 60 * 1000);
 
 	const debtData = [
@@ -2082,6 +2220,32 @@ async function main() {
 			tanggalJatuhTempo: new Date(today.getTime() + 25 * 24 * 60 * 60 * 1000),
 			cicilanPerBulan: 8000000,
 			status: "Aktif",
+		},
+		// Overdue debt for debt table and edge-case views
+		{
+			kodeAkun: "200",
+			nama: "Hutang Overdue Supplier Lama",
+			kreditur: "PT Supplier Overdue",
+			jumlahAwal: 6000000,
+			jumlahSisa: 2750000,
+			tenor: 3,
+			tanggalMulai: new Date(today.getTime() - 120 * 24 * 60 * 60 * 1000),
+			tanggalJatuhTempo: new Date(today.getTime() - 15 * 24 * 60 * 60 * 1000),
+			cicilanPerBulan: 2000000,
+			status: "Aktif",
+		},
+		// Settled debt for status filter coverage
+		{
+			kodeAkun: "201",
+			nama: "Hutang Lunas Renovasi Ringan",
+			kreditur: "CV Renovasi Cepat",
+			jumlahAwal: 12000000,
+			jumlahSisa: 0,
+			tenor: 6,
+			tanggalMulai: new Date("2024-01-01"),
+			tanggalJatuhTempo: new Date("2024-07-01"),
+			cicilanPerBulan: 2000000,
+			status: "Lunas",
 		},
 	];
 	await prisma.debt.createMany({ data: debtData });
@@ -2251,7 +2415,7 @@ async function main() {
 	console.log("17. Creating snapshots...");
 	const snapshotData = [
 		{
-			periode: "2025-07",
+			academicYearId: activeAcademicYear.id,
 			tipe: "neraca",
 			data: { aset: 2500000000, kewajiban: 205000000, ekuitas: 2295000000 },
 			totalDebit: 2500000000,
@@ -2259,7 +2423,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-07",
+			academicYearId: activeAcademicYear.id,
 			tipe: "labarugi",
 			data: { pendapatan: 45000000, beban: 32000000, laba: 13000000 },
 			totalDebit: 45000000,
@@ -2267,7 +2431,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-08",
+			academicYearId: activeAcademicYear.id,
 			tipe: "neraca",
 			data: { aset: 2520000000, kewajiban: 200000000, ekuitas: 2320000000 },
 			totalDebit: 2520000000,
@@ -2275,7 +2439,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-08",
+			academicYearId: activeAcademicYear.id,
 			tipe: "labarugi",
 			data: { pendapatan: 48000000, beban: 35000000, laba: 13000000 },
 			totalDebit: 48000000,
@@ -2283,7 +2447,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-09",
+			academicYearId: activeAcademicYear.id,
 			tipe: "neraca",
 			data: { aset: 2540000000, kewajiban: 195000000, ekuitas: 2345000000 },
 			totalDebit: 2540000000,
@@ -2291,7 +2455,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-09",
+			academicYearId: activeAcademicYear.id,
 			tipe: "labarugi",
 			data: { pendapatan: 52000000, beban: 38000000, laba: 14000000 },
 			totalDebit: 52000000,
@@ -2299,7 +2463,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-10",
+			academicYearId: activeAcademicYear.id,
 			tipe: "neraca",
 			data: { aset: 2560000000, kewajiban: 190000000, ekuitas: 2370000000 },
 			totalDebit: 2560000000,
@@ -2307,7 +2471,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 		{
-			periode: "2025-10",
+			academicYearId: activeAcademicYear.id,
 			tipe: "labarugi",
 			data: { pendapatan: 55000000, beban: 40000000, laba: 15000000 },
 			totalDebit: 55000000,
@@ -2315,7 +2479,7 @@ async function main() {
 			createdBy: "admin-1",
 		},
 	];
-	await prisma.snapshot.createMany({ data: snapshotData });
+	await prisma.snapshot.createMany({ data: snapshotData, skipDuplicates: true });
 	console.log(`   ✅ Created ${snapshotData.length} snapshots\n`);
 
 	// 18. UPDATE STUDENT TOTALS
@@ -2326,13 +2490,118 @@ async function main() {
 		const totalBayar = studentBillings
 			.filter((b) => b.statusBayar === "Lunas")
 			.reduce((sum, b) => sum + b.jumlah, 0);
+		const unpaidInstallments = await prisma.installment.count({
+			where: {
+				studentId: student.id,
+				status: { not: "Bayar" },
+			},
+		});
+		const statusBayar =
+			totalTagihan > 0 && totalBayar >= totalTagihan && unpaidInstallments === 0
+				? "Lunas"
+				: "Belum Lunas";
 
 		await prisma.student.update({
 			where: { id: student.id },
-			data: { totalTagihan, totalBayar },
+			data: { totalTagihan, totalBayar, statusBayar },
 		});
 	}
 	console.log("   ✅ Updated student totals\n");
+
+	// 19. ALIGN BILLING INSTALLMENT STATUS FOR PIUTANG/PAYMENT USE CASES
+	console.log("19. Aligning billing installment statuses...");
+	const billingIdsWithInstallments = await prisma.installment.findMany({
+		where: { billingId: { not: null } },
+		select: { billingId: true },
+		distinct: ["billingId"],
+	});
+
+	for (const item of billingIdsWithInstallments) {
+		if (!item.billingId) continue;
+		const remaining = await prisma.installment.count({
+			where: {
+				billingId: item.billingId,
+				status: { not: "Bayar" },
+			},
+		});
+		if (remaining === 0) {
+			await prisma.billing.update({
+				where: { id: item.billingId },
+				data: { statusBayar: "Lunas", tanggalBayar: new Date() },
+			});
+		} else {
+			await prisma.billing.update({
+				where: { id: item.billingId },
+				data: { statusBayar: "Belum Lunas", tanggalBayar: null },
+			});
+		}
+	}
+	console.log("   ✅ Billing/installment statuses aligned\n");
+
+	// 20. CREATE OPENING BALANCE SCENARIO (uses account 3201)
+	console.log("20. Creating opening balance scenario...");
+	const openingJournalId = createId();
+	await prisma.journalEntry.create({
+		data: {
+			id: openingJournalId,
+			tanggal: new Date("2025-07-01"),
+			keterangan: "Saldo Awal Periode 2025-07",
+			reference: "OB-2025-0001",
+			status: "approved",
+			version: 1,
+		},
+	});
+
+	await prisma.journalEntryLine.createMany({
+		data: [
+			{
+				id: createId(),
+				journalEntryId: openingJournalId,
+				kodeAkun: "101",
+				debit: 15000000,
+				kredit: 0,
+			},
+			{
+				id: createId(),
+				journalEntryId: openingJournalId,
+				kodeAkun: "102",
+				debit: 10000000,
+				kredit: 0,
+			},
+			{
+				id: createId(),
+				journalEntryId: openingJournalId,
+				kodeAkun: "3201",
+				debit: 0,
+				kredit: 25000000,
+			},
+		],
+	});
+	console.log("   ✅ Opening balance scenario created\n");
+
+	// 21. FIX CASHFLOW REFERENCE LINKS FOR JOURNAL WORKFLOWS
+	console.log("21. Linking journal cashflow references...");
+	const draftJournals = await prisma.journalEntry.findMany({
+		where: { status: "draft", reference: { startsWith: "DRAFT-" } },
+		select: { id: true, reference: true },
+		take: 5,
+	});
+	for (const journal of draftJournals) {
+		await prisma.cashflow.create({
+			data: {
+				tanggal: new Date("2025-11-14"),
+				keterangan: `Cashflow draft untuk ${journal.reference}`,
+				kodeAkun: "101",
+				kategori: "journal",
+				debit: 250000,
+				kredit: 0,
+				status: "draft",
+				referenceId: journal.reference,
+				source: "kas",
+			},
+		});
+	}
+	console.log("   ✅ Journal cashflow references linked\n");
 
 	const endTime = Date.now();
 	const duration = ((endTime - startTime) / 1000).toFixed(2);
@@ -2342,7 +2611,6 @@ async function main() {
 	console.log("\n📊 Summary:");
 	console.log(`   - Accounts: ${ACCOUNTS.length}`);
 	console.log(`   - Academic Years: ${academicYears.length}`);
-	console.log(`   - Periods: ${periodData.length}`);
 	console.log(`   - Students: ${students.length}`);
 	console.log(`   - Employees: ${employees.length}`);
 	console.log(`   - Billings: ${billings.length}`);
@@ -2351,7 +2619,7 @@ async function main() {
 	console.log(`   - Transfers: ${transferData.length}`);
 	console.log(`   - Journal Entries: ${journalEntries.length}`);
 	console.log(`   - Journal Entry Lines: ${journalLines.length}`);
-	console.log(`   - Payrolls: ${payrollData.length}`);
+	console.log(`   - Employee Billings: ${employeeBillingData.length}`);
 	console.log(`   - Assets: ${assetData.length}`);
 	console.log(`   - Debts: ${debtData.length}`);
 	console.log(`   - Notifications: ${notificationData.length}`);

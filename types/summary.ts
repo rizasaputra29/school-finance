@@ -9,6 +9,7 @@ export interface BillingSummary {
 	totalLunas: number;
 	countBelumLunas: number;
 	countLunas: number;
+	countOverdue: number;
 }
 
 export interface PaymentSummary {
