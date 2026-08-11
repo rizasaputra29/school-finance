@@ -27,7 +27,9 @@ export default function AdminPage() {
   const [result, setResult] = useState<{
     success: boolean;
     message: string;
-    details?: Record<string, { inserted: number; errors: number }>;
+    details?: Record<string, { inserted: number; updated?: number; errors: number; skipped?: number }>;
+    validationErrors?: Array<{ row: number; field: string; message: string }>;
+    warnings?: string[];
   } | null>(null);
   const [selectedSheets, setSelectedSheets] = useState<string[]>([
     'Cashflow',
@@ -104,10 +106,16 @@ export default function AdminPage() {
         if (result.success) {
           setResult({
             success: true,
-            message: 'Import berhasil!',
+            message: result.data?.warnings ? 'Import selesai dengan peringatan' : 'Import berhasil!',
             details: result.data?.results,
+            validationErrors: result.data?.errors,
+            warnings: result.data?.warnings,
           });
-          toast.success('Import data berhasil');
+          if (result.data?.warnings) {
+            toast.warning('Import selesai dengan peringatan');
+          } else {
+            toast.success('Import data berhasil');
+          }
         } else {
           setResult({
             success: false,
@@ -356,6 +364,7 @@ export default function AdminPage() {
                 </p>
               </div>
 
+              {/* Per-sheet summary */}
               {result.details && (
                 <div className="mt-4 space-y-2">
                   {Object.entries(result.details).map(([key, value]) => (
@@ -367,9 +376,21 @@ export default function AdminPage() {
                         {key}
                       </span>
                       <div className="flex gap-4 text-sm">
-                        <span className="text-emerald-600">
-                          ✓ {value.inserted} berhasil
-                        </span>
+                        {value.inserted > 0 && (
+                          <span className="text-emerald-600">
+                            ✓ {value.inserted} baru
+                          </span>
+                        )}
+                        {value.updated && value.updated > 0 && (
+                          <span className="text-blue-600">
+                            ↻ {value.updated} diperbarui
+                          </span>
+                        )}
+                        {value.skipped && value.skipped > 0 && (
+                          <span className="text-yellow-600">
+                            ○ {value.skipped} dilewati
+                          </span>
+                        )}
                         {value.errors > 0 && (
                           <span className="text-red-600">
                             ✗ {value.errors} gagal
@@ -378,6 +399,40 @@ export default function AdminPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Warnings */}
+              {result.warnings && result.warnings.length > 0 && (
+                <div className="mt-3 rounded-lg bg-yellow-50 border border-yellow-200 p-3">
+                  <p className="text-sm font-medium text-yellow-800 mb-1">Peringatan:</p>
+                  <ul className="text-sm text-yellow-700 list-disc list-inside space-y-1">
+                    {result.warnings.map((warning, i) => (
+                      <li key={i}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Row-level Validation Errors */}
+              {result.validationErrors && result.validationErrors.length > 0 && (
+                <div className="mt-3 rounded-lg bg-red-100 border border-red-200 p-3 max-h-60 overflow-y-auto">
+                  <p className="text-sm font-medium text-red-800 mb-2">
+                    Detail Error ({result.validationErrors.length} baris):
+                  </p>
+                  <div className="space-y-1">
+                    {result.validationErrors.slice(0, 50).map((err, i) => (
+                      <div key={i} className="text-xs text-red-700 flex gap-2">
+                        <span className="font-mono font-semibold whitespace-nowrap">Baris {err.row}:</span>
+                        <span>{err.field} - {err.message}</span>
+                      </div>
+                    ))}
+                    {result.validationErrors.length > 50 && (
+                      <p className="text-xs text-red-600 italic mt-1">
+                        ...dan {result.validationErrors.length - 50} error lainnya
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

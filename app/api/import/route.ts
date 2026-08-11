@@ -478,7 +478,7 @@ export async function POST(request: NextRequest) {
 									where: { nis },
 								});
 
-								if (!student) {
+							if (!student) {
 									results.billings.errors++;
 									results.billings.details.push({
 										row: validatedRow.row,
@@ -487,12 +487,41 @@ export async function POST(request: NextRequest) {
 									continue;
 								}
 
+								// Resolve academicYearId from tahunAjaran string or fallback to active year
+								let academicYearId = "";
+								const tahunAjaranInput = String(validatedRow.data.academicYearId || "");
+								if (tahunAjaranInput) {
+									const academicYear = await prisma.academicYear.findFirst({
+										where: { tahunAjaran: tahunAjaranInput },
+									});
+									if (academicYear) {
+										academicYearId = academicYear.id;
+									}
+								}
+								if (!academicYearId) {
+									const activeYear = await prisma.academicYear.findFirst({
+										where: { isActive: true, isArchived: false },
+									});
+									if (activeYear) {
+										academicYearId = activeYear.id;
+									}
+								}
+
+								if (!academicYearId) {
+									results.billings.errors++;
+									results.billings.details.push({
+										row: validatedRow.row,
+										error: `Tahun ajaran tidak ditemukan`,
+									});
+									continue;
+								}
+
 								await prisma.billing.create({
 									data: {
 										studentId: student.id,
+										academicYearId,
 										jenisBiaya: String(validatedRow.data.jenisBiaya || ""),
 										jumlah: Number(validatedRow.data.jumlah) || 0,
-										periodeBulan: String(validatedRow.data.periodeBulan || ""),
 										statusBayar: String(
 											validatedRow.data.statusBayar || "Belum Lunas",
 										),

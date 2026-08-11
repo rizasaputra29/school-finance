@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,51 +30,46 @@ import type { AccountMinimal as Account } from "@/types/account";
 
 export default function ApprovePage() {
 	const { isAdmin } = useAuth();
-	const [cashflows, setCashflows] = useState<Cashflow[]>([]);
-	const [accounts, setAccounts] = useState<Record<string, string>>({});
-	const [isLoading, setIsLoading] = useState(true);
 	const [selectedCashflow, setSelectedCashflow] = useState<Cashflow | null>(
 		null,
 	);
 	const [isViewOpen, setIsViewOpen] = useState(false);
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const queryClient = useQueryClient();
 
-	useEffect(() => {
-		fetchData();
-	}, []);
+	const { data: cashflowData, isLoading: cashflowLoading } = useQuery({
+		queryKey: ["draft-cashflows"],
+		queryFn: async () => {
+			const res = await fetch("/api/cashflow?status=draft");
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat data transaksi");
+			return result.data as Cashflow[];
+		},
+	});
 
-	const fetchData = async () => {
-		try {
-			const [cfRes, accRes] = await Promise.all([
-				fetch("/api/cashflow?status=draft"),
-				fetch("/api/accounts"),
-			]);
+	const { data: accountsData, isLoading: accountsLoading } = useQuery({
+		queryKey: ["accounts"],
+		queryFn: async () => {
+			const res = await fetch("/api/accounts");
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat data akun");
+			return result.data as Account[];
+		},
+	});
 
-			const cfResult = await cfRes.json();
-			if (!cfResult.success) {
-				toast.error(cfResult.error?.message || "Gagal memuat data transaksi");
-			} else {
-				if (Array.isArray(cfResult.data)) {
-					setCashflows(cfResult.data);
-				}
-			}
-
-			const accResult = await accRes.json();
-			if (!accResult.success) {
-				toast.error(accResult.error?.message || "Gagal memuat data akun");
-			} else {
-				const accMap: Record<string, string> = {};
-				accResult.data.forEach((acc: Account) => {
-					accMap[acc.kodeAkun] = acc.namaAkun;
-				});
-				setAccounts(accMap);
-			}
-		} catch (error) {
-			console.error("Failed to fetch data:", error);
-			toast.error("Terjadi kesalahan saat memuat data");
-		} finally {
-			setIsLoading(false);
+	const cashflows = cashflowData ?? [];
+	const isLoading = cashflowLoading || accountsLoading;
+	const accounts = useMemo(() => {
+		const accMap: Record<string, string> = {};
+		if (accountsData) {
+			accountsData.forEach((acc) => {
+				accMap[acc.kodeAkun] = acc.namaAkun;
+			});
 		}
-	};
+		return accMap;
+	}, [accountsData]);
 
 	const handleApprove = async (id: string) => {
 		try {
@@ -90,7 +86,7 @@ export default function ApprovePage() {
 			}
 
 			toast.success("Transaksi berhasil disetujui!");
-			fetchData();
+			queryClient.invalidateQueries({ queryKey: ["draft-cashflows"] });
 		} catch (error) {
 			console.error("Failed to approve:", error);
 			toast.error("Terjadi kesalahan");
@@ -114,7 +110,7 @@ export default function ApprovePage() {
 			}
 
 			toast.success("Transaksi berhasil ditolak!");
-			fetchData();
+			queryClient.invalidateQueries({ queryKey: ["draft-cashflows"] });
 		} catch (error) {
 			console.error("Failed to reject:", error);
 			toast.error("Terjadi kesalahan");
@@ -124,6 +120,78 @@ export default function ApprovePage() {
 	const viewDetails = (cf: Cashflow) => {
 		setSelectedCashflow(cf);
 		setIsViewOpen(true);
+	};
+
+	const toggleSelect = (id: string) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
+	const toggleSelectAll = () => {
+		if (selectedIds.size === cashflows.length) {
+			setSelectedIds(new Set());
+		} else {
+			setSelectedIds(new Set(cashflows.map((cf) => cf.id)));
+		}
+	};
+
+	const handleBatchApprove = async () => {
+		if (selectedIds.size === 0) return;
+		const ids = Array.from(selectedIds);
+		try {
+			const results = await Promise.allSettled(
+				ids.map((id) =>
+					fetch(`/api/cashflow/${id}`, {
+						method: "PATCH",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ status: "posted" }),
+					}).then((res) => res.json()),
+				),
+			);
+			const succeeded = results.filter(
+				(r) => r.status === "fulfilled" && r.value.success,
+			).length;
+			const failed = ids.length - succeeded;
+			if (succeeded > 0)
+				toast.success(`${succeeded} transaksi berhasil disetujui`);
+			if (failed > 0) toast.error(`${failed} transaksi gagal disetujui`);
+			setSelectedIds(new Set());
+			queryClient.invalidateQueries({ queryKey: ["draft-cashflows"] });
+		} catch {
+			toast.error("Terjadi kesalahan");
+		}
+	};
+
+	const handleBatchReject = async () => {
+		if (selectedIds.size === 0) return;
+		if (!confirm(`Tolak ${selectedIds.size} transaksi yang dipilih?`)) return;
+		const ids = Array.from(selectedIds);
+		try {
+			const results = await Promise.allSettled(
+				ids.map((id) =>
+					fetch(`/api/cashflow/${id}`, {
+						method: "PATCH",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ status: "rejected" }),
+					}).then((res) => res.json()),
+				),
+			);
+			const succeeded = results.filter(
+				(r) => r.status === "fulfilled" && r.value.success,
+			).length;
+			const failed = ids.length - succeeded;
+			if (succeeded > 0)
+				toast.success(`${succeeded} transaksi berhasil ditolak`);
+			if (failed > 0) toast.error(`${failed} transaksi gagal ditolak`);
+			setSelectedIds(new Set());
+			queryClient.invalidateQueries({ queryKey: ["draft-cashflows"] });
+		} catch {
+			toast.error("Terjadi kesalahan");
+		}
 	};
 
 	// Compute derived values before conditional returns
@@ -230,10 +298,51 @@ export default function ApprovePage() {
 							<p>Tidak ada transaksi yang menunggu persetujuan</p>
 						</div>
 					) : (
-						<Table>
-							<TableHeader>
-								<TableRow className="bg-gray-50/50">
-									<TableHead className="font-semibold">Tanggal</TableHead>
+						<>
+							{/* Batch Actions Bar */}
+							{selectedIds.size > 0 && (
+								<div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-b">
+									<span className="text-sm text-blue-700 font-medium">
+										{selectedIds.size} dipilih
+									</span>
+									<Button
+										size="sm"
+										onClick={handleBatchApprove}
+										className="bg-green-600 hover:bg-green-700 text-white"
+									>
+										<CheckCircle className="h-4 w-4 mr-1" />
+										Setujui Semua
+									</Button>
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={handleBatchReject}
+										className="text-red-600 border-red-300 hover:bg-red-50"
+									>
+										<XCircle className="h-4 w-4 mr-1" />
+										Tolak Semua
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										onClick={() => setSelectedIds(new Set())}
+									>
+										Batal
+									</Button>
+								</div>
+							)}
+							<Table>
+								<TableHeader>
+									<TableRow className="bg-gray-50/50">
+										<TableHead className="w-10">
+											<input
+												type="checkbox"
+												checked={selectedIds.size === cashflows.length}
+												onChange={toggleSelectAll}
+												className="h-4 w-4 rounded border-gray-300"
+											/>
+										</TableHead>
+										<TableHead className="font-semibold">Tanggal</TableHead>
 									<TableHead className="font-semibold">Keterangan</TableHead>
 									<TableHead className="font-semibold">Akun</TableHead>
 									<TableHead className="font-semibold text-right">
@@ -250,6 +359,14 @@ export default function ApprovePage() {
 							<TableBody>
 								{cashflows.map((cf) => (
 									<TableRow key={cf.id} className="hover:bg-slate-50/50">
+										<TableCell>
+											<input
+												type="checkbox"
+												checked={selectedIds.has(cf.id)}
+												onChange={() => toggleSelect(cf.id)}
+												className="h-4 w-4 rounded border-gray-300"
+											/>
+										</TableCell>
 										<TableCell className="text-gray-600">
 											{formatShortDate(cf.tanggal)}
 										</TableCell>
@@ -302,6 +419,7 @@ export default function ApprovePage() {
 								))}
 							</TableBody>
 						</Table>
+						</>
 					)}
 				</CardContent>
 			</Card>

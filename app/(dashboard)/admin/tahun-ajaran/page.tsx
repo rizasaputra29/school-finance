@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
-import { Plus, Pencil, Check, Archive } from 'lucide-react';
+import { Plus, Pencil, Check, Archive, Undo2 } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { formatDateCompact } from '@/lib/utils/utils-date';
 import type { AcademicYear } from '@/types/academic-year';
@@ -21,139 +22,144 @@ const INITIAL_FORM = {
 
 export default function AcademicYearPage() {
   const { isAdmin } = useAuth();
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState<AcademicYear | null>(null);
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
+  const { data: academicYears = [], isLoading } = useQuery<AcademicYear[]>({
+    queryKey: ['academic-years'],
+    queryFn: async () => {
       const res = await fetch('/api/academic-year?includeArchived=true');
       const result = await res.json();
-      if (!result.success) {
-        toast.error(result.error?.message || 'Gagal memuat data tahun ajaran');
-        return;
-      }
-      setAcademicYears(result.data || []);
-    } catch (error) {
-      console.error('Failed to fetch academic years:', error);
-      toast.error('Terjadi kesalahan saat memuat data tahun ajaran');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      if (!result.success) throw new Error(result.error?.message || 'Gagal memuat data tahun ajaran');
+      return result.data || [];
+    },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    const promise = fetch('/api/academic-year', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData),
-    }).then(async (res) => {
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const res = await fetch('/api/academic-year', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
       const result = await res.json();
       if (!result.success) throw new Error(result.error?.message || 'Gagal membuat tahun ajaran');
       return result;
-    });
+    },
+    onSuccess: (result) => {
+      setIsCreateOpen(false);
+      setFormData(INITIAL_FORM);
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      toast.success(`Tahun ajaran ${result.data.tahunAjaran} berhasil dibuat`);
+    },
+    onError: (err: Error) => {
+      setError(err.message);
+      toast.error(err.message);
+    },
+  });
 
-    toast.promise(promise, {
-      loading: 'Membuat tahun ajaran...',
-      success: (result) => {
-        setIsCreateOpen(false);
-        setFormData(INITIAL_FORM);
-        fetchData();
-        return `Tahun ajaran ${result.data.tahunAjaran} berhasil dibuat`;
-      },
-      error: (err) => {
-        setError(err.message);
-        return err.message;
-      },
-    });
-  };
-
-  const handleEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedYear) return;
-    setError('');
-
-    const promise = fetch(`/api/academic-year?id=${selectedYear.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData),
-    }).then(async (res) => {
+  const editMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const res = await fetch(`/api/academic-year?id=${selectedYear!.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
       const result = await res.json();
       if (!result.success) throw new Error(result.error?.message || 'Gagal mengupdate tahun ajaran');
       return result;
-    });
+    },
+    onSuccess: (result) => {
+      setIsEditOpen(false);
+      setSelectedYear(null);
+      setFormData(INITIAL_FORM);
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      toast.success(`Tahun ajaran ${result.data.tahunAjaran} berhasil diupdate`);
+    },
+    onError: (err: Error) => {
+      setError(err.message);
+      toast.error(err.message);
+    },
+  });
 
-    toast.promise(promise, {
-      loading: 'Mengupdate tahun ajaran...',
-      success: (result) => {
-        setIsEditOpen(false);
-        setSelectedYear(null);
-        setFormData(INITIAL_FORM);
-        fetchData();
-        return `Tahun ajaran ${result.data.tahunAjaran} berhasil diupdate`;
-      },
-      error: (err) => {
-        setError(err.message);
-        return err.message;
-      },
-    });
-  };
-
-  const handleSetActive = async (id: string) => {
-    const promise = fetch(`/api/academic-year?id=${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: true }),
-    }).then(async (res) => {
+  const setActiveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/academic-year?id=${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: true }),
+      });
       const result = await res.json();
       if (!result.success) throw new Error(result.error?.message || 'Gagal mengaktifkan tahun ajaran');
       return result;
-    });
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      toast.success(`Tahun ajaran ${result.data.tahunAjaran} berhasil diaktifkan`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
-    toast.promise(promise, {
-      loading: 'Mengaktifkan tahun ajaran...',
-      success: (result) => {
-        fetchData();
-        return `Tahun ajaran ${result.data.tahunAjaran} berhasil diaktifkan`;
-      },
-      error: (err) => err.message,
-    });
-  };
-
-  const handleArchive = async (id: string, tahunAjaran: string) => {
-    if (!confirm('Apakah Anda yakin ingin mengarsipkan tahun ajaran ini?')) return;
-
-    const promise = fetch(`/api/academic-year?id=${id}`, {
-      method: 'DELETE',
-    }).then(async (res) => {
-      // Handle 204 No Content for DELETE
-      if (res.status === 204) {
-        return { success: true, data: { tahunAjaran } };
-      }
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id }: { id: string; tahunAjaran: string }) => {
+      const res = await fetch(`/api/academic-year?id=${id}`, { method: 'DELETE' });
+      if (res.status === 204) return { success: true, data: { tahunAjaran: '' } };
       const result = await res.json();
       if (!result.success) throw new Error(result.error?.message || 'Gagal mengarsipkan tahun ajaran');
       return result;
-    });
+    },
+    onSuccess: (result, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      toast.success(`Tahun ajaran ${result.data?.tahunAjaran || vars.tahunAjaran} berhasil diarsipkan`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
-    toast.promise(promise, {
-      loading: 'Mengarsipkan tahun ajaran...',
-      success: (result) => {
-        fetchData();
-        return `Tahun ajaran ${result.data?.tahunAjaran || tahunAjaran} berhasil diarsipkan`;
-      },
-      error: (err) => err.message,
-    });
+  const unarchiveMutation = useMutation({
+    mutationFn: async ({ id }: { id: string; tahunAjaran: string }) => {
+      const res = await fetch(`/api/academic-year?id=${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isArchived: false }),
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'Gagal membatalkan arsip');
+      return result;
+    },
+    onSuccess: (result, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      toast.success(`Tahun ajaran ${result.data.tahunAjaran || vars.tahunAjaran} berhasil dibatalkan arsipnya`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    createMutation.mutate(formData);
+  };
+
+  const handleEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedYear) return;
+    setError('');
+    editMutation.mutate(formData);
+  };
+
+  const handleSetActive = (id: string) => setActiveMutation.mutate(id);
+
+  const handleArchive = (id: string, tahunAjaran: string) => {
+    if (!confirm('Apakah Anda yakin ingin mengarsipkan tahun ajaran ini?')) return;
+    archiveMutation.mutate({ id, tahunAjaran });
+  };
+
+  const handleUnarchive = (id: string, tahunAjaran: string) => {
+    if (!confirm('Apakah Anda yakin ingin membatalkan arsip tahun ajaran ini?')) return;
+    unarchiveMutation.mutate({ id, tahunAjaran });
   };
 
   const openEditDialog = (year: AcademicYear) => {
@@ -180,7 +186,7 @@ export default function AcademicYearPage() {
   const activeYears = academicYears.filter(y => !y.isArchived);
   const archivedYears = academicYears.filter(y => y.isArchived);
 
-  const renderForm = (onSubmit: (e: React.FormEvent) => Promise<void>, submitLabel: string, isEdit = false) => (
+  const renderForm = (onSubmit: (e: React.FormEvent) => void, submitLabel: string, isEdit = false) => (
     <form onSubmit={onSubmit} className="mt-6 space-y-4">
       {error && (
         <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
@@ -352,6 +358,7 @@ export default function AcademicYearPage() {
                     <th className="text-left px-4 py-3 font-semibold text-sm">Tahun Ajaran</th>
                     <th className="text-left px-4 py-3 font-semibold text-sm">Periode</th>
                     <th className="text-left px-4 py-3 font-semibold text-sm">Status</th>
+                    <th className="text-right px-4 py-3 font-semibold text-sm">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -363,6 +370,18 @@ export default function AcademicYearPage() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className="text-gray-500">Diarsipkan</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleUnarchive(year.id, year.tahunAjaran)}
+                            title="Batalkan Arsip"
+                          >
+                            <Undo2 className="h-4 w-4 text-blue-600" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
