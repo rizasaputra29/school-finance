@@ -1,177 +1,143 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import {
-	Search,
-	ChevronLeft,
-	ChevronRight,
-	Users,
-	Plus,
-	Pencil,
-	Trash2,
-} from "lucide-react";
+import { Search, Users, Plus, Pencil, Trash2 } from "lucide-react";
 import { formatRupiah } from "@/lib/utils/utils-currency";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
+import { FormDialog } from "@/components/reusable/FormDialog";
+import { Field, FieldLabel, FieldError } from "@/components/reusable/Field";
+import { DataTable } from "@/components/reusable/DataTable";
+import type { ColumnDef } from "@tanstack/react-table";
 import type { Student } from "@/types/student";
 import type { Pagination } from "@/types/pagination";
 
-// Class options matching Excel structure
 const KELAS_OPTIONS = ["PLAYGROUP", "KINDERGARTEN"];
 
-const INITIAL_FORM = {
-	nis: "",
-	nama: "",
-	jenisKelamin: "",
-	kelas: "",
-	tahunMasuk: new Date().getFullYear().toString(),
-	tahunAjaran: "",
-	namaOrtu: "",
-	noTelp: "",
-};
+const studentFormSchema = z.object({
+	nis: z.string().min(1, "NIS wajib diisi").max(20),
+	nama: z.string().min(1, "Nama wajib diisi").max(100),
+	jenisKelamin: z.string().optional(),
+	kelas: z.string().min(1, "Kelas wajib dipilih"),
+	tahunMasuk: z.string().min(1, "Tahun masuk wajib diisi"),
+	tahunAjaran: z.string().optional(),
+	namaOrtu: z.string().optional(),
+	noTelp: z.string().optional(),
+});
+
+type StudentFormValues = z.infer<typeof studentFormSchema>;
 
 export default function StudentsPage() {
 	const { isAdmin } = useAuth();
-	const [students, setStudents] = useState<Student[]>([]);
-	const [pagination, setPagination] = useState<Pagination>({
-		page: 1,
-		limit: 10,
-		total: 0,
-		totalPages: 0,
-	});
-	const [isLoading, setIsLoading] = useState(true);
+	const queryClient = useQueryClient();
 	const [searchTerm, setSearchTerm] = useState("");
 	const [statusFilter, setStatusFilter] = useState("");
 	const [showInactive, setShowInactive] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
 
-	// Debounce search term to avoid excessive API calls
 	const [debouncedSearchTerm] = useDebounce(searchTerm, 300);
 
-	// Dialog states
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
 	const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 	const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-	const [formData, setFormData] = useState(INITIAL_FORM);
-	const [error, setError] = useState("");
 
-	const fetchData = useCallback(
-		async (page = 1) => {
-			setIsLoading(true);
-			try {
-				let url = `/api/students?page=${page}&limit=10`;
-				if (statusFilter) url += `&statusBayar=${statusFilter}`;
-				if (showInactive) url += `&status=Inactive`;
-				if (debouncedSearchTerm)
-					url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
-
-				const res = await fetch(url);
-				const result = await res.json();
-				if (!result.success) {
-					toast.error(result.error?.message || "Gagal memuat data siswa");
-					setIsLoading(false);
-					return;
-				}
-				setStudents(result.data);
-				setPagination(result.meta.pagination);
-			} catch (error) {
-				console.error("Failed to fetch students:", error);
-				toast.error("Terjadi kesalahan saat memuat data siswa");
-			} finally {
-				setIsLoading(false);
-			}
+	const form = useForm<StudentFormValues>({
+		resolver: zodResolver(studentFormSchema),
+		mode: "onChange",
+		defaultValues: {
+			nis: "",
+			nama: "",
+			jenisKelamin: "",
+			kelas: "",
+			tahunMasuk: new Date().getFullYear().toString(),
+			tahunAjaran: "",
+			namaOrtu: "",
+			noTelp: "",
 		},
-		[statusFilter, showInactive, debouncedSearchTerm],
-	);
+	});
 
-	useEffect(() => {
-		fetchData();
-	}, [fetchData]);
+	const { data: studentsResult, isLoading } = useQuery({
+		queryKey: ["students", currentPage, statusFilter, showInactive, debouncedSearchTerm],
+		queryFn: async () => {
+			let url = `/api/students?page=${currentPage}&limit=10`;
+			if (statusFilter) url += `&statusBayar=${statusFilter}`;
+			if (showInactive) url += `&status=Inactive`;
+			if (debouncedSearchTerm)
+				url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
 
-	const handleCreate = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setError("");
+			const res = await fetch(url);
+			const result = await res.json();
+			if (!result.success)
+				throw new Error(result.error?.message || "Gagal memuat data siswa");
+			return result;
+		},
+	});
 
-		const promise = fetch("/api/students", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(formData),
-		}).then(async (res) => {
+	const students: Student[] = useMemo(() => studentsResult?.data ?? [], [studentsResult?.data]);
+	const pagination: Pagination = studentsResult?.meta?.pagination ?? {
+		page: 1,
+		limit: 10,
+		total: 0,
+		totalPages: 0,
+	};
+
+	const createMutation = useMutation({
+		mutationFn: async (submitData: StudentFormValues) => {
+			const res = await fetch("/api/students", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(submitData),
+			});
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal menambah siswa");
 			return result;
-		});
+		},
+		onSuccess: () => {
+			setIsCreateOpen(false);
+			form.reset();
+			queryClient.invalidateQueries({ queryKey: ["students"] });
+		},
+	});
 
-		toast.promise(promise, {
-			loading: "Menambahkan siswa...",
-			success: (result) => {
-				setIsCreateOpen(false);
-				setFormData(INITIAL_FORM);
-				fetchData(pagination.page);
-				return `Siswa ${result.data.nama} berhasil ditambahkan`;
-			},
-			error: (err) => {
-				setError(err.message);
-				return err.message;
-			},
-		});
-	};
-
-	const handleEdit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		if (!selectedStudent) return;
-		setError("");
-
-		const promise = fetch(`/api/students/${selectedStudent.id}`, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(formData),
-		}).then(async (res) => {
+	const editMutation = useMutation({
+		mutationFn: async (submitData: StudentFormValues) => {
+			if (!selectedStudent) throw new Error("No student selected");
+			const res = await fetch(`/api/students/${selectedStudent.id}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(submitData),
+			});
 			const result = await res.json();
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal mengupdate siswa");
 			return result;
-		});
+		},
+		onSuccess: () => {
+			setIsEditOpen(false);
+			setSelectedStudent(null);
+			form.reset();
+			queryClient.invalidateQueries({ queryKey: ["students"] });
+		},
+	});
 
-		toast.promise(promise, {
-			loading: "Mengupdate data siswa...",
-			success: (result) => {
-				setIsEditOpen(false);
-				setSelectedStudent(null);
-				setFormData(INITIAL_FORM);
-				fetchData(pagination.page);
-				return `Siswa ${result.data.nama} berhasil diupdate`;
-			},
-			error: (err) => {
-				setError(err.message);
-				return err.message;
-			},
-		});
-	};
-
-	const handleDelete = async () => {
-		if (!selectedStudent) return;
-
-		const promise = fetch(`/api/students/${selectedStudent.id}`, {
-			method: "DELETE",
-		}).then(async (res) => {
-			// Handle 204 No Content for DELETE
+	const deleteMutation = useMutation({
+		mutationFn: async () => {
+			if (!selectedStudent) throw new Error("No student selected");
+			const res = await fetch(`/api/students/${selectedStudent.id}`, {
+				method: "DELETE",
+			});
 			if (res.status === 204) {
 				return { success: true, data: selectedStudent };
 			}
@@ -179,23 +145,40 @@ export default function StudentsPage() {
 			if (!result.success)
 				throw new Error(result.error?.message || "Gagal menghapus siswa");
 			return result;
-		});
+		},
+		onSuccess: (result) => {
+			setIsDeleteOpen(false);
+			setSelectedStudent(null);
+			queryClient.invalidateQueries({ queryKey: ["students"] });
+			toast.success(`Siswa ${result.data?.nama || selectedStudent?.nama} berhasil dihapus`);
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
 
-		toast.promise(promise, {
-			loading: "Menghapus siswa...",
-			success: (result) => {
-				setIsDeleteOpen(false);
-				setSelectedStudent(null);
-				fetchData(pagination.page);
-				return `Siswa ${result.data?.nama || selectedStudent.nama} berhasil dihapus`;
-			},
-			error: (err) => err.message,
+	const onCreateSubmit = (data: StudentFormValues) => {
+		toast.promise(createMutation.mutateAsync(data), {
+			loading: "Menyimpan...",
+			success: "Siswa berhasil ditambahkan",
+			error: (err) => err.message || "Gagal menyimpan",
 		});
 	};
 
-	const openEditDialog = (student: Student) => {
+	const onEditSubmit = (data: StudentFormValues) => {
+		toast.promise(editMutation.mutateAsync(data), {
+			loading: "Menyimpan...",
+			success: "Siswa berhasil diupdate",
+			error: (err) => err.message || "Gagal menyimpan",
+		});
+	};
+
+	const handleDelete = () => {
+		if (!selectedStudent) return;
+		deleteMutation.mutate();
+	};
+
+	const openEditDialog = useCallback((student: Student) => {
 		setSelectedStudent(student);
-		setFormData({
+		form.reset({
 			nis: student.nis,
 			nama: student.nama,
 			jenisKelamin: student.jenisKelamin || "",
@@ -206,7 +189,7 @@ export default function StudentsPage() {
 			noTelp: student.noTelp || "",
 		});
 		setIsEditOpen(true);
-	};
+	}, [form]);
 
 	const filteredStudents = useMemo(
 		() =>
@@ -223,6 +206,104 @@ export default function StudentsPage() {
 		const lunas = students.filter((s) => s.statusBayar === "Lunas").length;
 		return { lunasCount: lunas, belumLunasCount: students.length - lunas };
 	}, [students]);
+
+	const columns = useMemo<ColumnDef<Student>[]>(
+		() => [
+			{
+				accessorKey: "nis",
+				header: "NIS",
+				cell: ({ row }) => (
+					<span className="font-mono font-medium">{row.original.nis}</span>
+				),
+			},
+			{
+				accessorKey: "nama",
+				header: "Nama",
+				cell: ({ row }) => (
+					<span className="font-medium">
+						{row.original.nama}
+						{row.original.status === "Inactive" && (
+							<Badge variant="secondary" className="ml-2 text-xs">
+								Tidak Aktif
+							</Badge>
+						)}
+					</span>
+				),
+			},
+			{
+				accessorKey: "kelas",
+				header: "Kelas",
+				cell: ({ row }) => (
+					<Badge variant="secondary">{row.original.kelas}</Badge>
+				),
+			},
+			{ accessorKey: "tahunMasuk", header: "Tahun Masuk" },
+			{
+				accessorKey: "totalTagihan",
+				header: "Tagihan",
+				cell: ({ row }) => (
+					<span className="text-right block">
+						{formatRupiah(row.original.totalTagihan)}
+					</span>
+				),
+			},
+			{
+				accessorKey: "totalBayar",
+				header: "Dibayar",
+				cell: ({ row }) => (
+					<span className="text-right font-semibold text-emerald-600">
+						{formatRupiah(row.original.totalBayar)}
+					</span>
+				),
+			},
+			{
+				accessorKey: "statusBayar",
+				header: "Status",
+				cell: ({ row }) => (
+					<Badge
+						variant={
+							row.original.statusBayar === "Lunas" ? "success" : "warning"
+						}
+					>
+						{row.original.statusBayar}
+					</Badge>
+				),
+			},
+			...(isAdmin
+				? [
+						{
+							id: "aksi",
+							header: "Aksi",
+							cell: ({ row }: { row: { original: Student } }) => (
+								<div className="flex gap-1">
+									<Button
+										size="sm"
+										variant="ghost"
+										onClick={() => openEditDialog(row.original)}
+									>
+										<Pencil className="h-4 w-4" />
+									</Button>
+									{row.original.status === "Active" && (
+										<Button
+											size="sm"
+											variant="ghost"
+											className="text-red-600 hover:text-red-700"
+											onClick={() => {
+												setSelectedStudent(row.original);
+												setIsDeleteOpen(true);
+											}}
+										>
+											<Trash2 className="h-4 w-4" />
+										</Button>
+									)}
+								</div>
+							),
+						},
+					]
+				: []),
+		],
+		[isAdmin, openEditDialog],
+	);
 
 	return (
 		<div className="space-y-6">
@@ -375,198 +456,104 @@ export default function StudentsPage() {
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
-					{isLoading ? (
-						<div className="flex h-48 items-center justify-center">
-							<div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-						</div>
-					) : filteredStudents.length > 0 ? (
-						<div className="overflow-x-auto -mx-4 px-4">
-							<Table className="min-w-225">
-								<TableHeader>
-									<TableRow>
-										<TableHead>NIS</TableHead>
-										<TableHead>Nama</TableHead>
-										<TableHead>Kelas</TableHead>
-										<TableHead>Tahun Masuk</TableHead>
-										<TableHead className="text-right">Tagihan</TableHead>
-										<TableHead className="text-right">Dibayar</TableHead>
-										<TableHead>Status</TableHead>
-										{isAdmin && <TableHead>Aksi</TableHead>}
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{filteredStudents.map((s) => (
-										<TableRow
-											key={s.id}
-											className={s.status === "Inactive" ? "opacity-50" : ""}
-										>
-											<TableCell className="font-mono font-medium">
-												{s.nis}
-											</TableCell>
-											<TableCell className="font-medium">
-												{s.nama}
-												{s.status === "Inactive" && (
-													<Badge variant="secondary" className="ml-2 text-xs">
-														Tidak Aktif
-													</Badge>
-												)}
-											</TableCell>
-											<TableCell>
-												<Badge variant="secondary">{s.kelas}</Badge>
-											</TableCell>
-											<TableCell>{s.tahunMasuk}</TableCell>
-											<TableCell className="text-right">
-												{formatRupiah(s.totalTagihan)}
-											</TableCell>
-											<TableCell className="text-right font-semibold text-emerald-600">
-												{formatRupiah(s.totalBayar)}
-											</TableCell>
-											<TableCell>
-												<Badge
-													variant={
-														s.statusBayar === "Lunas" ? "success" : "warning"
-													}
-												>
-													{s.statusBayar}
-												</Badge>
-											</TableCell>
-											{isAdmin && (
-												<TableCell>
-													<div className="flex gap-1">
-														<Button
-															size="sm"
-															variant="ghost"
-															onClick={() => openEditDialog(s)}
-														>
-															<Pencil className="h-4 w-4" />
-														</Button>
-														{s.status === "Active" && (
-															<Button
-																size="sm"
-																variant="ghost"
-																className="text-red-600 hover:text-red-700"
-																onClick={() => {
-																	setSelectedStudent(s);
-																	setIsDeleteOpen(true);
-																}}
-															>
-																<Trash2 className="h-4 w-4" />
-															</Button>
-														)}
-													</div>
-												</TableCell>
-											)}
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</div>
-					) : (
-						<div className="flex h-48 items-center justify-center text-slate-400">
-							Tidak ada data siswa
-						</div>
-					)}
-
-					{/* Pagination */}
-					{pagination.totalPages > 1 && (
-						<div className="mt-4 flex items-center justify-between">
-							<p className="text-sm text-slate-500">
-								Menampilkan {(pagination.page - 1) * pagination.limit + 1} -{" "}
-								{Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
-								dari {pagination.total} siswa
-							</p>
-							<div className="flex gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={pagination.page === 1}
-									onClick={() => fetchData(pagination.page - 1)}
-								>
-									<ChevronLeft className="h-4 w-4" />
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={pagination.page === pagination.totalPages}
-									onClick={() => fetchData(pagination.page + 1)}
-								>
-									<ChevronRight className="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					)}
+					<DataTable
+						columns={columns}
+						data={filteredStudents}
+						loading={isLoading}
+						emptyMessage="Tidak ada data siswa"
+						className="min-w-225"
+						serverPagination={{
+							pageIndex: pagination.page - 1,
+							pageSize: pagination.limit,
+							total: pagination.total,
+							onPaginationChange: (newPagination) => {
+								setCurrentPage(newPagination.pageIndex + 1);
+							},
+						}}
+					/>
 				</CardContent>
 			</Card>
 
 			{/* Create Dialog */}
-			<Dialog.Root open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-				<Dialog.Portal>
-					<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-					<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-						<Dialog.Title className="text-lg font-semibold text-slate-900">
-							Tambah Siswa Baru
-						</Dialog.Title>
-						<form onSubmit={handleCreate} className="mt-4 space-y-4">
-							{error && (
-								<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-									{error}
-								</div>
-							)}
-
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<Label htmlFor="nis">NIS *</Label>
-									<Input
-										id="nis"
-										value={formData.nis}
-										onChange={(e) =>
-											setFormData({ ...formData, nis: e.target.value })
+			<FormDialog
+				open={isCreateOpen}
+				onOpenChange={setIsCreateOpen}
+				title="Tambah Siswa Baru"
+				form={form}
+			>
+				<form onSubmit={form.handleSubmit(onCreateSubmit)} className="space-y-4">
+					<div className="grid grid-cols-2 gap-4">
+						<Controller
+							control={form.control}
+							name="nis"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="nis">NIS *</FieldLabel>
+									<Input id="nis" {...field} placeholder="12345" />
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
 										}
-										placeholder="12345"
-										required
 									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="jenisKelamin">Jenis Kelamin</Label>
+								</Field>
+							)}
+						/>
+						<Controller
+							control={form.control}
+							name="jenisKelamin"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="jenisKelamin">
+										Jenis Kelamin
+									</FieldLabel>
 									<select
 										id="jenisKelamin"
-										value={formData.jenisKelamin}
-										onChange={(e) =>
-											setFormData({ ...formData, jenisKelamin: e.target.value })
-										}
+										{...field}
 										className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
 									>
 										<option value="">Pilih</option>
 										<option value="L">Laki-laki</option>
 										<option value="P">Perempuan</option>
 									</select>
-								</div>
-							</div>
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
+										}
+									/>
+								</Field>
+							)}
+						/>
+					</div>
 
-							<div className="space-y-2">
-								<Label htmlFor="nama">Nama Lengkap *</Label>
+					<Controller
+						control={form.control}
+						name="nama"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="nama">Nama Lengkap *</FieldLabel>
 								<Input
 									id="nama"
-									value={formData.nama}
-									onChange={(e) =>
-										setFormData({ ...formData, nama: e.target.value })
-									}
+									{...field}
 									placeholder="Nama lengkap siswa"
-									required
 								/>
-							</div>
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
+								/>
+							</Field>
+						)}
+					/>
 
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<Label htmlFor="kelas">Kelas *</Label>
+					<div className="grid grid-cols-2 gap-4">
+						<Controller
+							control={form.control}
+							name="kelas"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="kelas">Kelas *</FieldLabel>
 									<select
 										id="kelas"
-										value={formData.kelas}
-										onChange={(e) =>
-											setFormData({ ...formData, kelas: e.target.value })
-										}
+										{...field}
 										className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-										required
 									>
 										<option value="">Pilih Kelas</option>
 										{KELAS_OPTIONS.map((kelas) => (
@@ -575,135 +562,189 @@ export default function StudentsPage() {
 											</option>
 										))}
 									</select>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="tahunMasuk">Tahun Masuk *</Label>
-									<Input
-										id="tahunMasuk"
-										type="number"
-										value={formData.tahunMasuk}
-										onChange={(e) =>
-											setFormData({ ...formData, tahunMasuk: e.target.value })
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
 										}
-										required
 									/>
-								</div>
-							</div>
+								</Field>
+							)}
+						/>
+						<Controller
+							control={form.control}
+							name="tahunMasuk"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="tahunMasuk">
+										Tahun Masuk *
+									</FieldLabel>
+									<Input id="tahunMasuk" type="number" {...field} />
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
+										}
+									/>
+								</Field>
+							)}
+						/>
+					</div>
 
-							<div className="space-y-2">
-								<Label htmlFor="tahunAjaran">Tahun Ajaran</Label>
+					<Controller
+						control={form.control}
+						name="tahunAjaran"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="tahunAjaran">
+									Tahun Ajaran
+								</FieldLabel>
 								<Input
 									id="tahunAjaran"
-									value={formData.tahunAjaran}
-									onChange={(e) =>
-										setFormData({ ...formData, tahunAjaran: e.target.value })
-									}
+									{...field}
 									placeholder="2025/2026"
 								/>
-							</div>
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
+								/>
+							</Field>
+						)}
+					/>
 
-							<div className="space-y-2">
-								<Label htmlFor="namaOrtu">Nama Orang Tua</Label>
+					<Controller
+						control={form.control}
+						name="namaOrtu"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="namaOrtu">
+									Nama Orang Tua
+								</FieldLabel>
 								<Input
 									id="namaOrtu"
-									value={formData.namaOrtu}
-									onChange={(e) =>
-										setFormData({ ...formData, namaOrtu: e.target.value })
-									}
+									{...field}
 									placeholder="Nama orang tua/wali"
 								/>
-							</div>
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
+								/>
+							</Field>
+						)}
+					/>
 
-							<div className="space-y-2">
-								<Label htmlFor="noTelp">No. Telepon</Label>
+					<Controller
+						control={form.control}
+						name="noTelp"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="noTelp">No. Telepon</FieldLabel>
 								<Input
 									id="noTelp"
-									value={formData.noTelp}
-									onChange={(e) =>
-										setFormData({ ...formData, noTelp: e.target.value })
-									}
+									{...field}
 									placeholder="08xxxxxxxxxx"
 								/>
-							</div>
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
+								/>
+							</Field>
+						)}
+					/>
 
-							<div className="flex justify-end gap-3 pt-4">
-								<Dialog.Close asChild>
-									<Button type="button" variant="outline">
-										Batal
-									</Button>
-								</Dialog.Close>
-								<Button type="submit">Simpan</Button>
-							</div>
-						</form>
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+					<div className="flex justify-end gap-3 pt-4">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setIsCreateOpen(false)}
+						>
+							Batal
+						</Button>
+						<Button type="submit">Simpan</Button>
+					</div>
+				</form>
+			</FormDialog>
 
 			{/* Edit Dialog */}
-			<Dialog.Root open={isEditOpen} onOpenChange={setIsEditOpen}>
-				<Dialog.Portal>
-					<Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-					<Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-						<Dialog.Title className="text-lg font-semibold text-slate-900">
-							Edit Data Siswa
-						</Dialog.Title>
-						<form onSubmit={handleEdit} className="mt-4 space-y-4">
-							{error && (
-								<div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-									{error}
-								</div>
-							)}
-
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<Label htmlFor="edit-nis">NIS</Label>
+			<FormDialog
+				open={isEditOpen}
+				onOpenChange={setIsEditOpen}
+				title="Edit Data Siswa"
+				form={form}
+			>
+				<form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
+					<div className="grid grid-cols-2 gap-4">
+						<Controller
+							control={form.control}
+							name="nis"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="edit-nis">NIS</FieldLabel>
 									<Input
 										id="edit-nis"
-										value={formData.nis}
+										{...field}
 										disabled
 										className="bg-slate-100"
 									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="edit-jenisKelamin">Jenis Kelamin</Label>
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
+										}
+									/>
+								</Field>
+							)}
+						/>
+						<Controller
+							control={form.control}
+							name="jenisKelamin"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="edit-jenisKelamin">
+										Jenis Kelamin
+									</FieldLabel>
 									<select
 										id="edit-jenisKelamin"
-										value={formData.jenisKelamin}
-										onChange={(e) =>
-											setFormData({ ...formData, jenisKelamin: e.target.value })
-										}
+										{...field}
 										className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
 									>
 										<option value="">Pilih</option>
 										<option value="L">Laki-laki</option>
 										<option value="P">Perempuan</option>
 									</select>
-								</div>
-							</div>
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
+										}
+									/>
+								</Field>
+							)}
+						/>
+					</div>
 
-							<div className="space-y-2">
-								<Label htmlFor="edit-nama">Nama Lengkap *</Label>
-								<Input
-									id="edit-nama"
-									value={formData.nama}
-									onChange={(e) =>
-										setFormData({ ...formData, nama: e.target.value })
-									}
-									required
+					<Controller
+						control={form.control}
+						name="nama"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="edit-nama">
+									Nama Lengkap *
+								</FieldLabel>
+								<Input id="edit-nama" {...field} />
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
 								/>
-							</div>
+							</Field>
+						)}
+					/>
 
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<Label htmlFor="edit-kelas">Kelas *</Label>
+					<div className="grid grid-cols-2 gap-4">
+						<Controller
+							control={form.control}
+							name="kelas"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="edit-kelas">
+										Kelas *
+									</FieldLabel>
 									<select
 										id="edit-kelas"
-										value={formData.kelas}
-										onChange={(e) =>
-											setFormData({ ...formData, kelas: e.target.value })
-										}
+										{...field}
 										className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-										required
 									>
 										<option value="">Pilih Kelas</option>
 										{KELAS_OPTIONS.map((kelas) => (
@@ -712,65 +753,97 @@ export default function StudentsPage() {
 											</option>
 										))}
 									</select>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="edit-tahunMasuk">Tahun Masuk</Label>
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
+										}
+									/>
+								</Field>
+							)}
+						/>
+						<Controller
+							control={form.control}
+							name="tahunMasuk"
+							render={({ field, fieldState }) => (
+								<Field data-invalid={!!fieldState.error}>
+									<FieldLabel htmlFor="edit-tahunMasuk">
+										Tahun Masuk
+									</FieldLabel>
 									<Input
 										id="edit-tahunMasuk"
 										type="number"
-										value={formData.tahunMasuk}
-										onChange={(e) =>
-											setFormData({ ...formData, tahunMasuk: e.target.value })
+										{...field}
+									/>
+									<FieldError
+										errors={
+											fieldState.error ? [fieldState.error] : []
 										}
 									/>
-								</div>
-							</div>
+								</Field>
+							)}
+						/>
+					</div>
 
-							<div className="space-y-2">
-								<Label htmlFor="edit-tahunAjaran">Tahun Ajaran</Label>
-								<Input
-									id="edit-tahunAjaran"
-									value={formData.tahunAjaran}
-									onChange={(e) =>
-										setFormData({ ...formData, tahunAjaran: e.target.value })
-									}
+					<Controller
+						control={form.control}
+						name="tahunAjaran"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="edit-tahunAjaran">
+									Tahun Ajaran
+								</FieldLabel>
+								<Input id="edit-tahunAjaran" {...field} />
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
 								/>
-							</div>
+							</Field>
+						)}
+					/>
 
-							<div className="space-y-2">
-								<Label htmlFor="edit-namaOrtu">Nama Orang Tua</Label>
-								<Input
-									id="edit-namaOrtu"
-									value={formData.namaOrtu}
-									onChange={(e) =>
-										setFormData({ ...formData, namaOrtu: e.target.value })
-									}
+					<Controller
+						control={form.control}
+						name="namaOrtu"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="edit-namaOrtu">
+									Nama Orang Tua
+								</FieldLabel>
+								<Input id="edit-namaOrtu" {...field} />
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
 								/>
-							</div>
+							</Field>
+						)}
+					/>
 
-							<div className="space-y-2">
-								<Label htmlFor="edit-noTelp">No. Telepon</Label>
-								<Input
-									id="edit-noTelp"
-									value={formData.noTelp}
-									onChange={(e) =>
-										setFormData({ ...formData, noTelp: e.target.value })
-									}
+					<Controller
+						control={form.control}
+						name="noTelp"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="edit-noTelp">
+									No. Telepon
+								</FieldLabel>
+								<Input id="edit-noTelp" {...field} />
+								<FieldError
+									errors={fieldState.error ? [fieldState.error] : []}
 								/>
-							</div>
+							</Field>
+						)}
+					/>
 
-							<div className="flex justify-end gap-3 pt-4">
-								<Dialog.Close asChild>
-									<Button type="button" variant="outline">
-										Batal
-									</Button>
-								</Dialog.Close>
-								<Button type="submit">Update</Button>
-							</div>
-						</form>
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+					<div className="flex justify-end gap-3 pt-4">
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setIsEditOpen(false)}
+						>
+							Batal
+						</Button>
+						<Button type="submit">Update</Button>
+					</div>
+				</form>
+			</FormDialog>
 
 			{/* Delete Confirmation Dialog */}
 			<Dialog.Root open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>

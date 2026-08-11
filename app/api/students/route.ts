@@ -17,7 +17,11 @@ import { success, errors } from "@/lib/api/api-response";
 
 // Validation schemas
 const createStudentSchema = z.object({
-	nis: z.string().min(1, "NIS wajib diisi").max(20, "NIS maksimal 20 karakter"),
+	nis: z
+		.string()
+		.min(1, "NIS wajib diisi")
+		.max(20, "NIS maksimal 20 karakter")
+		.regex(/^[A-Za-z0-9\-\.\/]+$/, "NIS hanya boleh berisi huruf, angka, dan simbol (-, ., /)"),
 	nama: z
 		.string()
 		.min(1, "Nama wajib diisi")
@@ -26,7 +30,13 @@ const createStudentSchema = z.object({
 	tahunMasuk: z.union([z.number(), z.string()]).optional(),
 	tahunAjaran: z.string().optional(),
 	namaOrtu: z.string().optional(),
-	noTelp: z.string().optional(),
+	noTelp: z
+		.string()
+		.optional()
+		.refine(
+			(val) => !val || /^[\d\-\+\s()]{7,20}$/.test(val),
+			"Format nomor telepon tidak valid",
+		),
 	statusBayar: z.string().optional(),
 });
 
