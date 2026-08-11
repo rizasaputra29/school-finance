@@ -518,6 +518,7 @@ export function validateTransaction(
     allowNegative?: boolean;
     existingHashes?: string[];
     accountAllowNegative?: Map<string, boolean>;
+    currentBalances?: Map<string, number>;
   }
 ): ValidationResult {
   // Run all validations
@@ -543,10 +544,12 @@ export function validateTransaction(
   
   // Task 38: Negative Balance Control - validate account balances
   // Only check if not explicitly allowing negative
-  if (!options.allowNegative && options.accountAllowNegative && data.entries) {
+  if (!options.allowNegative && data.entries) {
     const negativeBalanceErrors = validateNegativeBalanceFromEntries(
       data.entries,
-      options.accountTypes
+      options.accountTypes,
+      options.currentBalances,
+      options.accountAllowNegative
     );
     if (negativeBalanceErrors.length > 0) {
       results.push({ isValid: true, errors: negativeBalanceErrors });
@@ -568,7 +571,9 @@ export function validateTransaction(
  */
 function validateNegativeBalanceFromEntries(
   entries: TransactionEntry[],
-  accountTypes: Map<string, string>
+  accountTypes: Map<string, string>,
+  currentBalances?: Map<string, number>,
+  accountAllowNegative?: Map<string, boolean>
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   
@@ -576,13 +581,34 @@ function validateNegativeBalanceFromEntries(
     const accountType = accountTypes.get(entry.kodeAkun);
     if (!accountType) continue;
 
+    // Skip if this account is explicitly allowed to go negative
+    if (accountAllowNegative?.get(entry.kodeAkun)) continue;
+
+    const currentBalance = currentBalances?.get(entry.kodeAkun) || 0;
+    const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(accountType);
+    
+    // Calculate the net change from this transaction
+    const netChange = isDebitNormal
+      ? entry.debit - entry.kredit
+      : entry.kredit - entry.debit;
+    
+    const projectedBalance = currentBalance + netChange;
+
     // Check if this entry would cause negative balance for debit-normal accounts
-    if (DEBIT_NORMAL_ACCOUNTS.includes(accountType)) {
-      // Asset and Expense should generally not go negative after this transaction
-      // This is a warning since we don't have the current balance here
-      // The actual validation happens when checking account balances
-    } else if (KREDIT_NORMAL_ACCOUNTS.includes(accountType)) {
-      // Liability and Equity should generally not go positive (negative from their perspective)
+    if (isDebitNormal && projectedBalance < 0) {
+      errors.push({
+        field: entry.kodeAkun,
+        message: `Transaksi akan menyebabkan saldo negatif untuk akun ${entry.kodeAkun}. Saldo saat ini: ${currentBalance.toLocaleString('id-ID')}, perubahan: ${netChange.toLocaleString('id-ID')}, proyeksi: ${projectedBalance.toLocaleString('id-ID')}`,
+        code: 'NEGATIVE_BALANCE_WARNING',
+      });
+    }
+    // Check if credit-normal accounts would go positive (negative from their perspective)
+    else if (!isDebitNormal && entry.kodeAkun !== "304" && projectedBalance < 0) {
+      errors.push({
+        field: entry.kodeAkun,
+        message: `Transaksi akan menyebabkan saldo negatif untuk akun ${entry.kodeAkun}. Saldo saat ini: ${currentBalance.toLocaleString('id-ID')}, perubahan: ${netChange.toLocaleString('id-ID')}, proyeksi: ${projectedBalance.toLocaleString('id-ID')}`,
+        code: 'NEGATIVE_BALANCE_WARNING',
+      });
     }
   }
   

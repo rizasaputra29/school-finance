@@ -28,8 +28,8 @@ const withdrawSchema = z.object({
 });
 
 // Get account codes for Kas and Bank
-const KAS_CODE = "1100";
-const BANK_CODE = "1110";
+const KAS_CODE = "101";
+const BANK_CODE = "102";
 
 // Validate accounts exist
 async function validateCashAccounts(): Promise<{
