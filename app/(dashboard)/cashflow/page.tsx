@@ -150,6 +150,9 @@ function CashflowInner() {
 		totalDebit: 0,
 		totalKredit: 0,
 		saldo: 0,
+		realPendapatan: 0,
+		realPengeluaran: 0,
+		saldoKasBank: 0,
 	};
 
 	const editMutation = useMutation({
@@ -400,7 +403,7 @@ function CashflowInner() {
 								Total Pendapatan
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatRupiah(summary.totalDebit)}
+								{formatRupiah(summary.realPendapatan)}
 							</p>
 						</div>
 					</CardContent>
@@ -416,7 +419,7 @@ function CashflowInner() {
 								Total Pengeluaran
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatRupiah(summary.totalKredit)}
+								{formatRupiah(summary.realPengeluaran)}
 							</p>
 						</div>
 					</CardContent>
@@ -432,7 +435,7 @@ function CashflowInner() {
 								Saldo Akhir
 							</p>
 							<p className="text-sm md:text-xl font-bold text-white truncate">
-								{formatRupiah(summary.saldo ?? 0)}
+								{formatRupiah(summary.saldoKasBank)}
 							</p>
 						</div>
 					</CardContent>

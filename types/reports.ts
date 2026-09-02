@@ -23,4 +23,6 @@ export interface ReportSummary {
 	totalBeban?: number;
 	labaRugi?: number;
 	isPositive?: boolean;
+	periodeBerjalan?: number;
+	periodeSebelumnya?: number;
 }

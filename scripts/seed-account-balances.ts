@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -72,12 +73,7 @@ async function main() {
 				const totalDebit = lines._sum.debit ?? 0;
 				const totalKredit = lines._sum.kredit ?? 0;
 
-				const isDebitNormal = ["Asset", "Expense"].includes(
-					account.tipeAkun,
-				);
-				const saldo = isDebitNormal
-					? totalDebit - totalKredit
-					: totalKredit - totalDebit;
+				const saldo = computeSaldoChange(account, totalDebit, totalKredit);
 
 				await prisma.accountBalance.create({
 					data: {

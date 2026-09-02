@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useAcademicYear } from "@/context/AcademicYearContext";
@@ -23,6 +23,7 @@ import {
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { calculateDepreciationForPeriod } from "@/lib/accounting/accounting-depreciation";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -54,6 +55,8 @@ interface AssetSummary {
 }
 
 const ASSET_CATEGORIES = ["Peralatan", "Kendaraan", "Bangunan", "Tanah"];
+const FIXED_ASSET_ACCOUNTS = ["107", "108", "109", "110"];
+const PAYMENT_ACCOUNTS = ["101", "102"];
 
 export default function AssetsPage() {
 	const { isAdmin } = useAuth();
@@ -150,10 +153,99 @@ export default function AssetsPage() {
 		},
 	});
 
+	const { data: coaAccountsData } = useQuery({
+		queryKey: ["accounts", selectedYear?.id],
+		queryFn: async () => {
+			const res = await fetch(
+				`/api/accounts?academicYearId=${selectedYear?.id}`,
+			);
+			const result = await res.json();
+			if (!result.success) throw new Error("Gagal memuat data akun");
+			return result.data;
+		},
+		enabled: !!selectedYear?.id,
+	});
+
+	const { data: academicYearsData } = useQuery({
+		queryKey: ["academicYears"],
+		queryFn: async () => {
+			const res = await fetch("/api/academic-year?includeArchived=true");
+			const result = await res.json();
+			if (!result.success) throw new Error("Gagal memuat tahun ajaran");
+			return result.data as Array<{
+				id: string;
+				tahunAjaran: string;
+				tanggalMulai: string;
+				tanggalSelesai: string;
+			}>;
+		},
+	});
+
+	// Silent catch-up: ensure full-year depreciation is posted for the selected
+	// academic year whenever this page loads. Idempotent via force: false.
+	useEffect(() => {
+		if (!selectedYear?.id) return;
+
+		let cancelled = false;
+
+		(async () => {
+			try {
+				const response = await fetch("/api/assets/depreciation", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						academicYearId: selectedYear.id,
+						capDate: selectedYear.tanggalSelesai,
+					}),
+				});
+				const result = await response.json();
+				if (!result.success) return;
+
+				// If anything was actually posted, refresh the data shown on this page
+				if ((result.data?.assetsProcessed ?? 0) > 0) {
+					queryClient.invalidateQueries({
+						queryKey: ["assets", statusFilter, debouncedSearchTerm, selectedYear?.id],
+					});
+					queryClient.invalidateQueries({
+						queryKey: ["accounts", selectedYear?.id],
+					});
+				}
+			} catch (error) {
+				console.error("Silent depreciation catch-up failed:", error);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [selectedYear?.id, selectedYear?.tanggalSelesai, queryClient]);
+
 	const assetAccounts: { kodeAkun: string; namaAkun: string }[] =
 		(accountsData ?? []).filter(
-			(a: { tipeAkun: string }) => a.tipeAkun === "Asset",
+			(a: { tipeAkun: string; kodeAkun: string }) =>
+				a.tipeAkun === "Asset" && FIXED_ASSET_ACCOUNTS.includes(a.kodeAkun),
 		);
+
+	const paymentAccounts: { kodeAkun: string; namaAkun: string }[] =
+		(accountsData ?? []).filter(
+			(a: { tipeAkun: string; kodeAkun: string }) =>
+				a.tipeAkun === "Asset" && PAYMENT_ACCOUNTS.includes(a.kodeAkun),
+		);
+
+	const akumulasiPenyusutanSaldo =
+		(coaAccountsData ?? []).find((a: { kodeAkun: string }) => a.kodeAkun === "111")
+			?.yearSaldo ?? 0;
+	const bebanPenyusutanSaldo =
+		(coaAccountsData ?? []).find((a: { kodeAkun: string }) => a.kodeAkun === "600")
+			?.yearSaldo ?? 0;
+
+	// Use COA-integrated totals so the assets page matches the accounts/COA page.
+	const integratedSummary = {
+		totalAset: summary.totalAset,
+		totalPenyusutan: akumulasiPenyusutanSaldo,
+		nilaiBuku: summary.totalAset - akumulasiPenyusutanSaldo,
+		bebanPenyusutanTahunIni: bebanPenyusutanSaldo,
+	};
 
 	const createMutation = useMutation({
 		mutationFn: async (submitData: Record<string, unknown>) => {
@@ -198,7 +290,10 @@ export default function AssetsPage() {
 			const res = await fetch("/api/assets/depreciation", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ year: depYear }),
+				body: JSON.stringify({
+					academicYearId: selectedYear?.id,
+					year: depYear,
+				}),
 			});
 			const result = await res.json();
 			if (!result.success)
@@ -208,6 +303,7 @@ export default function AssetsPage() {
 		onSuccess: (result) => {
 			setIsDepreciating(false);
 			queryClient.invalidateQueries({ queryKey: ["assets"] });
+			queryClient.invalidateQueries({ queryKey: ["accounts"] });
 			toast.success(result.message || "Penyusutan berhasil diproses");
 		},
 		onError: (err: Error) => {
@@ -227,9 +323,10 @@ export default function AssetsPage() {
 			lokasi: formData.lokasi || undefined,
 			umurTeknis: formData.isTanah ? 0 : parseFormattedNumber(formData.umurTeknis),
 			nilaiResidu: parseFormattedNumber(formData.nilaiResidu) || 0,
-			kodeAkun: formData.kodeAkun,
-			kodeAkunPembayaran: formData.kodeAkunPembayaran,
-		});
+					kodeAkun: formData.kodeAkun,
+					kodeAkunPembayaran: formData.kodeAkunPembayaran,
+					academicYearId: selectedYear?.id,
+				});
 	};
 
 	const handleProsesPenyusutan = () => {
@@ -436,39 +533,35 @@ export default function AssetsPage() {
 											className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#059DEA] focus:outline-none focus:ring-2 focus:ring-[#059DEA]/20"
 											required
 										>
-											<option value="">Pilih akun aset...</option>
-											{assetAccounts.map((a) => (
-												<option key={a.kodeAkun} value={a.kodeAkun}>
-													{a.kodeAkun} - {a.namaAkun}
-												</option>
-											))}
-										</select>
-										<p className="text-xs text-slate-400">
-											Akun aset dari daftar akun
-										</p>
-									</div>
-
-									<div className="space-y-2">
-										<Label htmlFor="kodeAkunPembayaran">Sumber Pembayaran</Label>
-										<select
-											id="kodeAkunPembayaran"
-											value={formData.kodeAkunPembayaran}
-											onChange={(e) =>
-												setFormData({
-													...formData,
-													kodeAkunPembayaran: e.target.value,
-												})
-											}
-											className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#059DEA] focus:outline-none focus:ring-2 focus:ring-[#059DEA]/20"
-											required
-										>
-											<option value="">Pilih akun kas/bank...</option>
-											{assetAccounts.map((a) => (
-												<option key={a.kodeAkun} value={a.kodeAkun}>
-													{a.kodeAkun} - {a.namaAkun}
-												</option>
-											))}
-										</select>
+										<option value="">Pilih akun aset...</option>
+									{assetAccounts.map((a) => (
+										<option key={a.kodeAkun} value={a.kodeAkun}>
+											{a.kodeAkun} - {a.namaAkun}
+										</option>
+									))}
+									</select>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="kodeAkunPembayaran">Sumber Pembayaran</Label>
+									<select
+										id="kodeAkunPembayaran"
+										value={formData.kodeAkunPembayaran}
+										onChange={(e) =>
+											setFormData({
+												...formData,
+												kodeAkunPembayaran: e.target.value,
+											})
+										}
+										className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#059DEA] focus:outline-none focus:ring-2 focus:ring-[#059DEA]/20"
+										required
+									>
+										<option value="">Pilih akun kas/bank...</option>
+										{paymentAccounts.map((a) => (
+											<option key={a.kodeAkun} value={a.kodeAkun}>
+												{a.kodeAkun} - {a.namaAkun}
+											</option>
+										))}
+									</select>
 										<p className="text-xs text-slate-400">
 											Akun kas/bank dari daftar akun
 										</p>
@@ -598,7 +691,7 @@ export default function AssetsPage() {
 			</div>
 
 			{/* Summary Cards */}
-			<div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+			<div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
 				<Card className="bg-[#059DEA] shadow-sm">
 					<CardContent className="flex items-center gap-3 p-3 md:p-5">
 						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-white/50 shrink-0">
@@ -609,7 +702,7 @@ export default function AssetsPage() {
 								Total Aset
 							</p>
 							<p className="text-sm md:text-xl font-bold text-white truncate">
-								{formatRupiah(summary.totalAset)}
+								{formatRupiah(integratedSummary.totalAset)}
 							</p>
 						</div>
 					</CardContent>
@@ -625,7 +718,7 @@ export default function AssetsPage() {
 								Total Penyusutan
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatRupiah(summary.totalPenyusutan)}
+								{formatRupiah(integratedSummary.totalPenyusutan)}
 							</p>
 						</div>
 					</CardContent>
@@ -641,7 +734,23 @@ export default function AssetsPage() {
 								Nilai Buku
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
-								{formatRupiah(summary.nilaiBuku)}
+								{formatRupiah(integratedSummary.nilaiBuku)}
+							</p>
+						</div>
+					</CardContent>
+				</Card>
+
+				<Card className="bg-white shadow-sm">
+					<CardContent className="flex items-center gap-3 p-3 md:p-5">
+						<div className="flex h-10 w-10 md:h-12 md:w-12 items-center justify-center rounded-xl bg-purple-50 shrink-0">
+							<TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-purple-600" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
+								Beban Penyusutan {depYear}
+							</p>
+							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
+								{formatRupiah(integratedSummary.bebanPenyusutanTahunIni)}
 							</p>
 						</div>
 					</CardContent>
@@ -744,31 +853,77 @@ export default function AssetsPage() {
 
 							const annualDepreciation =
 								(a.hargaPerolehan - a.nilaiResidu) / a.umurTeknis;
-							const startYear = a.tanggalPerolehan
-								? new Date(a.tanggalPerolehan).getFullYear()
-								: new Date().getFullYear();
+							const acquisitionDate = new Date(a.tanggalPerolehan);
+							const usefulLifeEnd = new Date(acquisitionDate);
+							usefulLifeEnd.setFullYear(
+								usefulLifeEnd.getFullYear() + a.umurTeknis,
+							);
+
+							const sortedYears = (academicYearsData ?? [])
+								.slice()
+								.sort(
+									(x, y) =>
+										new Date(x.tanggalMulai).getTime() -
+										new Date(y.tanggalMulai).getTime(),
+								)
+								.filter(
+									(year) =>
+										new Date(year.tanggalSelesai) >= acquisitionDate &&
+										new Date(year.tanggalMulai) < usefulLifeEnd,
+								);
 
 							const schedule: {
-								year: number;
+								id: string;
+								tahunAjaran: string;
 								depreciation: number;
 								accumulated: number;
 								bookValue: number;
 							}[] = [];
 
-							let accum = 0;
-							for (let y = 0; y < a.umurTeknis; y++) {
-								const yearNum = startYear + y;
-								const depAmount =
-									y === 0
-										? annualDepreciation *
-											(1 - new Date(a.tanggalPerolehan).getMonth() / 12)
-										: annualDepreciation;
-								accum += depAmount;
+							let runningAsset: import("@/lib/accounting/accounting-depreciation").AssetDepreciationData =
+								{
+									id: a.id,
+									kodeAkun: a.kodeAkun,
+									nama: a.nama,
+									kategori: a.kategori,
+									tanggalPerolehan: acquisitionDate,
+									hargaPerolehan: a.hargaPerolehan,
+									umurTeknis: a.umurTeknis,
+									nilaiResidu: a.nilaiResidu,
+									isTanah: a.isTanah,
+									status: a.status,
+									alreadyDepreciatedAmount: 0,
+									alreadyDepreciatedYears: 0,
+									sisaUmurTeknis: a.umurTeknis,
+								};
+
+							for (const year of sortedYears) {
+								const depAmount = calculateDepreciationForPeriod(
+									runningAsset,
+									new Date(year.tanggalMulai),
+									new Date(year.tanggalSelesai),
+								);
+								const accumulated =
+									(runningAsset.alreadyDepreciatedAmount ?? 0) + depAmount;
+								runningAsset = {
+									...runningAsset,
+									alreadyDepreciatedAmount: accumulated,
+									alreadyDepreciatedYears:
+										annualDepreciation > 0
+											? Math.floor(accumulated / annualDepreciation)
+											: 0,
+								};
 								schedule.push({
-									year: yearNum,
+									id: year.id,
+									tahunAjaran: year.tahunAjaran,
 									depreciation: Math.round(depAmount),
-									accumulated: Math.round(accum),
-									bookValue: Math.round(a.hargaPerolehan - accum),
+									accumulated: Math.round(accumulated),
+									bookValue: Math.round(
+										Math.max(
+											a.nilaiResidu,
+											a.hargaPerolehan - accumulated,
+										),
+									),
 								});
 							}
 
@@ -819,14 +974,14 @@ export default function AssetsPage() {
 													</tr>
 												</thead>
 												<tbody>
-													{schedule.map((row) => (
-														<tr
-															key={row.year}
-															className="border-t border-gray-200 hover:bg-gray-100/50"
-														>
-															<td className="py-1.5 px-2 text-gray-700">
-																{row.year}
-															</td>
+											{schedule.map((row) => (
+												<tr
+													key={row.id}
+													className="border-t border-gray-200 hover:bg-gray-100/50"
+												>
+													<td className="py-1.5 px-2 text-gray-700">
+														{row.tahunAjaran}
+													</td>
 															<td className="py-1.5 px-2 text-right text-gray-700">
 																{formatRupiah(row.depreciation)}
 															</td>

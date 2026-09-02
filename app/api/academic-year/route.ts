@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { processDepreciationForAcademicYear } from "@/lib/accounting/accounting-depreciation-service";
 
 const createAcademicYearSchema = z.object({
 	tahunAjaran: z
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
 									tanggal: closingDate,
 									keterangan: `Penutupan Pendapatan - ${revenueAccount.namaAkun}`,
 									reference: `closing:${id}`,
+									status: "posted",
 								},
 							});
 
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest) {
 									tanggal: closingDate,
 									keterangan: `Penutupan Beban - ${expenseAccount.namaAkun}`,
 									reference: `closing:${id}`,
+									status: "posted",
 								},
 							});
 
@@ -216,6 +219,7 @@ export async function POST(request: NextRequest) {
 								tanggal: closingDate,
 								keterangan: `Transfer ${isProfit ? "Laba" : "Rugi"} ke Laba Rugi Periode Sebelumnya`,
 								reference: `closing:${id}`,
+								status: "posted",
 							},
 						});
 
@@ -322,7 +326,7 @@ export async function POST(request: NextRequest) {
 				where: { isActive: true },
 			});
 
-			const result = await prisma.$transaction(async (tx) => {
+			const { result, depreciationResult } = await prisma.$transaction(async (tx) => {
 				if (currentActiveYear) {
 					await tx.academicYear.update({
 						where: { id: currentActiveYear.id },
@@ -340,12 +344,20 @@ export async function POST(request: NextRequest) {
 					},
 				});
 
-				return newAcademicYear;
+				// Post full-year straight-line depreciation for all existing assets.
+				const depreciationResult = await processDepreciationForAcademicYear(
+					tx,
+					newAcademicYear.id,
+					{ capDate: newAcademicYear.tanggalSelesai },
+				);
+
+				return { result: newAcademicYear, depreciationResult };
 			});
 
 			return success(result, {
-				message: "Tahun ajaran berhasil dibuat dan diaktifkan",
+				message: `Tahun ajaran berhasil dibuat dan diaktifkan. Penyusutan diproses untuk ${depreciationResult.assetsProcessed} aset.`,
 				status: 201,
+				meta: { depreciation: depreciationResult },
 			});
 		} catch (error) {
 			console.error("Academic Year API error:", error);
@@ -380,20 +392,39 @@ export async function PUT(request: NextRequest) {
 
 			const { isActive } = validation.data;
 
-			if (isActive === true) {
-				await prisma.academicYear.updateMany({
-					where: { isActive: true },
-					data: { isActive: false },
-				});
-			}
+			const { updatedYear, depreciationResult } = await prisma.$transaction(
+				async (tx) => {
+					if (isActive === true) {
+						await tx.academicYear.updateMany({
+							where: { isActive: true },
+							data: { isActive: false },
+						});
+					}
 
-			const updatedYear = await prisma.academicYear.update({
-				where: { id },
-				data: validation.data,
-			});
+					const updatedYear = await tx.academicYear.update({
+						where: { id },
+						data: validation.data,
+					});
+
+					let depreciationResult = null;
+					if (isActive === true) {
+						depreciationResult = await processDepreciationForAcademicYear(
+							tx,
+							updatedYear.id,
+							{ capDate: updatedYear.tanggalSelesai },
+						);
+					}
+
+					return { updatedYear, depreciationResult };
+				},
+			);
 
 			return success(updatedYear, {
-				message: "Tahun ajaran berhasil diperbarui",
+				message:
+					isActive === true
+						? `Tahun ajaran berhasil diaktifkan. Penyusutan diproses untuk ${depreciationResult?.assetsProcessed ?? 0} aset.`
+						: "Tahun ajaran berhasil diperbarui",
+				meta: { depreciation: depreciationResult },
 			});
 		} catch (error) {
 			console.error("Academic Year API error:", error);

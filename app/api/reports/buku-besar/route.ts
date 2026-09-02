@@ -4,6 +4,7 @@ import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { Account, Prisma } from "@prisma/client";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 
 type JournalEntryLineWithJournal = Prisma.JournalEntryLineGetPayload<{
 	include: {
@@ -26,8 +27,6 @@ interface ReportWhere {
 		};
 	};
 }
-
-const DEBIT_NORMAL_ACCOUNTS = ["Asset", "Aset", "Expense", "Beban"];
 
 async function parseQueryParams(query: Record<string, string>) {
 	const page = parseInt(query.page) || 1;
@@ -71,8 +70,6 @@ async function getLedgerForAccount(
 	priorBalances: Map<string, number>,
 	periodLines: Map<string, JournalEntryLineWithJournal[]>,
 ) {
-	const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
-
 	// Calculate opening balance using pre-fetched aggregate
 	let openingBalance = account.saldo;
 	if (params.startDate) {
@@ -82,7 +79,7 @@ async function getLedgerForAccount(
 			openingBalance = 0;
 		} else {
 			const priorNet = priorBalances.get(account.kodeAkun) || 0;
-			openingBalance += isDebitNormal ? priorNet : -priorNet;
+			openingBalance += computeSaldoChange(account, priorNet, 0);
 		}
 	}
 
@@ -96,9 +93,7 @@ async function getLedgerForAccount(
 	// Calculate running balance
 	let runningBalance = openingBalance;
 	const data = paginatedLines.map((line) => {
-		runningBalance += isDebitNormal
-			? line.debit - line.kredit
-			: line.kredit - line.debit;
+		runningBalance += computeSaldoChange(account, line.debit, line.kredit);
 
 		return {
 			id: line.id,

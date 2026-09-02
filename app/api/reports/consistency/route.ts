@@ -5,6 +5,7 @@ import {
 	roundAmount,
 	isAmountEqual,
 } from "@/lib/accounting/accounting-validation";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 import { success, errors } from "@/lib/api/api-response";
 
 // ============================================================================
@@ -66,13 +67,12 @@ async function calculateLedgerBalances(
 			kredit: 0,
 			saldo: 0,
 		};
-		const isDebitNormal = ["Asset", "Expense"].includes(entry.account.tipeAkun);
-
 		const debit = roundAmount(existing.debit + entry.debit);
 		const kredit = roundAmount(existing.kredit + entry.kredit);
-		const saldo = isDebitNormal
-			? roundAmount(existing.saldo + entry.debit - entry.kredit)
-			: roundAmount(existing.saldo + entry.kredit - entry.debit);
+		const saldo = roundAmount(
+			existing.saldo +
+				computeSaldoChange(entry.account, entry.debit, entry.kredit),
+		);
 
 		balances.set(entry.kodeAkun, { debit, kredit, saldo });
 	}

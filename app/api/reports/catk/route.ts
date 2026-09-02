@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { success } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
+import { resolveAcademicYear } from "@/lib/accounting/accounting-laba-rugi";
 
 interface AccountRecord {
 	id: string;
@@ -11,10 +13,9 @@ interface AccountRecord {
 	tipeAkun: string;
 	kategori: string | null;
 	saldo: number;
+	normalBalance?: string | null;
 	isContra: boolean;
 }
-
-const DEBIT_NORMAL_ACCOUNTS = ["Asset", "Aset", "Expense", "Beban"];
 
 const AKTIVA_LANCAR_CODES = ["101", "102", "103", "104", "105", "106"];
 const AKTIVA_TETAP_CODES = ["107", "108", "109", "110", "111"];
@@ -23,12 +24,15 @@ export async function GET(request: NextRequest) {
 	return withAuthAppRouter(request, async () => {
 		try {
 			const query = getQueryParams(request);
-			const { tahun } = query;
+			const { tahun, academicYearId } = query;
 
-			let endDate = new Date();
-			if (tahun) {
-				const year = parseInt(tahun, 10);
-				endDate = new Date(year, 11, 31, 23, 59, 59);
+			const year = await resolveAcademicYear(prisma, {
+				academicYearId: academicYearId as string | undefined,
+				tahun: tahun as string | undefined,
+			});
+
+			if (!year) {
+				return handlePrismaErrorResponse(new Error("Tahun ajaran tidak ditemukan"));
 			}
 
 			const accounts = (await prisma.account.findMany({
@@ -40,41 +44,58 @@ export async function GET(request: NextRequest) {
 				orderBy: [{ tipeAkun: "asc" }, { kodeAkun: "asc" }],
 			})) as AccountRecord[];
 
-			const lineTotals = await prisma.journalEntryLine.groupBy({
+			// Posted-line balance for balance-sheet accounts: all posted lines up to year-end.
+			const balanceLineTotals = await prisma.journalEntryLine.groupBy({
 				by: ["kodeAkun"],
 				_sum: { debit: true, kredit: true },
 				where: {
 					journalEntry: {
-						tanggal: { lte: endDate },
+						tanggal: { lte: year.tanggalSelesai },
 						status: "posted",
 					},
 				},
 			});
 
-			const accountMap = new Map<string, { debit: number; kredit: number }>();
-			for (const line of lineTotals) {
-				accountMap.set(line.kodeAkun, {
+			// Posted-line balance for P&L accounts: only lines inside the academic year,
+			// excluding closing entries so the result matches /api/reports/laba-rugi.
+			const plLineTotals = await prisma.journalEntryLine.groupBy({
+				by: ["kodeAkun"],
+				_sum: { debit: true, kredit: true },
+				where: {
+					journalEntry: {
+						tanggal: {
+							gte: year.tanggalMulai,
+							lte: year.tanggalSelesai,
+						},
+						status: "posted",
+						reference: { not: { startsWith: "closing:" } },
+					},
+				},
+			});
+
+			const balanceMap = new Map<string, { debit: number; kredit: number }>();
+			for (const line of balanceLineTotals) {
+				balanceMap.set(line.kodeAkun, {
 					debit: line._sum.debit || 0,
 					kredit: line._sum.kredit || 0,
 				});
 			}
 
-			const netBalances = new Map<string, number>();
-
-			for (const account of accounts) {
-				const movements = accountMap.get(account.kodeAkun) || {
-					debit: 0,
-					kredit: 0,
-				};
-				const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
-
-				const netMovement = isDebitNormal
-					? movements.debit - movements.kredit
-					: movements.kredit - movements.debit;
-				const totalBalance = account.saldo + netMovement;
-
-				netBalances.set(account.kodeAkun, totalBalance);
+			const plMap = new Map<string, { debit: number; kredit: number }>();
+			for (const line of plLineTotals) {
+				plMap.set(line.kodeAkun, {
+					debit: line._sum.debit || 0,
+					kredit: line._sum.kredit || 0,
+				});
 			}
+
+			const getYearSaldo = (account: AccountRecord) => {
+				const isPlAccount = account.tipeAkun === "Revenue" || account.tipeAkun === "Expense";
+				const movements = isPlAccount
+					? plMap.get(account.kodeAkun) || { debit: 0, kredit: 0 }
+					: balanceMap.get(account.kodeAkun) || { debit: 0, kredit: 0 };
+				return computeSaldoChange(account, movements.debit, movements.kredit);
+			};
 
 			const assetAccounts = accounts.filter((a) => a.tipeAkun === "Asset");
 			const liabilityAccounts = accounts.filter(
@@ -87,24 +108,28 @@ export async function GET(request: NextRequest) {
 			const lancarItems = assetAccounts
 				.filter((a) => AKTIVA_LANCAR_CODES.includes(a.kodeAkun))
 				.map((account) => {
-					const jumlah = netBalances.get(account.kodeAkun) || 0;
+					const yearSaldo = getYearSaldo(account);
+					const jumlah = account.isContra ? -Math.abs(yearSaldo) : yearSaldo;
 					return {
 						kodeAkun: account.kodeAkun,
 						namaAkun: account.namaAkun,
-						jumlah: account.isContra ? -Math.abs(jumlah) : jumlah,
+						jumlah,
+						yearSaldo,
 					};
 				});
 
 			const tetapItems = assetAccounts
 				.filter((a) => AKTIVA_TETAP_CODES.includes(a.kodeAkun))
 				.map((account) => {
-					const jumlah = netBalances.get(account.kodeAkun) || 0;
+					const yearSaldo = getYearSaldo(account);
 					const isContra = account.isContra || account.kodeAkun === "111";
+					const jumlah = isContra ? -Math.abs(yearSaldo) : yearSaldo;
 					return {
 						kodeAkun: account.kodeAkun,
 						namaAkun: account.namaAkun,
-						jumlah: isContra ? -Math.abs(jumlah) : jumlah,
-						penyusutan: isContra ? Math.abs(jumlah) : 0,
+						jumlah,
+						penyusutan: isContra ? Math.abs(yearSaldo) : 0,
+						yearSaldo,
 					};
 				});
 
@@ -119,11 +144,12 @@ export async function GET(request: NextRequest) {
 			const totalAset = totalLancar + totalTetap;
 
 			const kewajibanItems = liabilityAccounts.map((account) => {
-				const jumlah = netBalances.get(account.kodeAkun) || 0;
+				const yearSaldo = getYearSaldo(account);
 				return {
 					kodeAkun: account.kodeAkun,
 					namaAkun: account.namaAkun,
-					jumlah,
+					jumlah: yearSaldo,
+					yearSaldo,
 				};
 			});
 
@@ -133,11 +159,12 @@ export async function GET(request: NextRequest) {
 			);
 
 			const asetNetoItems = equityAccounts.map((account) => {
-				const jumlah = netBalances.get(account.kodeAkun) || 0;
+				const yearSaldo = getYearSaldo(account);
 				return {
 					kodeAkun: account.kodeAkun,
 					namaAkun: account.namaAkun,
-					jumlah,
+					jumlah: yearSaldo,
+					yearSaldo,
 				};
 			});
 
@@ -147,11 +174,12 @@ export async function GET(request: NextRequest) {
 			);
 
 			const pendapatanItems = revenueAccounts.map((account) => {
-				const jumlah = netBalances.get(account.kodeAkun) || 0;
+				const yearSaldo = getYearSaldo(account);
 				return {
 					kodeAkun: account.kodeAkun,
 					namaAkun: account.namaAkun,
-					jumlah,
+					jumlah: yearSaldo,
+					yearSaldo,
 				};
 			});
 
@@ -161,11 +189,12 @@ export async function GET(request: NextRequest) {
 			);
 
 			const bebanItems = expenseAccounts.map((account) => {
-				const jumlah = netBalances.get(account.kodeAkun) || 0;
+				const yearSaldo = getYearSaldo(account);
 				return {
 					kodeAkun: account.kodeAkun,
 					namaAkun: account.namaAkun,
-					jumlah,
+					jumlah: yearSaldo,
+					yearSaldo,
 				};
 			});
 
@@ -215,6 +244,8 @@ export async function GET(request: NextRequest) {
 					meta: {
 						filters: {
 							tahun: tahun ? parseInt(tahun, 10) : null,
+							academicYearId: academicYearId || null,
+							tahunAjaran: year.tahunAjaran,
 						},
 					},
 				},

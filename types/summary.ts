@@ -25,6 +25,9 @@ export interface CashflowSummary {
 	totalDebit: number;
 	totalKredit: number;
 	saldo?: number;
+	realPendapatan: number;
+	realPengeluaran: number;
+	saldoKasBank: number;
 }
 
 export interface DashboardSummary {

@@ -8,6 +8,8 @@ import {
 } from "@/lib/utils/utils-idempotency";
 import { success, errors, noContent, error } from "@/lib/api/api-response";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
+import { syncAccountBalance } from "@/lib/accounting/accounting-balance";
 
 /**
  * Helper to convert PrismaErrorResult to NextResponse
@@ -101,23 +103,24 @@ export async function PATCH(
 								where: { kodeAkun: cf.kodeAkun },
 							});
 
-							if (account) {
-								let saldoChange = 0;
-								const isDebitNormal = ["Asset", "Expense"].includes(
-									account.tipeAkun,
-								);
+						if (account) {
+							const saldoChange = computeSaldoChange(
+								account,
+								cf.debit,
+								cf.kredit,
+							);
 
-								if (isDebitNormal) {
-									saldoChange = cf.debit - cf.kredit;
-								} else {
-									saldoChange = cf.kredit - cf.debit;
-								}
-
-								await tx.account.update({
-									where: { kodeAkun: cf.kodeAkun },
-									data: { saldo: { increment: saldoChange } },
-								});
-							}
+							await tx.account.update({
+								where: { kodeAkun: cf.kodeAkun },
+								data: { saldo: { increment: saldoChange } },
+							});
+							await syncAccountBalance(
+								tx,
+								cf.kodeAkun,
+								saldoChange,
+								cf.tanggal,
+							);
+						}
 						}
 					}
 
@@ -174,21 +177,22 @@ export async function PATCH(
 						});
 
 						if (account) {
-							let reverseChange = 0;
-							const isDebitNormal = ["Asset", "Expense"].includes(
-								account.tipeAkun,
+							const reverseChange = computeSaldoChange(
+								account,
+								cf.kredit,
+								cf.debit,
 							);
-
-							if (isDebitNormal) {
-								reverseChange = cf.kredit - cf.debit;
-							} else {
-								reverseChange = cf.debit - cf.kredit;
-							}
 
 							await tx.account.update({
 								where: { kodeAkun: cf.kodeAkun },
 								data: { saldo: { increment: reverseChange } },
 							});
+							await syncAccountBalance(
+								tx,
+								cf.kodeAkun,
+								reverseChange,
+								cf.tanggal,
+							);
 						}
 					}
 
@@ -241,27 +245,29 @@ export async function PATCH(
 					}
 
 					// 6. Apply new balances for all entries
+					const newTanggal = tanggal ? new Date(tanggal) : oldCashflow.tanggal;
 					for (const entry of entries) {
 						const account = await tx.account.findUnique({
 							where: { kodeAkun: entry.kodeAkun },
 						});
 
 						if (account) {
-							let saldoChange = 0;
-							const isDebitNormal = ["Asset", "Expense"].includes(
-								account.tipeAkun,
+							const saldoChange = computeSaldoChange(
+								account,
+								entry.debit,
+								entry.kredit,
 							);
-
-							if (isDebitNormal) {
-								saldoChange = entry.debit - entry.kredit;
-							} else {
-								saldoChange = entry.kredit - entry.debit;
-							}
 
 							await tx.account.update({
 								where: { kodeAkun: entry.kodeAkun },
 								data: { saldo: { increment: saldoChange } },
 							});
+							await syncAccountBalance(
+								tx,
+								entry.kodeAkun,
+								saldoChange,
+								newTanggal,
+							);
 						}
 					}
 
@@ -350,16 +356,11 @@ export async function PATCH(
 				});
 
 				if (oldAccount) {
-					let reverseChange = 0;
-					const isDebitNormal = ["Asset", "Expense"].includes(
-						oldAccount.tipeAkun,
+					const reverseChange = computeSaldoChange(
+						oldAccount,
+						oldCashflow.kredit,
+						oldCashflow.debit,
 					);
-
-					if (isDebitNormal) {
-						reverseChange = oldCashflow.kredit - oldCashflow.debit;
-					} else {
-						reverseChange = oldCashflow.debit - oldCashflow.kredit;
-					}
 
 					await tx.account.update({
 						where: { kodeAkun: oldCashflow.kodeAkun },
@@ -376,21 +377,12 @@ export async function PATCH(
 					throw new Error(`Akun baru dengan kode ${kodeAkun} tidak ditemukan`);
 				}
 
-				let newChange = 0;
-				const isNewDebitNormal = ["Asset", "Expense"].includes(
-					newAccount.tipeAkun,
-				);
+			const newChange = computeSaldoChange(newAccount, newDebit, newKredit);
 
-				if (isNewDebitNormal) {
-					newChange = newDebit - newKredit;
-				} else {
-					newChange = newKredit - newDebit;
-				}
-
-				await tx.account.update({
-					where: { kodeAkun },
-					data: { saldo: { increment: newChange } },
-				});
+			await tx.account.update({
+				where: { kodeAkun },
+				data: { saldo: { increment: newChange } },
+			});
 
 				// 4. Update Cashflow
 				const updatedCashflow = await tx.cashflow.update({
@@ -472,16 +464,11 @@ export async function DELETE(
 					});
 
 					if (account) {
-						let reverseChange = 0;
-						const isDebitNormal = ["Asset", "Expense"].includes(
-							account.tipeAkun,
+						const reverseChange = computeSaldoChange(
+							account,
+							cf.kredit,
+							cf.debit,
 						);
-
-						if (isDebitNormal) {
-							reverseChange = cf.kredit - cf.debit;
-						} else {
-							reverseChange = cf.debit - cf.kredit;
-						}
 
 						await tx.account.update({
 							where: { kodeAkun: cf.kodeAkun },

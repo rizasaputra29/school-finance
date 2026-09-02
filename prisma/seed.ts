@@ -4,6 +4,8 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { auth } from "../lib/auth/auth-server";
+import { findAccountByCode } from "../lib/accounting/accounting-chart-of-accounts";
+
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -526,6 +528,19 @@ const CATEGORY_TO_ACCOUNT: Record<string, string> = {
 	"Biaya Gedung": "522",
 };
 
+// Categories that represent internal cash/bank movements, not revenue/expense.
+// These are skipped in the cashflow-to-journal revenue/expense loop because
+// transfer journals are created separately.
+const TRANSFER_CATEGORIES = new Set([
+	"Setor",
+	"Setor Bank",
+	"penarikan",
+	"Penarikan Kas",
+	"mutasi",
+	"Mutasi Antar Kas/Bank",
+	"Transfer",
+]);
+
 const MONTHS_2025 = [
 	"2025-07",
 	"2025-08",
@@ -666,7 +681,15 @@ async function main() {
 
 	// 3. CREATE ACCOUNTS
 	console.log("2. Creating accounts...");
-	await prisma.account.createMany({ data: ACCOUNTS });
+	const accountsWithMeta = ACCOUNTS.map((account) => {
+		const coaAccount = findAccountByCode(account.kodeAkun);
+		return {
+			...account,
+			normalBalance: coaAccount?.normalBalance ?? "debit",
+			isSystem: true,
+		};
+	});
+	await prisma.account.createMany({ data: accountsWithMeta });
 	console.log(`   ✅ Created ${ACCOUNTS.length} accounts\n`);
 
 	// 3. CREATE ACADEMIC YEARS
@@ -1277,7 +1300,7 @@ async function main() {
 			tanggal: new Date(`${m}-20`),
 			keterangan: `Setor Tunai ke Bank 2024`,
 			kodeAkun: "102",
-			kategori: "Setor",
+			kategori: "Setor Bank",
 			debit: 20000000 + Math.random() * 10000000,
 			kredit: 0,
 			status: "posted",
@@ -1422,8 +1445,13 @@ async function main() {
 		kredit: number;
 	}> = [];
 
-	// Create journal entries for cashflows
+	// Create journal entries for cashflows.
+	// Skip transfer-like categories; those are posted as inter-asset journals.
 	for (const cf of createdCashflows) {
+		if (TRANSFER_CATEGORIES.has(cf.kategori || "")) {
+			continue;
+		}
+
 		const isIncoming = cf.debit > 0;
 		let contraAccount = "101";
 
@@ -1666,7 +1694,7 @@ async function main() {
 			tanggal: new Date(`${m}-${10 + i * 3}`),
 			keterangan: `Penarikan Kas dari Bank #${i + 1}`,
 			kodeAkun: "102", // Bank
-			kategori: "penarikan",
+			kategori: "Penarikan Kas",
 			debit: 0,
 			kredit: amount,
 			status: "posted",
@@ -1678,7 +1706,7 @@ async function main() {
 			tanggal: new Date(`${m}-${10 + i * 3}`),
 			keterangan: `Penerimaan Kas dari Penarikan Bank #${i + 1}`,
 			kodeAkun: "101", // Kas
-			kategori: "penarikan",
+			kategori: "Penarikan Kas",
 			debit: amount,
 			kredit: 0,
 			status: "posted",
@@ -1706,21 +1734,11 @@ async function main() {
 			source: "kas",
 		},
 		{
-			tanggal: new Date("2025-11-13"),
-			keterangan: "Draft Pemasukan SPP - Menunggu Persetujuan",
-			kodeAkun: "405",
-			kategori: "pemasukan",
-			debit: 1800000,
-			kredit: 0,
-			status: "draft",
-			source: "bank",
-		},
-		{
-			tanggal: new Date("2025-10-20"),
-			keterangan: "Approved Transfer Operasional",
-			kodeAkun: "102",
-			kategori: "mutasi",
-			debit: 3000000,
+			tanggal: new Date("2025-11-15"),
+			keterangan: "Mutasi Bank ke Kas - Menunggu Persetujuan",
+			kodeAkun: "101",
+			kategori: "Mutasi Antar Kas/Bank",
+			debit: 2500000,
 			kredit: 0,
 			status: "approved",
 			source: "bank",
@@ -2065,6 +2083,135 @@ async function main() {
 	];
 	await prisma.asset.createMany({ data: assetData });
 	console.log(`   ✅ Created ${assetData.length} assets\n`);
+
+	// 13b. CREATE OPENING BALANCE JOURNAL
+	// Compute total historical depreciation from seeded assets so the
+	// Accumulated Depreciation account (111) matches the asset register.
+	const totalAssetDepreciation = assetData.reduce(
+		(sum, asset) => sum + (asset.alreadyDepreciatedAmount || 0),
+		0,
+	);
+
+	// The original seed put -100M on 111. Any difference between that and the
+	// actual asset depreciation must flow through retained earnings (302) so
+	// the accounting equation stays balanced.
+	const originalAccumulatedDepreciation = 100_000_000;
+	const retainedEarningsAdjustment =
+		totalAssetDepreciation - originalAccumulatedDepreciation;
+
+	const openingBalanceDate = academicYears[0].tanggalMulai;
+	const obReference = `OB-SEED`;
+
+	console.log("13b. Creating opening balance journal...");
+	await prisma.$transaction(async (tx) => {
+		const obEntry = await tx.journalEntry.create({
+			data: {
+				tanggal: openingBalanceDate,
+				keterangan: "Saldo Awal dari Seed",
+				reference: obReference,
+				status: "posted",
+			},
+		});
+
+		const obLines: Array<{
+			journalEntryId: string;
+			kodeAkun: string;
+			debit: number;
+			kredit: number;
+		}> = [];
+
+		for (const account of accountsWithMeta) {
+			if (account.kodeAkun === "111" || account.kodeAkun === "600") {
+				// 111 is handled by totalAssetDepreciation; 600 starts at zero.
+				continue;
+			}
+
+			let saldo = account.saldo ?? 0;
+
+			// Adjust retained earnings for the difference between the seeded
+			// accumulated depreciation and the real total from assets.
+			if (account.kodeAkun === "302") {
+				saldo -= retainedEarningsAdjustment;
+			}
+
+			if (saldo === 0) continue;
+
+			const normalBalance = account.normalBalance ?? "debit";
+			const isDebitNormal = normalBalance === "debit";
+
+			if (isDebitNormal) {
+				if (saldo > 0) {
+					obLines.push({
+						journalEntryId: obEntry.id,
+						kodeAkun: account.kodeAkun,
+						debit: saldo,
+						kredit: 0,
+					});
+				} else {
+					obLines.push({
+						journalEntryId: obEntry.id,
+						kodeAkun: account.kodeAkun,
+						debit: 0,
+						kredit: Math.abs(saldo),
+					});
+				}
+			} else {
+				if (saldo > 0) {
+					obLines.push({
+						journalEntryId: obEntry.id,
+						kodeAkun: account.kodeAkun,
+						debit: 0,
+						kredit: saldo,
+					});
+				} else {
+					obLines.push({
+						journalEntryId: obEntry.id,
+						kodeAkun: account.kodeAkun,
+						debit: Math.abs(saldo),
+						kredit: 0,
+					});
+				}
+			}
+		}
+
+		// Accumulated depreciation (111) is credit-normal; store as negative saldo.
+		if (totalAssetDepreciation !== 0) {
+			obLines.push({
+				journalEntryId: obEntry.id,
+				kodeAkun: "111",
+				debit: 0,
+				kredit: totalAssetDepreciation,
+			});
+		}
+
+		// Validate balance before inserting.
+		const totalDebit = obLines.reduce((sum, line) => sum + line.debit, 0);
+		const totalKredit = obLines.reduce((sum, line) => sum + line.kredit, 0);
+		if (totalDebit !== totalKredit) {
+			throw new Error(
+				`Opening balance journal is unbalanced: debit ${totalDebit} != kredit ${totalKredit}`,
+			);
+		}
+
+		await tx.journalEntryLine.createMany({ data: obLines });
+
+		// Update stored saldo for 111 and 302 to match the posted OB journal.
+		await tx.account.update({
+			where: { kodeAkun: "111" },
+			data: { saldo: -totalAssetDepreciation },
+		});
+		await tx.account.update({
+			where: { kodeAkun: "302" },
+			data: {
+				saldo:
+					(accountsWithMeta.find((a) => a.kodeAkun === "302")?.saldo ?? 0) -
+					retainedEarningsAdjustment,
+			},
+		});
+	});
+	console.log(
+		`   ✅ Created opening balance journal ${obReference} (Rp ${totalAssetDepreciation.toLocaleString("id-ID")} accumulated depreciation)\n`,
+	);
 
 	// 14. CREATE INVENTORY
 	console.log("14. Creating inventory...");
@@ -2538,48 +2685,7 @@ async function main() {
 	}
 	console.log("   ✅ Billing/installment statuses aligned\n");
 
-	// 20. CREATE OPENING BALANCE SCENARIO (uses account 3201)
-	console.log("20. Creating opening balance scenario...");
-	const openingJournalId = createId();
-	await prisma.journalEntry.create({
-		data: {
-			id: openingJournalId,
-			tanggal: new Date("2025-07-01"),
-			keterangan: "Saldo Awal Periode 2025-07",
-			reference: "OB-2025-0001",
-			status: "approved",
-			version: 1,
-		},
-	});
-
-	await prisma.journalEntryLine.createMany({
-		data: [
-			{
-				id: createId(),
-				journalEntryId: openingJournalId,
-				kodeAkun: "101",
-				debit: 15000000,
-				kredit: 0,
-			},
-			{
-				id: createId(),
-				journalEntryId: openingJournalId,
-				kodeAkun: "102",
-				debit: 10000000,
-				kredit: 0,
-			},
-			{
-				id: createId(),
-				journalEntryId: openingJournalId,
-				kodeAkun: "3201",
-				debit: 0,
-				kredit: 25000000,
-			},
-		],
-	});
-	console.log("   ✅ Opening balance scenario created\n");
-
-	// 21. FIX CASHFLOW REFERENCE LINKS FOR JOURNAL WORKFLOWS
+	// 20. FIX CASHFLOW REFERENCE LINKS FOR JOURNAL WORKFLOWS
 	console.log("21. Linking journal cashflow references...");
 	const draftJournals = await prisma.journalEntry.findMany({
 		where: { status: "draft", reference: { startsWith: "DRAFT-" } },

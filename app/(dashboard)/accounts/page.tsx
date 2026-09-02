@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useAcademicYear } from "@/context/AcademicYearContext";
@@ -127,6 +127,36 @@ export default function AccountsPage() {
 			}));
 		},
 	});
+
+	// Silent catch-up: ensure full-year depreciation is posted for the selected
+	// academic year whenever the COA page loads. Idempotent via force: false.
+	useEffect(() => {
+		if (!selectedYear?.id) return;
+
+		(async () => {
+			try {
+				const response = await fetch("/api/assets/depreciation", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						academicYearId: selectedYear.id,
+						capDate: selectedYear.tanggalSelesai,
+					}),
+				});
+				const result = await response.json();
+				if (!result.success) return;
+
+				// If anything was actually posted, refresh the COA data
+				if ((result.data?.assetsProcessed ?? 0) > 0) {
+					queryClient.invalidateQueries({
+						queryKey: ["accounts", selectedYear?.id],
+					});
+				}
+			} catch (error) {
+				console.error("Silent depreciation catch-up failed:", error);
+			}
+		})();
+	}, [selectedYear?.id, selectedYear?.tanggalSelesai, queryClient]);
 
 	const createMutation = useMutation({
 		mutationFn: async (data: AccountFormValues) => {

@@ -20,6 +20,10 @@ import {
 } from "@/lib/api/api-rate-limit";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
+import { syncAccountBalance } from "@/lib/accounting/accounting-balance";
+import { calculateDepreciationForPeriod } from "@/lib/accounting/accounting-depreciation";
+import { processDepreciationForAssetRange } from "@/lib/accounting/accounting-depreciation-service";
 
 type PrismaTransactionClient = Parameters<
 	Parameters<typeof prisma.$transaction>[0]
@@ -27,6 +31,12 @@ type PrismaTransactionClient = Parameters<
 
 // Asset categories that are true fixed assets (tracked in Asset model)
 const ASSET_CATEGORIES = ["Peralatan", "Kendaraan", "Bangunan", "Tanah"];
+
+// Valid fixed-asset accounts for asset purchases
+const FIXED_ASSET_ACCOUNTS = ["107", "108", "109", "110"];
+
+// Valid cash/bank accounts for payment
+const PAYMENT_ACCOUNTS = ["101", "102"];
 
 // Non-asset categories that go directly to expense
 const NON_ASSET_CATEGORIES = [
@@ -50,6 +60,7 @@ const purchaseSchema = z.object({
 	umurTeknis: z.number().int().min(0).max(50).optional(), // Years for depreciation
 	nilaiResidu: z.number().min(0).optional().default(0),
 	keterangan: z.string().optional(),
+	academicYearId: z.string().optional(),
 });
 
 // Response type
@@ -108,6 +119,7 @@ async function processPurchase(
 		umurTeknis?: number;
 		nilaiResidu?: number;
 		keterangan?: string;
+		academicYearId?: string;
 	},
 ): Promise<PurchaseResponse["data"]> {
 	const isAsset = isAssetCategory(data.kategori);
@@ -125,6 +137,12 @@ async function processPurchase(
 	if (paymentAccount.tipeAkun !== "Asset") {
 		throw new Error(
 			`Akun pembayaran ${paymentAccountCode} harus bertipe Asset`,
+		);
+	}
+
+	if (!PAYMENT_ACCOUNTS.includes(paymentAccountCode)) {
+		throw new Error(
+			`Akun pembayaran harus Kas (${PAYMENT_ACCOUNTS.join(" atau ")})`,
 		);
 	}
 
@@ -147,6 +165,13 @@ async function processPurchase(
 	if (!isAsset && targetAccount.tipeAkun !== "Expense") {
 		throw new Error(
 			`Akun ${targetAccountCode} harus bertipe Expense untuk pembelian beban`,
+		);
+	}
+
+	// Restrict fixed-asset purchases to the fixed-asset accounts (107-110)
+	if (isAsset && !FIXED_ASSET_ACCOUNTS.includes(targetAccountCode)) {
+		throw new Error(
+			`Pembelian aktiva tetap harus menggunakan akun ${FIXED_ASSET_ACCOUNTS.join(", ")}`,
 		);
 	}
 
@@ -194,6 +219,7 @@ async function processPurchase(
 			tanggal: new Date(data.tanggal),
 			keterangan: transactionKeterangan,
 			reference: `asset-purchase-${Date.now()}`,
+			status: "posted",
 		},
 	});
 
@@ -221,15 +247,8 @@ async function processPurchase(
 			throw new Error(`Akun dengan kode ${entry.kodeAkun} tidak ditemukan`);
 		}
 
-		// Calculate balance adjustment based on account type
-		const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-		let saldoChange = 0;
-
-		if (isDebitNormal) {
-			saldoChange = entry.debit - entry.kredit;
-		} else {
-			saldoChange = entry.kredit - entry.debit;
-		}
+		// Calculate balance adjustment based on account normal balance
+		const saldoChange = computeSaldoChange(account, entry.debit, entry.kredit);
 
 		// Update account balance
 		await tx.account.update({
@@ -268,42 +287,14 @@ async function processPurchase(
 
 	// Update AccountBalance snapshots for the active academic year
 	const purchaseDate = new Date(data.tanggal);
-	const academicYearForPurchase = await tx.academicYear.findFirst({
-		where: {
-			tanggalMulai: { lte: purchaseDate },
-			tanggalSelesai: { gte: purchaseDate },
-		},
-	});
+	for (const entry of entries) {
+		const account = await tx.account.findUnique({
+			where: { kodeAkun: entry.kodeAkun },
+		});
+		if (!account) continue;
 
-	if (academicYearForPurchase) {
-		for (const entry of entries) {
-			const account = await tx.account.findUnique({
-				where: { kodeAkun: entry.kodeAkun },
-			});
-			if (!account) continue;
-
-			const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-			const saldoChange = isDebitNormal
-				? entry.debit - entry.kredit
-				: entry.kredit - entry.debit;
-
-			await tx.accountBalance
-				.upsert({
-					where: {
-						kodeAkun_academicYearId: {
-							kodeAkun: entry.kodeAkun,
-							academicYearId: academicYearForPurchase.id,
-						},
-					},
-					update: { saldo: { increment: saldoChange } },
-					create: {
-						kodeAkun: entry.kodeAkun,
-						academicYearId: academicYearForPurchase.id,
-						saldo: saldoChange,
-					},
-				})
-				.catch(() => {});
-		}
+		const saldoChange = computeSaldoChange(account, entry.debit, entry.kredit);
+		await syncAccountBalance(tx, entry.kodeAkun, saldoChange, purchaseDate);
 	}
 
 	// If it's an asset, create Asset record for tracking
@@ -336,6 +327,37 @@ async function processPurchase(
 			hargaPerolehan: asset.hargaPerolehan,
 			tanggalPerolehan: asset.tanggalPerolehan,
 		};
+
+		// Auto-trigger depreciation from the acquisition academic year up to the
+		// selected academic year (or the active one) so the COA reflects the new
+		// asset immediately.
+		const purchaseDate = new Date(data.tanggal);
+		let targetAcademicYearId = data.academicYearId;
+
+		if (!targetAcademicYearId) {
+			const activeYear = await tx.academicYear.findFirst({
+				where: {
+					tanggalMulai: { lte: purchaseDate },
+					tanggalSelesai: { gte: purchaseDate },
+				},
+				orderBy: { tanggalMulai: "desc" },
+			});
+			targetAcademicYearId = activeYear?.id;
+		}
+
+		if (targetAcademicYearId) {
+			try {
+				await processDepreciationForAssetRange(
+					tx,
+					asset.id,
+					targetAcademicYearId,
+					{ force: true, useYearEnd: true },
+				);
+			} catch (depError) {
+				console.error("Auto-depreciation failed for new asset:", depError);
+				// Do not fail the purchase if depreciation auto-processing fails
+			}
+		}
 	}
 
 	return {
@@ -399,7 +421,7 @@ export async function GET(request: NextRequest) {
 						where.tanggalPerolehan = { lte: academicYear.tanggalSelesai };
 					}
 				} else if (startDate && endDate) {
-					where.tanggal = {
+					where.tanggalPerolehan = {
 						gte: new Date(startDate),
 						lte: new Date(endDate),
 					};
@@ -468,8 +490,6 @@ export async function GET(request: NextRequest) {
 				else total = totalAssets + totalNonAssets;
 
 				// Compute per-academic-year depreciation values for assets
-				const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
-
 				function computeAssetYearValues(
 					asset: (typeof assetPurchases)[number],
 				) {
@@ -503,27 +523,44 @@ export async function GET(request: NextRequest) {
 						};
 					}
 
-					const yearsElapsed = Math.max(
-						0,
-						Math.floor(
-							(yearEnd.getTime() - purchaseDate.getTime()) / MS_PER_YEAR,
-						),
+					const depreciableBase = asset.hargaPerolehan - asset.nilaiResidu;
+					const additionalDepreciation = calculateDepreciationForPeriod(
+						{
+							id: asset.id,
+							kodeAkun: asset.kodeAkun,
+							nama: asset.nama,
+							kategori: asset.kategori,
+							tanggalPerolehan: asset.tanggalPerolehan,
+							hargaPerolehan: asset.hargaPerolehan,
+							umurTeknis: asset.umurTeknis,
+							nilaiResidu: asset.nilaiResidu,
+							isTanah: asset.isTanah,
+							status: asset.status,
+							alreadyDepreciatedAmount: asset.alreadyDepreciatedAmount,
+							alreadyDepreciatedYears: asset.alreadyDepreciatedYears,
+							sisaUmurTeknis: asset.sisaUmurTeknis,
+						},
+						purchaseDate,
+						yearEnd,
 					);
-					const depreciatedYears = Math.min(yearsElapsed, asset.umurTeknis);
-					const annualDepreciation =
-						(asset.hargaPerolehan - asset.nilaiResidu) / asset.umurTeknis;
-					const accumulatedDepreciation =
-						depreciatedYears * annualDepreciation;
+
+					const accumulatedDepreciation = Math.min(
+						depreciableBase,
+						asset.alreadyDepreciatedAmount + additionalDepreciation,
+					);
 					const bookValue = asset.hargaPerolehan - accumulatedDepreciation;
-					const sisaUmurTeknis = asset.umurTeknis - depreciatedYears;
+
+					const annualDepreciation =
+						asset.umurTeknis > 0 ? depreciableBase / asset.umurTeknis : 0;
+					const depreciatedYears =
+						annualDepreciation > 0
+							? Math.floor(accumulatedDepreciation / annualDepreciation)
+							: 0;
 
 					return {
 						bookValue: Math.max(bookValue, asset.nilaiResidu),
-						sisaUmurTeknis: Math.max(sisaUmurTeknis, 0),
-						accumulatedDepreciation: Math.min(
-							accumulatedDepreciation,
-							asset.hargaPerolehan - asset.nilaiResidu,
-						),
+						sisaUmurTeknis: Math.max(asset.umurTeknis - depreciatedYears, 0),
+						accumulatedDepreciation,
 						depreciatedYears,
 					};
 				}
@@ -616,7 +653,10 @@ export async function POST(request: NextRequest) {
 				// Process the purchase in a transaction
 				try {
 					const result = await prisma.$transaction(async (tx) => {
-						return processPurchase(tx, data);
+						return processPurchase(tx, {
+							...data,
+							academicYearId: data.academicYearId,
+						});
 					});
 
 					return success(result, {

@@ -3,8 +3,8 @@ import prisma from "@/lib/prisma";
 import { withAuthAppRouter, getQueryParams } from "@/lib/auth/auth-middleware";
 import { success } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 
-const DEBIT_NORMAL_ACCOUNTS = ["Asset", "Aset", "Expense", "Beban"];
 const EQUITY_OPENING_CODES = ["300", "301", "302"];
 const PRIVE_CODE = "304";
 
@@ -98,10 +98,11 @@ export async function GET(request: NextRequest) {
 			}
 
 			const calcBalance = (account: typeof accounts[number], movements: { debit: number; kredit: number }) => {
-				const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(account.tipeAkun);
-				const netMovement = isDebitNormal
-					? movements.debit - movements.kredit
-					: movements.kredit - movements.debit;
+				const netMovement = computeSaldoChange(
+					account,
+					movements.debit,
+					movements.kredit,
+				);
 				return account.saldo + netMovement;
 			};
 

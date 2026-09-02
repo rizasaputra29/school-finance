@@ -15,6 +15,7 @@ import { roundAmount } from "@/lib/accounting/accounting-validation";
 import { formatDate as formatPeriode } from "@/lib/utils/utils-date";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 
 type PrismaTransactionClient = Parameters<
 	Parameters<typeof prisma.$transaction>[0]
@@ -158,6 +159,68 @@ async function generateOpeningBalanceReference(
 }
 
 /**
+ * Migrate any legacy approved opening-balance journals to posted status.
+ * Also updates AccountBalance snapshots so posted-line reports include them.
+ */
+async function migrateApprovedOpeningBalances(
+	tx: PrismaTransactionClient,
+): Promise<number> {
+	const approvedEntries = await tx.journalEntry.findMany({
+		where: {
+			reference: { startsWith: OPENING_BALANCE_REFERENCE_PREFIX },
+			status: "approved",
+		},
+		include: { entries: true },
+	});
+
+	for (const entry of approvedEntries) {
+		const academicYear = await tx.academicYear.findFirst({
+			where: {
+				tanggalMulai: { lte: entry.tanggal },
+				tanggalSelesai: { gte: entry.tanggal },
+			},
+		});
+
+		for (const line of entry.entries) {
+			const account = await tx.account.findUnique({
+				where: { kodeAkun: line.kodeAkun },
+			});
+			if (!account) continue;
+
+			const signedChange = computeSaldoChange(
+				account,
+				line.debit,
+				line.kredit,
+			);
+
+			if (academicYear) {
+				await tx.accountBalance.upsert({
+					where: {
+						kodeAkun_academicYearId: {
+							kodeAkun: line.kodeAkun,
+							academicYearId: academicYear.id,
+						},
+					},
+					update: { saldo: { increment: signedChange } },
+					create: {
+						kodeAkun: line.kodeAkun,
+						academicYearId: academicYear.id,
+						saldo: signedChange,
+					},
+				});
+			}
+		}
+
+		await tx.journalEntry.update({
+			where: { id: entry.id },
+			data: { status: "posted" },
+		});
+	}
+
+	return approvedEntries.length;
+}
+
+/**
  * Log audit trail
  */
 async function logAudit(
@@ -286,6 +349,9 @@ export async function POST(request: NextRequest) {
 
 				// Validate in transaction
 				const result = await prisma.$transaction(async (tx) => {
+					// Auto-migrate legacy approved opening-balance journals to posted.
+					await migrateApprovedOpeningBalances(tx);
+
 					// Check if opening balance already exists for this period
 					const { exists, existingEntry } = await checkOpeningBalanceExists(
 						tx,
@@ -348,7 +414,7 @@ export async function POST(request: NextRequest) {
 							tanggal: transactionDate,
 							keterangan: `Saldo Awal Periode ${transactionPeriode}`,
 							reference,
-							status: "approved", // Auto-approve for opening balance
+							status: "posted", // Opening balances flow into posted-line reports
 							version: 1,
 							isBackdated: false,
 							adjustmentType: "regular",
@@ -380,6 +446,53 @@ export async function POST(request: NextRequest) {
 							kredit: roundAmount(totalDebit), // Balance with total debit
 						},
 					});
+
+					// Update AccountBalance snapshots for the new posted OB lines
+					const academicYearForBalance = await tx.academicYear.findFirst({
+						where: {
+							tanggalMulai: { lte: transactionDate },
+							tanggalSelesai: { gte: transactionDate },
+						},
+					});
+
+					if (academicYearForBalance) {
+						const allLines = [
+							...createdEntries,
+							{
+								kodeAkun: closingEntry.kodeAkun,
+								debit: closingEntry.debit,
+								kredit: closingEntry.kredit,
+							},
+						];
+
+						for (const line of allLines) {
+							const accountForBalance = await tx.account.findUnique({
+								where: { kodeAkun: line.kodeAkun },
+							});
+							if (!accountForBalance) continue;
+
+							const signedChange = computeSaldoChange(
+								accountForBalance,
+								line.debit,
+								line.kredit,
+							);
+
+							await tx.accountBalance.upsert({
+								where: {
+									kodeAkun_academicYearId: {
+										kodeAkun: line.kodeAkun,
+										academicYearId: academicYearForBalance.id,
+									},
+								},
+								update: { saldo: { increment: signedChange } },
+								create: {
+									kodeAkun: line.kodeAkun,
+									academicYearId: academicYearForBalance.id,
+									saldo: signedChange,
+								},
+							});
+						}
+					}
 
 					// Create cashflow records using createMany for better performance
 					const cashflowData: Prisma.CashflowCreateManyInput[] = entries

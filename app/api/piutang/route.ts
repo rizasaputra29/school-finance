@@ -11,6 +11,7 @@ import {
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import { postToJournal } from "@/lib/services/journal";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 import {
 	PIUTANG_SISWA_ACCOUNT_CODE,
 	PIUTANG_KARYAWAN_ACCOUNT_CODE,
@@ -188,15 +189,12 @@ async function processPiutangPayment(
 				throw new Error(`Akun dengan kode ${entry.kodeAkun} tidak ditemukan`);
 			}
 
-			// Calculate balance adjustment based on account type
-			const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-			let saldoChange = 0;
-
-			if (isDebitNormal) {
-				saldoChange = entry.debit - entry.kredit;
-			} else {
-				saldoChange = entry.kredit - entry.debit;
-			}
+			// Calculate balance adjustment based on account normal balance
+			const saldoChange = computeSaldoChange(
+				account,
+				entry.debit,
+				entry.kredit,
+			);
 
 			// Update account balance
 			await tx.account.update({

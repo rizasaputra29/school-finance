@@ -692,6 +692,105 @@ export function getExpenseAccounts(): ChartAccount[] {
 }
 
 // ============================================================================
+// Normal Balance / Ledger Helpers
+// ============================================================================
+
+const INDONESIAN_TYPE_MAP: Record<string, AccountType> = {
+	Asset: 'Asset',
+	Aset: 'Asset',
+	Liability: 'Liability',
+	Kewajiban: 'Liability',
+	Equity: 'Equity',
+	Ekuitas: 'Equity',
+	Revenue: 'Revenue',
+	Pendapatan: 'Revenue',
+	Expense: 'Expense',
+	Beban: 'Expense',
+};
+
+function normalizeAccountType(tipeAkun: string): AccountType | null {
+	return INDONESIAN_TYPE_MAP[tipeAkun] ?? null;
+}
+
+export interface NormalBalanceAccountInput {
+	kodeAkun: string;
+	tipeAkun: string;
+	normalBalance?: string | null;
+	isContra?: boolean | null;
+}
+
+/**
+ * Resolve the effective normal balance of an account.
+ *
+ * Order of precedence:
+ * 1. Static COA lookup — authoritative for system accounts including contra accounts (111, 304).
+ * 2. DB normalBalance if explicitly set to debit/kredit.
+ * 3. Derive from account type, flipped by isContra.
+ */
+export function resolveNormalBalance(account: NormalBalanceAccountInput): NormalBalance {
+	const coaAccount = findAccountByCode(account.kodeAkun);
+	if (coaAccount) {
+		return coaAccount.normalBalance;
+	}
+
+	if (account.normalBalance === 'debit' || account.normalBalance === 'kredit') {
+		return account.normalBalance;
+	}
+
+	const normalizedType = normalizeAccountType(account.tipeAkun);
+	if (!normalizedType) {
+		return 'debit';
+	}
+
+	const base = getNormalBalanceByType(normalizedType);
+	return account.isContra ? (base === 'debit' ? 'kredit' : 'debit') : base;
+}
+
+/**
+ * Compute signed saldo change for a journal line.
+ *
+ * debit-normal account:  +debit, -kredit
+ * kredit-normal account: -debit, +kredit
+ */
+export function computeSaldoChange(account: NormalBalanceAccountInput, debit: number, kredit: number): number {
+	const normalBalance = resolveNormalBalance(account);
+	return normalBalance === 'debit' ? debit - kredit : kredit - debit;
+}
+
+export type CashflowCategory = 'OPS' | 'INV' | 'FIN' | null;
+
+/**
+ * Classify an account into a cash-flow statement category per transaction.md §8.
+ */
+export function classifyCashflowAccount(kodeAkun: string): CashflowCategory {
+	if (kodeAkun === '101' || kodeAkun === '102' || kodeAkun === '111') {
+		return null;
+	}
+
+	const coaAccount = findAccountByCode(kodeAkun);
+	if (coaAccount?.isContra) {
+		return null;
+	}
+
+	// Investasi — fixed assets (excluding contra 111 handled above)
+	if (['107', '108', '109', '110'].includes(kodeAkun)) {
+		return 'INV';
+	}
+
+	// Pendanaan — equity / owner
+	if (kodeAkun === '300' || kodeAkun === '304' || kodeAkun.startsWith('3')) {
+		return 'FIN';
+	}
+
+	// Operasi — revenue, expense, receivables, payables, prepaid
+	if (/^(4|5|6)/.test(kodeAkun) || /^(103|104|105|106|2)/.test(kodeAkun)) {
+		return 'OPS';
+	}
+
+	return null;
+}
+
+// ============================================================================
 // Prisma Data Creation
 // ============================================================================
 
@@ -835,6 +934,9 @@ const chartOfAccountsService = {
   isDebitNormalAccount,
   isCreditNormalAccount,
   seedChartOfAccounts,
+  resolveNormalBalance,
+  computeSaldoChange,
+  classifyCashflowAccount,
 };
 
 export default chartOfAccountsService;

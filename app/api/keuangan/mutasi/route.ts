@@ -11,6 +11,8 @@ import {
 import { invalidateDashboardCache } from "@/lib/utils/utils-cache";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
+import { syncAccountBalance } from "@/lib/accounting/accounting-balance";
 
 const mutasiSchema = z.object({
 	tanggal: z.string().min(1, "Tanggal wajib diisi"),
@@ -200,16 +202,23 @@ export async function POST(request: NextRequest) {
 					const account = await tx.account.findUnique({
 						where: { kodeAkun: line.kodeAkun },
 					});
-					if (account) {
-						const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-						const saldoChange = isDebitNormal
-							? line.debit - line.kredit
-							: line.kredit - line.debit;
-						await tx.account.update({
-							where: { kodeAkun: line.kodeAkun },
-							data: { saldo: { increment: saldoChange } },
-						});
-					}
+				if (account) {
+					const saldoChange = computeSaldoChange(
+						account,
+						line.debit,
+						line.kredit,
+					);
+					await tx.account.update({
+						where: { kodeAkun: line.kodeAkun },
+						data: { saldo: { increment: saldoChange } },
+					});
+					await syncAccountBalance(
+						tx,
+						line.kodeAkun,
+						saldoChange,
+						transactionDate,
+					);
+				}
 				}
 
 				// 4. Create AuditTrail

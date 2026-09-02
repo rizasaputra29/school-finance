@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
 					tanggal: new Date(tanggal || new Date()),
 					keterangan: `Penarikan Bank: ${description}`,
 					kodeAkun: KAS_CODE,
-					kategori: "penarikan",
+					kategori: "Penarikan Kas",
 					debit: withdrawalAmount,
 					kredit: 0,
 					source: "bank", // Money came from bank
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
 					tanggal: new Date(tanggal || new Date()),
 					keterangan: `Penarikan Bank: ${description}`,
 					kodeAkun: BANK_CODE,
-					kategori: "penarikan",
+					kategori: "Penarikan Kas",
 					debit: 0,
 					kredit: withdrawalAmount,
 					source: "bank",

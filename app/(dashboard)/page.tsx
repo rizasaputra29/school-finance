@@ -1,16 +1,22 @@
 import { Suspense } from "react";
-import { getDashboardSummary, getRecentTransactions } from "@/lib/actions/dashboard";
+import {
+	getDashboardSummary,
+	getRecentTransactions,
+	getDashboardChartData,
+} from "@/lib/actions/dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardSummaryCards } from "./_components/summary-cards";
 import { DashboardChartSection } from "./_components/chart-section";
 import { DashboardPaymentStatus } from "./_components/payment-status";
 import { DashboardRecentTransactions } from "./_components/recent-transactions";
 import { DashboardQuickActions } from "./_components/quick-actions";
+import { TrendingUp } from "lucide-react";
 
 export default async function Dashboard() {
-	const [summary, recentTransactions] = await Promise.all([
+	const [summary, recentTransactions, chartData] = await Promise.all([
 		getDashboardSummary(),
 		getRecentTransactions(),
+		getDashboardChartData(),
 	]);
 
 	return (
@@ -21,25 +27,29 @@ export default async function Dashboard() {
 					<h1 className="text-xl md:text-2xl font-bold text-gray-900">
 						Dashboard
 					</h1>
-					<p className="text-xs md:text-sm text-gray-500">Ringkasan keuangan</p>
+					<p className="text-xs md:text-sm text-gray-500">
+						{summary.academicYear
+							? `Ringkasan keuangan - TA ${summary.academicYear.tahunAjaran}`
+							: "Ringkasan keuangan"}
+					</p>
 				</div>
 			</div>
 
 			{/* Compact Bento Grid Layout */}
 			<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-3">
-				{/* Saldo - spans 2 cols */}
+				{/* Net Income - spans 2 cols */}
 				<Card className="col-span-2 bg-[#059DEA] border-0">
 					<CardContent className="p-4 md:p-6">
 						<div className="flex items-center gap-4">
 							<div className="h-12 w-12 md:h-14 md:w-14 rounded-xl bg-white/30 flex items-center justify-center">
-								<span className="text-2xl">💰</span>
+								<TrendingUp className="h-6 w-6 md:h-7 md:w-7 text-white" />
 							</div>
 							<div>
 								<p className="text-sm md:text-base font-medium text-white/80">
-									Total Saldo
+									Laba Bersih
 								</p>
 								<p className="text-xl md:text-2xl font-bold text-white">
-									{formatRupiah(summary.saldo)}
+									{formatRupiah(summary.netIncome)}
 								</p>
 							</div>
 						</div>
@@ -48,13 +58,25 @@ export default async function Dashboard() {
 
 				{/* Summary Cards */}
 				<DashboardSummaryCards
-					totalDebit={summary.totalDebit}
-					totalKredit={summary.totalKredit}
+					totalRevenue={summary.totalRevenue}
+					totalExpense={summary.totalExpense}
+					totalAssets={summary.totalAssets}
+					totalLiabilities={summary.totalLiabilities}
+					totalEquity={summary.totalEquity}
+					totalStudents={summary.totalStudents}
+					lunasCount={summary.lunasCount}
+					belumLunasCount={summary.belumLunasCount}
+					totalBillingDue={summary.totalBillingDue}
+					activeEmployees={summary.activeEmployees}
+					totalMonthlySalary={summary.totalMonthlySalary}
 				/>
 
 				{/* Charts Section - Client Component for interactivity */}
 				<Suspense fallback={<ChartSkeleton />}>
-					<DashboardChartSection />
+					<DashboardChartSection
+						initialData={chartData}
+						academicYearLabel={summary.academicYear?.tahunAjaran}
+					/>
 				</Suspense>
 
 				{/* Payment Status */}

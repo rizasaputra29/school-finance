@@ -1,4 +1,6 @@
 import { PrismaClient } from "@prisma/client";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
+import { syncAccountBalance } from "@/lib/accounting/accounting-balance";
 
 type PrismaTransactionClient = Parameters<
 	Parameters<PrismaClient["$transaction"]>[0]
@@ -60,6 +62,19 @@ export async function postToJournal(
 	const isOwner = userRole === "owner";
 	const initialStatus = isOwner ? "posted" : "draft";
 
+	// Validate every account exists in the chart of accounts
+	const accountCodes = [...new Set(entries.map((e) => e.kodeAkun))];
+	const accounts = await tx.account.findMany({
+		where: { kodeAkun: { in: accountCodes } },
+	});
+
+	const accountByCode = new Map(accounts.map((a) => [a.kodeAkun, a]));
+	for (const code of accountCodes) {
+		if (!accountByCode.has(code)) {
+			throw new Error(`Akun ${code} tidak ditemukan dalam chart of accounts`);
+		}
+	}
+
 	// Create JournalEntry
 	const journalEntry = await tx.journalEntry.create({
 		data: {
@@ -85,18 +100,19 @@ export async function postToJournal(
 	// Update account balances when journal is posted
 	if (isOwner) {
 		for (const entry of entries) {
-			const account = await tx.account.findUnique({
-				where: { kodeAkun: entry.kodeAkun },
-			});
+			const account = accountByCode.get(entry.kodeAkun);
 			if (account) {
-				const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-				const saldoChange = isDebitNormal
-					? entry.debit - entry.kredit
-					: entry.kredit - entry.debit;
+				const saldoChange = computeSaldoChange(account, entry.debit, entry.kredit);
 				await tx.account.update({
 					where: { kodeAkun: entry.kodeAkun },
 					data: { saldo: { increment: saldoChange } },
 				});
+				await syncAccountBalance(
+					tx,
+					entry.kodeAkun,
+					saldoChange,
+					tanggal,
+				);
 			}
 		}
 	}

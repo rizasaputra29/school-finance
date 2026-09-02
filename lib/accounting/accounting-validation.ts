@@ -3,7 +3,7 @@
  * Following code-quality.md: pure functions, small functions, clear naming
  */
 
-
+import { resolveNormalBalance } from "./accounting-chart-of-accounts";
 
 // ============================================================================
 // Types
@@ -48,11 +48,6 @@ export interface PeriodInfo {
 // ============================================================================
 
 const ROUNDING_PRECISION = 2;
-
-
-// Normal balance types
-const DEBIT_NORMAL_ACCOUNTS = ['Asset', 'Expense'];
-const KREDIT_NORMAL_ACCOUNTS = ['Liability', 'Equity', 'Revenue'];
 
 // ============================================================================
 // Utility Functions (Pure Functions)
@@ -364,8 +359,13 @@ export function validateNegativeBalance(
 ): ValidationResult {
   const errors: ValidationError[] = [];
   
-  // Asset and Expense should generally not go negative
-  if (DEBIT_NORMAL_ACCOUNTS.includes(accountType)) {
+  const normalBalance = resolveNormalBalance({
+    kodeAkun: accountCode,
+    tipeAkun: accountType,
+  });
+
+  // Debit-normal accounts should generally not go negative
+  if (normalBalance === 'debit') {
     if (currentBalance < 0 && !isNegativeAllowed) {
       errors.push({
         field: 'saldo',
@@ -374,8 +374,8 @@ export function validateNegativeBalance(
       });
     }
   }
-  // Liability and Equity should generally not go positive
-  else if (KREDIT_NORMAL_ACCOUNTS.includes(accountType)) {
+  // Kredit-normal accounts should generally not go positive
+  else if (normalBalance === 'kredit') {
     if (currentBalance > 0 && !isNegativeAllowed) {
       errors.push({
         field: 'saldo',
@@ -585,13 +585,17 @@ function validateNegativeBalanceFromEntries(
     if (accountAllowNegative?.get(entry.kodeAkun)) continue;
 
     const currentBalance = currentBalances?.get(entry.kodeAkun) || 0;
-    const isDebitNormal = DEBIT_NORMAL_ACCOUNTS.includes(accountType);
-    
+    const isDebitNormal =
+      resolveNormalBalance({
+        kodeAkun: entry.kodeAkun,
+        tipeAkun: accountType,
+      }) === 'debit';
+
     // Calculate the net change from this transaction
     const netChange = isDebitNormal
       ? entry.debit - entry.kredit
       : entry.kredit - entry.debit;
-    
+
     const projectedBalance = currentBalance + netChange;
 
     // Check if this entry would cause negative balance for debit-normal accounts
@@ -603,7 +607,7 @@ function validateNegativeBalanceFromEntries(
       });
     }
     // Check if credit-normal accounts would go positive (negative from their perspective)
-    else if (!isDebitNormal && entry.kodeAkun !== "304" && projectedBalance < 0) {
+    else if (!isDebitNormal && projectedBalance < 0) {
       errors.push({
         field: entry.kodeAkun,
         message: `Transaksi akan menyebabkan saldo negatif untuk akun ${entry.kodeAkun}. Saldo saat ini: ${currentBalance.toLocaleString('id-ID')}, perubahan: ${netChange.toLocaleString('id-ID')}, proyeksi: ${projectedBalance.toLocaleString('id-ID')}`,

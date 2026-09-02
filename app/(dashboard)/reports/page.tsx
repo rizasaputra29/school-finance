@@ -206,7 +206,15 @@ function ReportsInner() {
 	};
 
 	// Use dynamic Laba Rugi data from API - memoized for performance
-	const { revenues, expenses, totalRevenue, totalExpense, labaRugi } = useMemo(
+	const {
+		revenues,
+		expenses,
+		totalRevenue,
+		totalExpense,
+		labaRugi,
+		periodeBerjalan,
+		periodeSebelumnya,
+	} = useMemo(
 		() => ({
 			revenues:
 				labaRugiData?.data?.filter(
@@ -218,9 +226,9 @@ function ReportsInner() {
 				) || [],
 			totalRevenue: labaRugiData?.summary?.totalPendapatan || 0,
 			totalExpense: labaRugiData?.summary?.totalBeban || 0,
-			labaRugi:
-				(labaRugiData?.summary?.isPositive ? 1 : -1) *
-				(labaRugiData?.summary?.labaRugi || 0),
+			labaRugi: labaRugiData?.summary?.labaRugi || 0,
+			periodeBerjalan: labaRugiData?.summary?.periodeBerjalan || 0,
+			periodeSebelumnya: labaRugiData?.summary?.periodeSebelumnya || 0,
 		}),
 		[labaRugiData],
 	);
@@ -422,20 +430,40 @@ function ReportsInner() {
 										</Table>
 									</div>
 
-									{/* LABA/RUGI BERSIH */}
-									<div className="border-t-4 border-double border-gray-800 pt-4">
-										<div className="flex justify-between items-center">
-											<span className="text-lg font-bold text-gray-900">
-												{labaRugi >= 0 ? "LABA BERSIH" : "RUGI BERSIH"}
-											</span>
-											<span className="text-lg font-bold font-mono text-gray-900">
-												{labaRugi >= 0 ? "" : "("}
-												{formatRupiah(Math.abs(labaRugi))}
-												{labaRugi >= 0 ? "" : ")"}
-											</span>
-										</div>
+								{/* LABA/RUGI BERSIH */}
+								<div className="border-t-4 border-double border-gray-800 pt-4">
+									<div className="flex justify-between items-center">
+										<span className="text-lg font-bold text-gray-900">
+											{labaRugi >= 0 ? "LABA BERSIH" : "RUGI BERSIH"}
+										</span>
+										<span className="text-lg font-bold font-mono text-gray-900">
+											{labaRugi >= 0 ? "" : "("}
+											{formatRupiah(Math.abs(labaRugi))}
+											{labaRugi >= 0 ? "" : ")"}
+										</span>
 									</div>
 								</div>
+
+								{/* PERIODE BREAKDOWN */}
+								<div className="border-t border-gray-300 pt-3 space-y-1">
+									<div className="flex justify-between items-center text-sm">
+										<span className="text-gray-700">Laba (Rugi) Berjalan</span>
+										<span className="font-mono text-gray-700">
+											{periodeBerjalan >= 0 ? "" : "("}
+											{formatRupiah(Math.abs(periodeBerjalan))}
+											{periodeBerjalan >= 0 ? "" : ")"}
+										</span>
+									</div>
+									<div className="flex justify-between items-center text-sm">
+										<span className="text-gray-700">Laba (Rugi) Sebelumnya</span>
+										<span className="font-mono text-gray-700">
+											{periodeSebelumnya >= 0 ? "" : "("}
+											{formatRupiah(Math.abs(periodeSebelumnya))}
+											{periodeSebelumnya >= 0 ? "" : ")"}
+										</span>
+									</div>
+								</div>
+							</div>
 
 								{/* Export Buttons */}
 								<div className="border-t border-gray-200 p-4 flex justify-end gap-2 no-print">
@@ -612,7 +640,7 @@ function ReportsInner() {
 																{a.namaAkun}
 															</TableCell>
 															<TableCell className="py-1 text-right font-mono w-40">
-																{formatRupiah(Math.abs(a.jumlah || 0))}
+																{formatRupiah(a.jumlah || 0)}
 															</TableCell>
 														</TableRow>
 													))}
@@ -632,9 +660,9 @@ function ReportsInner() {
 												<span className="font-semibold text-sm">
 													Total Kewajiban
 												</span>
-												<span className="font-semibold font-mono text-sm">
-													{formatRupiah(Math.abs(totalLiabilities))}
-												</span>
+														<span className="font-semibold font-mono text-sm">
+															{formatRupiah(totalLiabilities)}
+														</span>
 											</div>
 										</div>
 
@@ -654,7 +682,7 @@ function ReportsInner() {
 																{a.namaAkun}
 															</TableCell>
 															<TableCell className="py-1 text-right font-mono w-40">
-																{formatRupiah(Math.abs(a.jumlah || 0))}
+																{formatRupiah(a.jumlah || 0)}
 															</TableCell>
 														</TableRow>
 													))}
@@ -664,9 +692,9 @@ function ReportsInner() {
 												<span className="font-semibold text-sm">
 													Total Ekuitas
 												</span>
-												<span className="font-semibold font-mono text-sm">
-													{formatRupiah(Math.abs(totalEquity))}
-												</span>
+														<span className="font-semibold font-mono text-sm">
+															{formatRupiah(totalEquity)}
+														</span>
 											</div>
 										</div>
 
@@ -674,11 +702,9 @@ function ReportsInner() {
 											<span className="text-lg font-bold text-gray-900">
 												TOTAL PASIVA
 											</span>
-											<span className="text-lg font-bold font-mono text-gray-900">
-												{formatRupiah(
-													Math.abs(totalLiabilities + totalEquity),
-												)}
-											</span>
+										<span className="text-lg font-bold font-mono text-gray-900">
+											{formatRupiah(totalLiabilities + totalEquity)}
+										</span>
 										</div>
 									</div>
 								</div>

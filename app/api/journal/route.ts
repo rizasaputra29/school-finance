@@ -12,6 +12,8 @@ import {
 	type TransactionData,
 	type TransactionEntry,
 } from "@/lib/accounting/accounting-validation";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
+import { syncAccountBalance } from "@/lib/accounting/accounting-balance";
 import { invalidateReportsCache } from "@/lib/utils/utils-cache";
 
 // Validation Schemas
@@ -564,16 +566,23 @@ export async function PUT(request: NextRequest) {
 						const account = await tx.account.findUnique({
 							where: { kodeAkun: line.kodeAkun },
 						});
-						if (account) {
-							const isDebitNormal = ["Asset", "Expense"].includes(account.tipeAkun);
-							const saldoChange = isDebitNormal
-								? line.debit - line.kredit
-								: line.kredit - line.debit;
-							await tx.account.update({
-								where: { kodeAkun: line.kodeAkun },
-								data: { saldo: { increment: saldoChange } },
-							});
-						}
+					if (account) {
+						const saldoChange = computeSaldoChange(
+							account,
+							line.debit,
+							line.kredit,
+						);
+						await tx.account.update({
+							where: { kodeAkun: line.kodeAkun },
+							data: { saldo: { increment: saldoChange } },
+						});
+						await syncAccountBalance(
+							tx,
+							line.kodeAkun,
+							saldoChange,
+							currentJournal.tanggal,
+						);
+					}
 					}
 				}
 

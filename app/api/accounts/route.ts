@@ -17,6 +17,11 @@ import {
 } from "@/lib/utils/utils-idempotency";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
+import {
+	getNormalBalanceByType,
+	computeSaldoChange,
+} from "@/lib/accounting/accounting-chart-of-accounts";
+import { computeLabaRugiForYear } from "@/lib/accounting/accounting-laba-rugi";
 
 // Validation schemas
 const createAccountSchema = z.object({
@@ -92,8 +97,12 @@ export async function GET(request: NextRequest) {
 				orderBy: [{ tipeAkun: "asc" }, { kodeAkun: "asc" }],
 			});
 
+			// Hide Ekuitas Saldo Awal (3201) from the chart of accounts page.
+			// It remains in the database for opening-balance operations.
+			const visibleAccounts = accounts.filter((a) => a.kodeAkun !== "3201");
+
 			if (!academicYearId) {
-				return success(accounts, {
+				return success(visibleAccounts, {
 					message: "Accounts retrieved successfully",
 				});
 			}
@@ -105,62 +114,97 @@ export async function GET(request: NextRequest) {
 				return errors.notFound("Tahun ajaran tidak ditemukan");
 			}
 
-			const existingBalances = await prisma.accountBalance.findMany({
-				where: { academicYearId },
+			// Compute current and cumulative prior profit/loss using the same
+			// logic as /api/reports/laba-rugi so the COA stays integrated.
+			const berjalan = await computeLabaRugiForYear(prisma, academicYear.id);
+
+			const priorYears = await prisma.academicYear.findMany({
+				where: {
+					tanggalSelesai: { lt: academicYear.tanggalMulai },
+				},
+				orderBy: { tanggalMulai: "asc" },
 			});
-			const balanceMap = new Map(
-				existingBalances.map((b) => [b.kodeAkun, b.saldo]),
+
+			const priorResults = await Promise.all(
+				priorYears.map((year) => computeLabaRugiForYear(prisma, year.id)),
+			);
+			const cumulativeSebelumnya = priorResults.reduce(
+				(sum, result) => sum + result.labaRugi,
+				0,
 			);
 
+			const labaRugiOverrides = new Map<string, number>([
+				["302", cumulativeSebelumnya],
+				["303", berjalan.labaRugi],
+			]);
+
+			// Always recompute yearSaldo from posted journal lines and write it back
+			// to the AccountBalance snapshot so the cache can never drift from reality.
 			const accountsWithYearSaldo = await Promise.all(
-				accounts.map(async (account) => {
-					let yearSaldo: number;
-
-					if (balanceMap.has(account.kodeAkun)) {
-						yearSaldo = balanceMap.get(account.kodeAkun)!;
-					} else {
-								const isCarryForwardAccount = ["Asset", "Liability", "Equity"].includes(
-									account.tipeAkun,
-								);
-
-								const lines = await prisma.journalEntryLine.aggregate({
-									where: {
-										kodeAkun: account.kodeAkun,
-										journalEntry: {
-											tanggal: isCarryForwardAccount
-												? { lte: academicYear.tanggalSelesai }
-												: {
-														gte: academicYear.tanggalMulai,
-														lte: academicYear.tanggalSelesai,
-													},
-											status: "posted",
-										},
-									},
-									_sum: { debit: true, kredit: true },
-								});
-
-						const totalDebit = lines._sum.debit ?? 0;
-						const totalKredit = lines._sum.kredit ?? 0;
-
-						const isDebitNormal = ["Asset", "Expense"].includes(
-							account.tipeAkun,
-						);
-						yearSaldo = isDebitNormal
-							? totalDebit - totalKredit
-							: totalKredit - totalDebit;
-
-						await prisma.accountBalance
-							.create({
-								data: {
+				visibleAccounts.map(async (account) => {
+					const override = labaRugiOverrides.get(account.kodeAkun);
+					if (override !== undefined) {
+						await prisma.accountBalance.upsert({
+							where: {
+								kodeAkun_academicYearId: {
 									kodeAkun: account.kodeAkun,
 									academicYearId,
-									saldo: yearSaldo,
 								},
-							})
-							.catch(() => {
-								/* ignore duplicate key race condition */
-							});
+							},
+							update: { saldo: override },
+							create: {
+								kodeAkun: account.kodeAkun,
+								academicYearId,
+								saldo: override,
+							},
+						});
+
+						return { ...account, yearSaldo: override };
 					}
+
+					const isCarryForwardAccount = ["Asset", "Liability", "Equity"].includes(
+						account.tipeAkun,
+					);
+
+					const lines = await prisma.journalEntryLine.aggregate({
+						where: {
+							kodeAkun: account.kodeAkun,
+							journalEntry: {
+								tanggal: isCarryForwardAccount
+									? { lte: academicYear.tanggalSelesai }
+									: {
+											gte: academicYear.tanggalMulai,
+											lte: academicYear.tanggalSelesai,
+										},
+								status: "posted",
+							},
+						},
+						_sum: { debit: true, kredit: true },
+					});
+
+					const totalDebit = lines._sum.debit ?? 0;
+					const totalKredit = lines._sum.kredit ?? 0;
+
+					const yearSaldo = computeSaldoChange(
+						account,
+						totalDebit,
+						totalKredit,
+					);
+
+					await prisma.accountBalance.upsert({
+						where: {
+							kodeAkun_academicYearId: {
+								kodeAkun: account.kodeAkun,
+								academicYearId,
+							},
+						},
+						update: { saldo: yearSaldo },
+						create: {
+							kodeAkun: account.kodeAkun,
+							academicYearId,
+							saldo: yearSaldo,
+						},
+					});
 
 					return { ...account, yearSaldo };
 				}),
@@ -255,6 +299,9 @@ export async function POST(request: NextRequest) {
 						kategori: kategori || null,
 						saldo:
 							typeof saldo === "string" ? parseFloat(saldo) || 0 : saldo || 0,
+						normalBalance: getNormalBalanceByType(tipeAkun),
+						isContra: false,
+						isSystem: false,
 					},
 				});
 

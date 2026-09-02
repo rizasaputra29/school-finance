@@ -12,6 +12,10 @@ import { validateBody } from "@/lib/api/api-validation";
 import { success, errors, error } from "@/lib/api/api-response";
 import { handlePrismaError } from "@/lib/utils/utils-prisma-errors";
 import { postToJournal, type JournalEntryLine } from "@/lib/services/journal";
+import {
+	classifyCashflowAccount,
+	computeSaldoChange,
+} from "@/lib/accounting/accounting-chart-of-accounts";
 
 /**
  * Helper to convert PrismaErrorResult to NextResponse
@@ -87,28 +91,9 @@ function sendValidationErrorResponse(
 }
 
 // ISAK 35 Cash Flow Classification
-// Operasi (OPS): Revenue (4xx) and operational expenses (5xx)
-// Investasi (INV): Aktiva Tetap purchase/sale (107-110)
-// Pendanaan (FIN): Owner contributions (300), Prive (304)
+// Delegated to the canonical chart-of-accounts helper.
 function classifyCashflow(kodeAkun: string): "OPS" | "INV" | "FIN" | null {
-	const code = kodeAkun;
-	// Revenue accounts (4xx) - Operasi
-	if (code.startsWith("4")) return "OPS";
-	// Expense accounts (5xx, 6xx) - Operasi
-	if (code.startsWith("5") || code.startsWith("6")) return "OPS";
-	// Aktiva Tetap (107-110) - Investasi
-	if (["107", "108", "109", "110"].includes(code)) return "INV";
-	// Owner contributions (300) and Prive (304) - Pendanaan
-	if (code === "300" || code === "304") return "FIN";
-	// Kas/Bank (101, 102) - inherit from transaction context (return null, set manually)
-	if (code === "101" || code === "102") return null;
-	// Piutang (103-106) - Operasi (related to revenue cycle)
-	if (["103", "104", "105", "106"].includes(code)) return "OPS";
-	// Liabilities (2xx) - Operasi
-	if (code.startsWith("2")) return "OPS";
-	// Equity (3xx except 300, 304) - Pendanaan
-	if (code.startsWith("3")) return "FIN";
-	return null;
+	return classifyCashflowAccount(kodeAkun);
 }
 
 // Process double-entry transaction with journal integration
@@ -207,6 +192,7 @@ export async function GET(request: NextRequest) {
 		const limit = searchParams.get("limit") || "10";
 		const startDate = searchParams.get("startDate");
 		const endDate = searchParams.get("endDate");
+		const academicYearId = searchParams.get("academicYearId");
 		const kodeAkun = searchParams.get("kodeAkun");
 		const type = searchParams.get("type");
 		const search = searchParams.get("search");
@@ -215,11 +201,39 @@ export async function GET(request: NextRequest) {
 
 		const skip = (parseInt(page) - 1) * parseInt(limit);
 
+		// Resolve academic year for journal-line based summary and fallback date filter
+		let yearStart: Date | undefined;
+		let yearEnd: Date | undefined;
+		if (academicYearId) {
+			const academicYear = await prisma.academicYear.findUnique({
+				where: { id: academicYearId },
+			});
+			if (academicYear) {
+				yearStart = academicYear.tanggalMulai;
+				yearEnd = academicYear.tanggalSelesai;
+			}
+		}
+		if (!yearStart || !yearEnd) {
+			const activeYear = await prisma.academicYear.findFirst({
+				where: { isActive: true },
+				orderBy: { tanggalMulai: "desc" },
+			});
+			if (activeYear) {
+				yearStart = activeYear.tanggalMulai;
+				yearEnd = activeYear.tanggalSelesai;
+			}
+		}
+
 		const where: Record<string, unknown> = {};
 		if (startDate && endDate) {
 			where.tanggal = {
 				gte: new Date(startDate),
 				lte: new Date(endDate),
+			};
+		} else if (yearStart && yearEnd) {
+			where.tanggal = {
+				gte: yearStart,
+				lte: yearEnd,
 			};
 		}
 		if (kodeAkun) {
@@ -272,6 +286,61 @@ export async function GET(request: NextRequest) {
 
 			const totalDebit = summaryAgg._sum.debit || 0;
 			const totalKredit = summaryAgg._sum.kredit || 0;
+
+			// Compute real revenue/expense and cash/bank balance from posted journal lines
+			const journalDateFilter =
+				yearStart && yearEnd
+					? { gte: yearStart, lte: yearEnd }
+					: undefined;
+			const balanceDateLimit = yearEnd ? { lte: yearEnd } : undefined;
+
+			const [revenueAgg, expenseAgg, cashBankLines] = await Promise.all([
+				prisma.journalEntryLine.aggregate({
+					_sum: { debit: true, kredit: true },
+					where: {
+						account: { tipeAkun: "Revenue" },
+						journalEntry: {
+							status: "posted",
+							tanggal: journalDateFilter,
+						},
+					},
+				}),
+				prisma.journalEntryLine.aggregate({
+					_sum: { debit: true, kredit: true },
+					where: {
+						account: { tipeAkun: "Expense" },
+						journalEntry: {
+							status: "posted",
+							tanggal: journalDateFilter,
+						},
+					},
+				}),
+				prisma.journalEntryLine.findMany({
+					where: {
+						kodeAkun: { in: ["101", "102"] },
+						journalEntry: {
+							status: "posted",
+							tanggal: balanceDateLimit,
+						},
+					},
+					include: { account: true },
+				}),
+			]);
+
+			const realPendapatan =
+				(revenueAgg._sum.kredit ?? 0) - (revenueAgg._sum.debit ?? 0);
+			const realPengeluaran =
+				(expenseAgg._sum.debit ?? 0) - (expenseAgg._sum.kredit ?? 0);
+
+			let saldoKasBank = 0;
+			for (const line of cashBankLines) {
+				if (!line.account) continue;
+				saldoKasBank += computeSaldoChange(
+					line.account,
+					line.debit,
+					line.kredit,
+				);
+			}
 
 			// Group cashflows by referenceId (or by id for unlinked records)
 			const groupMap = new Map<
@@ -335,11 +404,14 @@ export async function GET(request: NextRequest) {
 						total,
 						totalPages,
 					},
-					summary: {
-						totalDebit,
-						totalKredit,
-						saldo: totalDebit - totalKredit,
-					},
+						summary: {
+							totalDebit,
+							totalKredit,
+							saldo: totalDebit - totalKredit,
+							realPendapatan,
+							realPengeluaran,
+							saldoKasBank,
+						},
 				},
 			});
 		} catch (error) {

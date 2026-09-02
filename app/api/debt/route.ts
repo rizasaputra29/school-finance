@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/api-rate-limit";
 import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
+import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 
 type PrismaTransactionClient = Parameters<
 	Parameters<typeof prisma.$transaction>[0]
@@ -197,10 +198,11 @@ async function processDebtCreation(
 	});
 
 	if (cashAccountRecord) {
-		const isCashDebitNormal = ["Asset", "Expense"].includes(
-			cashAccountRecord.tipeAkun,
+		const cashChange = computeSaldoChange(
+			cashAccountRecord,
+			debtData.jumlahAwal,
+			0,
 		);
-		const cashChange = isCashDebitNormal ? debtData.jumlahAwal : 0;
 		await tx.account.update({
 			where: { kodeAkun: cashAccount },
 			data: { saldo: { increment: cashChange } },
@@ -208,10 +210,14 @@ async function processDebtCreation(
 	}
 
 	if (liabilityAccount && liabilityAccount.tipeAkun === "Liability") {
-		// For liabilities, credit increases (positive change)
+		const liabilityChange = computeSaldoChange(
+			liabilityAccount,
+			0,
+			debtData.jumlahAwal,
+		);
 		await tx.account.update({
 			where: { kodeAkun: debtData.kodeAkun },
-			data: { saldo: { increment: debtData.jumlahAwal } },
+			data: { saldo: { increment: liabilityChange } },
 		});
 	}
 
@@ -228,19 +234,24 @@ async function processDebtCreation(
 			{
 				kodeAkun: cashAccount,
 				tipeAkun: cashAccountRecord?.tipeAkun,
-				change: debtData.jumlahAwal,
+				debit: debtData.jumlahAwal,
+				kredit: 0,
 			},
 			{
 				kodeAkun: debtData.kodeAkun,
 				tipeAkun: liabilityAccount?.tipeAkun,
-				change: debtData.jumlahAwal,
+				debit: 0,
+				kredit: debtData.jumlahAwal,
 			},
 		];
 
 		for (const acct of accountsToBalance) {
 			if (!acct.tipeAkun) continue;
-			const isDebitNormal = ["Asset", "Expense"].includes(acct.tipeAkun);
-			const saldoChange = isDebitNormal ? acct.change : -acct.change;
+			const saldoChange = computeSaldoChange(
+				{ kodeAkun: acct.kodeAkun, tipeAkun: acct.tipeAkun },
+				acct.debit,
+				acct.kredit,
+			);
 
 			await tx.accountBalance
 				.upsert({
@@ -414,19 +425,24 @@ async function processDebtPayment(
 			{
 				kodeAkun: existingDebt.kodeAkun,
 				tipeAkun: liabilityAccount?.tipeAkun,
-				change: -paymentAmount,
+				debit: paymentAmount,
+				kredit: 0,
 			},
 			{
 				kodeAkun: paymentAccountCode,
 				tipeAkun: cashAccount?.tipeAkun,
-				change: -paymentAmount,
+				debit: 0,
+				kredit: paymentAmount,
 			},
 		];
 
 		for (const acct of accountsToBalance) {
 			if (!acct.tipeAkun) continue;
-			const isDebitNormal = ["Asset", "Expense"].includes(acct.tipeAkun);
-			const saldoChange = isDebitNormal ? acct.change : -acct.change;
+			const saldoChange = computeSaldoChange(
+				{ kodeAkun: acct.kodeAkun, tipeAkun: acct.tipeAkun },
+				acct.debit,
+				acct.kredit,
+			);
 
 			await tx.accountBalance
 				.upsert({
