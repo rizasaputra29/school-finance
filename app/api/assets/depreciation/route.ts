@@ -1,7 +1,10 @@
 /**
  * Asset Depreciation API
- * Auto-generates depreciation journal entries for fixed assets
- * Double-entry: Debit "Beban Penyusutan", Credit "Akumulasi Penyusutan"
+ * Auto-generates depreciation journal entries for fixed assets.
+ * Depreciation is recognised in full annual amounts on each transaction-date
+ * anniversary. Double-entry: Debit "Beban Penyusutan", Credit the
+ * "Akumulasi Penyusutan Aktiva Tetap" contra account (111). Fixed-asset
+ * accounts (107-110) remain at gross cost.
  *
  * Depreciation is calculated per academic year so entries fall inside the
  * selected/active year instead of being hard-coded to 31 December.
@@ -19,8 +22,8 @@ import {
 	type DepreciationCalculation,
 } from "@/lib/accounting/accounting-depreciation";
 import {
-	processDepreciationForAcademicYear,
 	processDepreciationForAssetRange,
+	processDepreciationCatchUpToAcademicYear,
 	findOrCreateDepreciationAccounts,
 	getDepreciableAssetData,
 	createOpeningDepreciationEntries,
@@ -132,9 +135,8 @@ export async function GET(request: NextRequest) {
 
 				const resolvedYear = academicYear?.tanggalSelesai.getFullYear() ?? year;
 
-				// Get depreciation account codes
-				const { bebanPenyusutanCode, akumulasiPenyusutanCode } =
-					await findOrCreateDepreciationAccounts(prisma);
+				// Get depreciation expense account code
+				const { bebanPenyusutanCode } = await findOrCreateDepreciationAccounts(prisma);
 
 				// Get assets
 				let assets = await getDepreciableAssetData(prisma);
@@ -158,9 +160,6 @@ export async function GET(request: NextRequest) {
 				// Get account info
 				const bebanAccount = await prisma.account.findUnique({
 					where: { kodeAkun: bebanPenyusutanCode },
-				});
-				const akumulasiAccount = await prisma.account.findUnique({
-					where: { kodeAkun: akumulasiPenyusutanCode },
 				});
 
 				// Calculate totals
@@ -194,11 +193,6 @@ export async function GET(request: NextRequest) {
 								kodeAkun: bebanPenyusutanCode,
 								namaAkun: bebanAccount?.namaAkun,
 								tipeAkun: bebanAccount?.tipeAkun,
-							},
-							akumulasiPenyusutan: {
-								kodeAkun: akumulasiPenyusutanCode,
-								namaAkun: akumulasiAccount?.namaAkun,
-								tipeAkun: akumulasiAccount?.tipeAkun,
 							},
 						},
 						summary: {
@@ -285,24 +279,24 @@ export async function POST(request: NextRequest) {
 							},
 						}));
 					} else {
-						const result = await processDepreciationForAcademicYear(
+						// Catch up every asset from its acquisition year through the
+						// target academic year. Idempotent via per-year references.
+						const catchUpResults = await processDepreciationCatchUpToAcademicYear(
 							tx,
 							targetAcademicYear.id,
 							{ force, capDate },
 						);
-						results = [
-							{
-								success: true,
-								academicYearId: result.academicYearId,
-								assetsProcessed: result.assetsProcessed,
-								totalDepreciation: result.totalDepreciation,
-								message: `Depreciation processed`,
-								details: {
-									assets: [],
-									entries: result.entries,
-								},
+						results = catchUpResults.map((r) => ({
+							success: true,
+							academicYearId: r.academicYearId,
+							assetsProcessed: r.assetsProcessed,
+							totalDepreciation: r.totalDepreciation,
+							message: `Depreciation processed`,
+							details: {
+								assets: [],
+								entries: r.entries,
 							},
-						];
+						}));
 					}
 				});
 

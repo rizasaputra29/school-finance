@@ -60,15 +60,6 @@ export default async function Dashboard() {
 				<DashboardSummaryCards
 					totalRevenue={summary.totalRevenue}
 					totalExpense={summary.totalExpense}
-					totalAssets={summary.totalAssets}
-					totalLiabilities={summary.totalLiabilities}
-					totalEquity={summary.totalEquity}
-					totalStudents={summary.totalStudents}
-					lunasCount={summary.lunasCount}
-					belumLunasCount={summary.belumLunasCount}
-					totalBillingDue={summary.totalBillingDue}
-					activeEmployees={summary.activeEmployees}
-					totalMonthlySalary={summary.totalMonthlySalary}
 				/>
 
 				{/* Charts Section - Client Component for interactivity */}

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import type { PrismaClient } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { withAuthAppRouter } from "@/lib/auth/auth-middleware";
 import { success, errors } from "@/lib/api/api-response";
@@ -19,7 +20,122 @@ const createAcademicYearSchema = z.object({
 		.string()
 		.or(z.date())
 		.transform((val) => new Date(val)),
+	copyFromPreviousYear: z.boolean().optional().default(false),
 });
+
+const VALID_CLASSES = ["1", "2", "3", "4", "5", "6"];
+
+/**
+ * Migrate active students and employees from the previous academic year into the
+ * newly created academic year. Students are promoted one class; class 6 students
+ * are marked as graduated (Inactive). Payment statuses and totals are reset.
+ */
+type PrismaTx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+
+async function copyRosterToNewAcademicYear(
+	tx: PrismaTx,
+	previousYearTahunAjaran: string | null | undefined,
+	newAcademicYear: { id: string; tahunAjaran: string; tanggalMulai: Date; tanggalSelesai: Date },
+) {
+	if (!previousYearTahunAjaran) return { studentsCopied: 0, employeesCopied: 0 };
+
+	// Migrate students
+	const studentsToMigrate = await tx.student.findMany({
+		where: {
+			status: "Active",
+			OR: [
+				{ tahunAjaran: previousYearTahunAjaran },
+				{ tahunAjaran: null },
+			],
+		},
+	});
+
+	let studentsCopied = 0;
+	for (const student of studentsToMigrate) {
+		if (student.kelas === "6") {
+			await tx.student.update({
+				where: { id: student.id },
+				data: { status: "Inactive" },
+			});
+		} else {
+			const nextClass = (parseInt(student.kelas, 10) + 1).toString();
+			const validNextClass = VALID_CLASSES.includes(nextClass) ? nextClass : student.kelas;
+			await tx.student.update({
+				where: { id: student.id },
+				data: {
+					tahunAjaran: newAcademicYear.tahunAjaran,
+					kelas: validNextClass,
+					statusBayar: "Belum Lunas",
+					totalTagihan: 0,
+					totalBayar: 0,
+				},
+			});
+			studentsCopied++;
+		}
+	}
+
+	// Migrate employees
+	const employeesToMigrate = await tx.employee.findMany({
+		where: {
+			status: "Active",
+			OR: [
+				{ tahunAjaran: previousYearTahunAjaran },
+				{ tahunAjaran: null },
+			],
+		},
+	});
+
+	const MONTH_NAMES = [
+		"Januari", "Februari", "Maret", "April", "Mei", "Juni",
+		"Juli", "Agustus", "September", "Oktober", "November", "Desember",
+	];
+
+	let employeesCopied = 0;
+	for (const employee of employeesToMigrate) {
+		await tx.employee.update({
+			where: { id: employee.id },
+			data: { tahunAjaran: newAcademicYear.tahunAjaran },
+		});
+		employeesCopied++;
+
+		if (employee.gajiPokok > 0) {
+			const existingBillings = await tx.employeeBilling.count({
+				where: {
+					employeeId: employee.id,
+					academicYearId: newAcademicYear.id,
+					jenisBiaya: "Gaji",
+				},
+			});
+
+			if (existingBillings === 0) {
+				const startYear = newAcademicYear.tanggalMulai.getFullYear();
+				const startMonth = newAcademicYear.tanggalMulai.getMonth();
+				const billings = [];
+				for (let month = 1; month <= 12; month++) {
+					const dueYear = month - 1 >= startMonth ? startYear : startYear + 1;
+					const dueDate = new Date(dueYear, month - 1, 1);
+					billings.push({
+						employeeId: employee.id,
+						academicYearId: newAcademicYear.id,
+						jenisBiaya: "Gaji",
+						jumlah: employee.gajiPokok,
+						bulan: month,
+						statusBayar: "Belum Lunas",
+						tipe: "pembayaran",
+						tanggalJatuhTempo: dueDate,
+						keterangan: `Gaji Bulan ${MONTH_NAMES[month - 1]}`,
+					});
+				}
+				await tx.employeeBilling.createMany({
+					data: billings,
+					skipDuplicates: true,
+				});
+			}
+		}
+	}
+
+	return { studentsCopied, employeesCopied };
+}
 
 const updateAcademicYearSchema = z.object({
 	tahunAjaran: z.string().min(1).max(20).optional(),
@@ -284,7 +400,8 @@ export async function POST(request: NextRequest) {
 				);
 			}
 
-			const { tahunAjaran, tanggalMulai, tanggalSelesai } = validation.data;
+			const { tahunAjaran, tanggalMulai, tanggalSelesai, copyFromPreviousYear } =
+				validation.data;
 
 			if (tanggalSelesai <= tanggalMulai) {
 				return errors.validation([
@@ -326,7 +443,11 @@ export async function POST(request: NextRequest) {
 				where: { isActive: true },
 			});
 
-			const { result, depreciationResult } = await prisma.$transaction(async (tx) => {
+			const {
+				result: newAcademicYear,
+				depreciationResult,
+				rosterCopyResult,
+			} = await prisma.$transaction(async (tx) => {
 				if (currentActiveYear) {
 					await tx.academicYear.update({
 						where: { id: currentActiveYear.id },
@@ -351,13 +472,27 @@ export async function POST(request: NextRequest) {
 					{ capDate: newAcademicYear.tanggalSelesai },
 				);
 
-				return { result: newAcademicYear, depreciationResult };
+				// Optionally copy active students and employees from the previous year
+				let rosterCopyResult = null;
+				if (copyFromPreviousYear && currentActiveYear) {
+					rosterCopyResult = await copyRosterToNewAcademicYear(
+						tx,
+						currentActiveYear.tahunAjaran,
+						newAcademicYear,
+					);
+				}
+
+				return { result: newAcademicYear, depreciationResult, rosterCopyResult };
 			});
 
-			return success(result, {
-				message: `Tahun ajaran berhasil dibuat dan diaktifkan. Penyusutan diproses untuk ${depreciationResult.assetsProcessed} aset.`,
+			const copyMessage = rosterCopyResult
+				? ` ${rosterCopyResult.studentsCopied} siswa dinaikkan kelas, ${rosterCopyResult.employeesCopied} karyawan dibawa ke tahun ajaran baru.`
+				: "";
+
+			return success(newAcademicYear, {
+				message: `Tahun ajaran berhasil dibuat dan diaktifkan. Penyusutan diproses untuk ${depreciationResult.assetsProcessed} aset.${copyMessage}`,
 				status: 201,
-				meta: { depreciation: depreciationResult },
+				meta: { depreciation: depreciationResult, rosterCopy: rosterCopyResult },
 			});
 		} catch (error) {
 			console.error("Academic Year API error:", error);

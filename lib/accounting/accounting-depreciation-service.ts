@@ -2,14 +2,19 @@
  * Depreciation service - shared business logic for posting depreciation
  * journal entries, updating the Asset register, and keeping the COA in sync.
  *
+ * Depreciation is recognised in full annual amounts on each transaction-date
+ * anniversary. The journal entry debits "Beban Penyusutan" and credits the
+ * "Akumulasi Penyusutan Aktiva Tetap" contra account (111). Fixed-asset
+ * accounts (107-110) remain at gross cost; the contra account carries the
+ * accumulated depreciation, so COA net book value is preserved.
+ *
  * This module is meant to be called from API routes (asset purchase,
  * depreciation batch, seeding) inside a Prisma transaction.
  */
 
 import type { PrismaClient } from "@prisma/client";
 import {
-	calculateAnnualDepreciation,
-	calculateDepreciationForAcademicYear,
+	calculateDepreciationForPeriod,
 	filterDepreciableAssets,
 	type AssetDepreciationData,
 } from "./accounting-depreciation";
@@ -145,10 +150,10 @@ export async function getDepreciableAssetData(tx: PrismaTx): Promise<AssetDeprec
 function buildDepreciationJournalEntries(
 	assetId: string,
 	assetName: string,
+	akumulasiPenyusutanCode: string,
 	amount: number,
 	academicYear: { tahunAjaran: string },
 	bebanCode: string,
-	akumulasiCode: string,
 ): DepreciationEntry[] {
 	if (amount <= 0) return [];
 
@@ -160,7 +165,7 @@ function buildDepreciationJournalEntries(
 			keterangan: `Beban Penyusutan [${assetId}] ${assetName} - ${academicYear.tahunAjaran}`,
 		},
 		{
-			kodeAkun: akumulasiCode,
+			kodeAkun: akumulasiPenyusutanCode,
 			debit: 0,
 			kredit: amount,
 			keterangan: `Akumulasi Penyusutan [${assetId}] ${assetName} - ${academicYear.tahunAjaran}`,
@@ -169,18 +174,9 @@ function buildDepreciationJournalEntries(
 }
 
 function computeUpdatedAssetFields(asset: AssetDepreciationData, periodDepreciation: number) {
-	const annualDepreciation = calculateAnnualDepreciation(
-		asset.hargaPerolehan,
-		asset.nilaiResidu,
-		asset.umurTeknis,
-	);
-
 	const newAlreadyDepreciatedAmount =
 		(asset.alreadyDepreciatedAmount ?? 0) + periodDepreciation;
-	const newAlreadyDepreciatedYears =
-		annualDepreciation > 0
-			? Math.floor(newAlreadyDepreciatedAmount / annualDepreciation)
-			: asset.alreadyDepreciatedYears ?? 0;
+	const newAlreadyDepreciatedYears = (asset.alreadyDepreciatedYears ?? 0) + 1;
 	const newSisaUmurTeknis = Math.max(
 		0,
 		asset.umurTeknis - newAlreadyDepreciatedYears,
@@ -193,13 +189,41 @@ function computeUpdatedAssetFields(asset: AssetDepreciationData, periodDepreciat
 	};
 }
 
-function getDepreciationReference(assetId: string, academicYearId: string) {
-	return `depreciation-${assetId}-${academicYearId}`;
+function getDepreciationReference(
+	assetId: string,
+	academicYearId: string,
+	yearIndex: number,
+) {
+	return `depreciation-${assetId}-${academicYearId}-${yearIndex}`;
 }
 
-async function deleteDepreciationEntryByReference(tx: PrismaTx, reference: string) {
-	const existing = await tx.journalEntry.findUnique({ where: { reference } });
+export async function deleteDepreciationEntryByReference(tx: PrismaTx, reference: string) {
+	const existing = await tx.journalEntry.findUnique({
+		where: { reference },
+		include: { entries: { include: { account: true } } },
+	});
 	if (existing) {
+		// Reverse the balance impacts before removing the journal lines so the
+		// COA stays consistent when old entries are replaced.
+		for (const line of existing.entries) {
+			if (!line.account) continue;
+			const saldoChange = computeSaldoChange(
+				line.account,
+				line.debit,
+				line.kredit,
+			);
+			await tx.account.update({
+				where: { kodeAkun: line.kodeAkun },
+				data: { saldo: { decrement: saldoChange } },
+			});
+			await syncAccountBalance(
+				tx,
+				line.kodeAkun,
+				-saldoChange,
+				existing.tanggal,
+			);
+		}
+
 		await tx.journalEntryLine.deleteMany({
 			where: { journalEntryId: existing.id },
 		});
@@ -224,11 +248,32 @@ async function processDepreciationForSingleAssetYear(
 	options: { force?: boolean; capDate?: Date } = {},
 ): Promise<ProcessAcademicYearResult> {
 	const { force = false, capDate = new Date() } = options;
-	const reference = getDepreciationReference(asset.id, academicYear.id);
+
+	const periodEnd = academicYear.tanggalSelesai < capDate
+		? academicYear.tanggalSelesai
+		: capDate;
+	const amount = calculateDepreciationForPeriod(asset, academicYear.tanggalMulai, periodEnd);
+
+	if (amount <= 0) {
+		return {
+			academicYearId: academicYear.id,
+			assetsProcessed: 0,
+			totalDepreciation: 0,
+			entries: [],
+		};
+	}
+
+	const nextYearIndex = asset.alreadyDepreciatedYears ?? 0;
+	const reference = getDepreciationReference(asset.id, academicYear.id, nextYearIndex);
 
 	if (force) {
 		await deleteDepreciationEntryByReference(tx, reference);
 	}
+
+	// One-time cleanup: remove legacy single-entry-per-asset-per-year records
+	// that used the old reference format without a year index.
+	const legacyReference = `depreciation-${asset.id}-${academicYear.id}`;
+	await deleteDepreciationEntryByReference(tx, legacyReference);
 
 	const existingEntry = await tx.journalEntry.findUnique({ where: { reference } });
 	if (existingEntry && !force) {
@@ -240,24 +285,13 @@ async function processDepreciationForSingleAssetYear(
 		};
 	}
 
-	const amount = calculateDepreciationForAcademicYear(asset, academicYear, capDate);
-
-	if (amount <= 0) {
-		return {
-			academicYearId: academicYear.id,
-			assetsProcessed: 0,
-			totalDepreciation: 0,
-			entries: [],
-		};
-	}
-
 	const entries = buildDepreciationJournalEntries(
 		asset.id,
 		asset.nama,
+		codes.akumulasiPenyusutanCode,
 		amount,
 		academicYear,
 		codes.bebanPenyusutanCode,
-		codes.akumulasiPenyusutanCode,
 	);
 
 	const journalEntry = await tx.journalEntry.create({
@@ -279,7 +313,9 @@ async function processDepreciationForSingleAssetYear(
 	});
 
 	const accounts = await tx.account.findMany({
-		where: { kodeAkun: { in: [codes.bebanPenyusutanCode, codes.akumulasiPenyusutanCode] } },
+		where: {
+			kodeAkun: { in: [codes.bebanPenyusutanCode, codes.akumulasiPenyusutanCode] },
+		},
 	});
 	const accountMap = new Map(accounts.map((a) => [a.kodeAkun, a]));
 
@@ -368,6 +404,32 @@ export async function processDepreciationForAcademicYear(
 }
 
 /**
+ * Process depreciation for all active depreciable assets from each asset's
+ * acquisition academic year up to and including the target academic year.
+ * Idempotent: already-posted years are skipped unless force is true.
+ */
+export async function processDepreciationCatchUpToAcademicYear(
+	tx: PrismaTx,
+	targetAcademicYearId: string,
+	options: { force?: boolean; capDate?: Date } = {},
+): Promise<ProcessAcademicYearResult[]> {
+	const assets = await getDepreciableAssetData(tx);
+	const depreciableAssets = filterDepreciableAssets(assets);
+
+	const results: ProcessAcademicYearResult[] = [];
+	for (const asset of depreciableAssets) {
+		const rangeResults = await processDepreciationForAssetRange(
+			tx,
+			asset.id,
+			targetAcademicYearId,
+			{ ...options, useYearEnd: true },
+		);
+		results.push(...rangeResults);
+	}
+	return results;
+}
+
+/**
  * Process depreciation for a single asset from its acquisition academic year
  * up to and including the target academic year.
  */
@@ -397,6 +459,12 @@ export async function processDepreciationForAssetRange(
 		},
 		orderBy: { tanggalMulai: "asc" },
 	});
+
+	// One-time cleanup: remove legacy single-entry-per-year records for every
+	// academic year in the range so they do not duplicate new per-asset entries.
+	for (const year of allYears) {
+		await deleteDepreciationEntryByReference(tx, `depreciation-${year.id}`);
+	}
 
 	const assetData: AssetDepreciationData = {
 		id: asset.id,
@@ -429,15 +497,8 @@ export async function processDepreciationForAssetRange(
 		assetData.alreadyDepreciatedAmount =
 			(assetData.alreadyDepreciatedAmount ?? 0) + result.totalDepreciation;
 		if (result.totalDepreciation > 0) {
-			const annual = calculateAnnualDepreciation(
-				assetData.hargaPerolehan,
-				assetData.nilaiResidu,
-				assetData.umurTeknis,
-			);
 			assetData.alreadyDepreciatedYears =
-				annual > 0
-					? Math.floor(assetData.alreadyDepreciatedAmount / annual)
-					: assetData.alreadyDepreciatedYears;
+				(assetData.alreadyDepreciatedYears ?? 0) + 1;
 			assetData.sisaUmurTeknis = Math.max(
 				0,
 				assetData.umurTeknis - (assetData.alreadyDepreciatedYears ?? 0),
@@ -471,8 +532,29 @@ export async function createOpeningDepreciationEntries(
 		await findOrCreateDepreciationAccounts(tx);
 
 	if (force) {
-		const existing = await tx.journalEntry.findUnique({ where: { reference } });
+		const existing = await tx.journalEntry.findUnique({
+			where: { reference },
+			include: { entries: { include: { account: true } } },
+		});
 		if (existing) {
+			for (const line of existing.entries) {
+				if (!line.account) continue;
+				const saldoChange = computeSaldoChange(
+					line.account,
+					line.debit,
+					line.kredit,
+				);
+				await tx.account.update({
+					where: { kodeAkun: line.kodeAkun },
+					data: { saldo: { decrement: saldoChange } },
+				});
+				await syncAccountBalance(
+					tx,
+					line.kodeAkun,
+					-saldoChange,
+					existing.tanggal,
+				);
+			}
 			await tx.journalEntryLine.deleteMany({
 				where: { journalEntryId: existing.id },
 			});
@@ -538,10 +620,14 @@ export async function createOpeningDepreciationEntries(
 		})),
 	});
 
+	const accountCodes = [
+		bebanPenyusutanCode,
+		akumulasiPenyusutanCode,
+	];
 	const accountMap = new Map(
 		(
 			await tx.account.findMany({
-				where: { kodeAkun: { in: [bebanPenyusutanCode, akumulasiPenyusutanCode] } },
+				where: { kodeAkun: { in: accountCodes } },
 			})
 		).map((a) => [a.kodeAkun, a]),
 	);

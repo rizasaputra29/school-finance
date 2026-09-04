@@ -6,6 +6,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth } from "@/context/AuthContext";
+import { useAcademicYear } from "@/context/AcademicYearContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,13 +23,19 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { Student } from "@/types/student";
 import type { Pagination } from "@/types/pagination";
 
-const KELAS_OPTIONS = ["PLAYGROUP", "KINDERGARTEN"];
+const KELAS_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 
 const studentFormSchema = z.object({
 	nis: z.string().min(1, "NIS wajib diisi").max(20),
 	nama: z.string().min(1, "Nama wajib diisi").max(100),
 	jenisKelamin: z.string().optional(),
-	kelas: z.string().min(1, "Kelas wajib dipilih"),
+	kelas: z
+		.string()
+		.min(1, "Kelas wajib dipilih")
+		.refine(
+			(val) => ["1", "2", "3", "4", "5", "6"].includes(val),
+			"Kelas harus antara 1 sampai 6",
+		),
 	tahunMasuk: z.string().min(1, "Tahun masuk wajib diisi"),
 	tahunAjaran: z.string().optional(),
 	namaOrtu: z.string().optional(),
@@ -67,14 +74,24 @@ export default function StudentsPage() {
 		},
 	});
 
+	const { selectedYear } = useAcademicYear();
+
 	const { data: studentsResult, isLoading } = useQuery({
-		queryKey: ["students", currentPage, statusFilter, showInactive, debouncedSearchTerm],
+		queryKey: [
+			"students",
+			currentPage,
+			statusFilter,
+			showInactive,
+			debouncedSearchTerm,
+			selectedYear?.id,
+		],
 		queryFn: async () => {
 			let url = `/api/students?page=${currentPage}&limit=10`;
 			if (statusFilter) url += `&statusBayar=${statusFilter}`;
 			if (showInactive) url += `&status=Inactive`;
 			if (debouncedSearchTerm)
 				url += `&search=${encodeURIComponent(debouncedSearchTerm)}`;
+			if (selectedYear?.id) url += `&academicYearId=${selectedYear.id}`;
 
 			const res = await fetch(url);
 			const result = await res.json();

@@ -42,16 +42,47 @@ export async function GET(request: NextRequest) {
 			const search = searchParams.get("search");
 			const status = searchParams.get("status");
 			const jabatan = searchParams.get("jabatan");
+			const academicYearId = searchParams.get("academicYearId");
 
 			const skip = (parseInt(page) - 1) * parseInt(limit);
 			const take = parseInt(limit);
 
+			// Resolve academic year context
+			let activeYear: { tahunAjaran: string } | null = null;
+			if (academicYearId) {
+				activeYear = await prisma.academicYear.findUnique({
+					where: { id: academicYearId },
+					select: { tahunAjaran: true },
+				});
+			}
+			if (!activeYear) {
+				activeYear = await prisma.academicYear.findFirst({
+					where: { isActive: true },
+					select: { tahunAjaran: true },
+					orderBy: { tanggalMulai: "desc" },
+				});
+			}
+
 			const where: Record<string, unknown> = {};
-			if (search) {
+
+			// Filter by academic year: show records tagged with the active year,
+			// plus legacy records that have no tahunAjaran yet.
+			if (activeYear) {
 				where.OR = [
-					{ nama: { contains: search, mode: "insensitive" } },
-					{ nip: { contains: search, mode: "insensitive" } },
-					{ jabatan: { contains: search, mode: "insensitive" } },
+					{ tahunAjaran: activeYear.tahunAjaran },
+					{ tahunAjaran: null },
+				];
+			}
+
+			if (search) {
+				where.AND = [
+					{
+						OR: [
+							{ nama: { contains: search, mode: "insensitive" } },
+							{ nip: { contains: search, mode: "insensitive" } },
+							{ jabatan: { contains: search, mode: "insensitive" } },
+						],
+					},
 				];
 			}
 			if (status) where.status = status;
@@ -133,6 +164,13 @@ export async function POST(request: NextRequest) {
 				return errors.conflict(`NIP ${data.nip} sudah terdaftar`);
 			}
 
+			// Tag new employees with the active academic year
+			const activeYear = await prisma.academicYear.findFirst({
+				where: { isActive: true },
+				select: { tahunAjaran: true },
+				orderBy: { tanggalMulai: "desc" },
+			});
+
 			const employee = await prisma.employee.create({
 				data: {
 					nip: data.nip,
@@ -143,6 +181,7 @@ export async function POST(request: NextRequest) {
 					alamat: data.alamat || null,
 					tanggalMasuk: new Date(data.tanggalMasuk),
 					gajiPokok,
+					tahunAjaran: activeYear?.tahunAjaran || null,
 					status: data.status || "Active",
 				},
 			});

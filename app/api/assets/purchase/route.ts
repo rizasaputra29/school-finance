@@ -22,7 +22,10 @@ import { success, errors } from "@/lib/api/api-response";
 import { handlePrismaErrorResponse } from "@/lib/utils/utils-prisma-errors";
 import { computeSaldoChange } from "@/lib/accounting/accounting-chart-of-accounts";
 import { syncAccountBalance } from "@/lib/accounting/accounting-balance";
-import { calculateDepreciationForPeriod } from "@/lib/accounting/accounting-depreciation";
+import {
+	calculateDepreciation,
+	type AssetDepreciationData,
+} from "@/lib/accounting/accounting-depreciation";
 import { processDepreciationForAssetRange } from "@/lib/accounting/accounting-depreciation-service";
 
 type PrismaTransactionClient = Parameters<
@@ -497,11 +500,17 @@ export async function GET(request: NextRequest) {
 						return {
 							bookValue: asset.isTanah
 								? asset.hargaPerolehan
-								: asset.hargaPerolehan - asset.alreadyDepreciatedAmount,
+								: Math.max(
+										asset.nilaiResidu,
+										asset.hargaPerolehan - asset.alreadyDepreciatedAmount,
+									),
 							sisaUmurTeknis: asset.isTanah
 								? null
-								: (asset.sisaUmurTeknis ??
-									asset.umurTeknis - asset.alreadyDepreciatedYears),
+								: Math.max(
+										0,
+										asset.sisaUmurTeknis ??
+											asset.umurTeknis - asset.alreadyDepreciatedYears,
+									),
 							accumulatedDepreciation: asset.isTanah
 								? 0
 								: asset.alreadyDepreciatedAmount,
@@ -510,9 +519,6 @@ export async function GET(request: NextRequest) {
 								: asset.alreadyDepreciatedYears,
 						};
 					}
-
-					const yearEnd = academicYear.tanggalSelesai;
-					const purchaseDate = asset.tanggalPerolehan;
 
 					if (asset.isTanah || asset.umurTeknis === 0) {
 						return {
@@ -523,45 +529,17 @@ export async function GET(request: NextRequest) {
 						};
 					}
 
-					const depreciableBase = asset.hargaPerolehan - asset.nilaiResidu;
-					const additionalDepreciation = calculateDepreciationForPeriod(
-						{
-							id: asset.id,
-							kodeAkun: asset.kodeAkun,
-							nama: asset.nama,
-							kategori: asset.kategori,
-							tanggalPerolehan: asset.tanggalPerolehan,
-							hargaPerolehan: asset.hargaPerolehan,
-							umurTeknis: asset.umurTeknis,
-							nilaiResidu: asset.nilaiResidu,
-							isTanah: asset.isTanah,
-							status: asset.status,
-							alreadyDepreciatedAmount: asset.alreadyDepreciatedAmount,
-							alreadyDepreciatedYears: asset.alreadyDepreciatedYears,
-							sisaUmurTeknis: asset.sisaUmurTeknis,
-						},
-						purchaseDate,
-						yearEnd,
+					const calc = calculateDepreciation(
+						asset as unknown as AssetDepreciationData,
+						academicYear,
+						academicYear.tanggalSelesai,
 					);
-
-					const accumulatedDepreciation = Math.min(
-						depreciableBase,
-						asset.alreadyDepreciatedAmount + additionalDepreciation,
-					);
-					const bookValue = asset.hargaPerolehan - accumulatedDepreciation;
-
-					const annualDepreciation =
-						asset.umurTeknis > 0 ? depreciableBase / asset.umurTeknis : 0;
-					const depreciatedYears =
-						annualDepreciation > 0
-							? Math.floor(accumulatedDepreciation / annualDepreciation)
-							: 0;
 
 					return {
-						bookValue: Math.max(bookValue, asset.nilaiResidu),
-						sisaUmurTeknis: Math.max(asset.umurTeknis - depreciatedYears, 0),
-						accumulatedDepreciation,
-						depreciatedYears,
+						bookValue: calc?.remainingValue ?? asset.hargaPerolehan,
+						sisaUmurTeknis: calc?.remainingUsefulLife ?? 0,
+						accumulatedDepreciation: calc?.accumulatedDepreciation ?? 0,
+						depreciatedYears: calc?.yearsElapsed ?? 0,
 					};
 				}
 

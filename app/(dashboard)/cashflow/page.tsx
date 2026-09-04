@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useAcademicYear } from "@/context/AcademicYearContext";
@@ -23,6 +23,7 @@ import {
 import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
+import { getSourceLabel } from "@/lib/utils/utils-cashflow";
 import { useDebounce } from "use-debounce";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,6 +46,7 @@ const cashflowFormSchema = z.object({
 	tanggal: z.string().min(1, "Tanggal wajib diisi"),
 	keterangan: z.string().min(1, "Keterangan wajib diisi"),
 	kategori: z.string().optional(),
+	source: z.enum(["101", "102"]),
 	entries: z
 		.array(
 			z.object({
@@ -89,6 +91,7 @@ function CashflowInner() {
 			tanggal: new Date().toISOString().split("T")[0],
 			keterangan: "",
 			kategori: "",
+			source: "101",
 			entries: [
 				{ kodeAkun: "", debit: "", kredit: "" },
 				{ kodeAkun: "", debit: "", kredit: "" },
@@ -98,6 +101,21 @@ function CashflowInner() {
 	});
 
 	const watchedEntries = useWatch({ control: cashflowForm.control, name: "entries" });
+	const watchedSource = useWatch({ control: cashflowForm.control, name: "source" });
+
+	// Update cash/bank entry kodeAkun when source changes
+	useEffect(() => {
+		if (!watchedSource) return;
+		const entries = cashflowForm.getValues("entries");
+		const cashBankIndex = entries.findIndex(
+			(e) => e.kodeAkun === "101" || e.kodeAkun === "102",
+		);
+		if (cashBankIndex >= 0 && entries[cashBankIndex].kodeAkun !== watchedSource) {
+			cashflowForm.setValue(`entries.${cashBankIndex}.kodeAkun`, watchedSource, {
+				shouldValidate: true,
+			});
+		}
+	}, [watchedSource, cashflowForm]);
 
 	const { data: accountsData } = useQuery({
 		queryKey: ["accounts"],
@@ -164,6 +182,7 @@ function CashflowInner() {
 					tanggal: data.tanggal,
 					keterangan: data.keterangan,
 					kategori: data.kategori,
+					source: data.source,
 					entries: data.entries
 						.filter((e) => e.kodeAkun)
 						.map((e) => ({
@@ -223,12 +242,19 @@ function CashflowInner() {
 
 	const openEditDialog = (card: CashflowCard) => {
 		setSelectedCard(card);
-		const entry1 = card.entries[0] || { kodeAkun: "", debit: 0, kredit: 0 };
-		const entry2 = card.entries[1] || { kodeAkun: "", debit: 0, kredit: 0 };
+		const entry1 = card.entries[0] || { kodeAkun: "", debit: 0, kredit: 0, source: null };
+		const entry2 = card.entries[1] || { kodeAkun: "", debit: 0, kredit: 0, source: null };
+		const cashBankEntry = [entry1, entry2].find(
+			(e) => e.kodeAkun === "101" || e.kodeAkun === "102",
+		);
+		const currentSource =
+			cashBankEntry?.kodeAkun || entry1.source || entry2.source || "101";
+		const validSource = currentSource === "102" ? "102" : "101";
 		cashflowForm.reset({
 			tanggal: new Date(card.tanggal).toISOString().split("T")[0],
 			keterangan: card.keterangan,
 			kategori: card.kategori || "",
+			source: validSource,
 			entries: [
 				{
 					kodeAkun: entry1.kodeAkun,
@@ -282,6 +308,22 @@ function CashflowInner() {
 					)}
 				</div>
 			),
+		},
+		{
+			id: "source",
+			header: "Sumber",
+			cell: ({ row }) => {
+				const source = row.original.entries[0]?.source;
+				const isBank = source === "102" || source === "bank";
+				return (
+					<Badge
+						variant="secondary"
+						className={`text-xs ${isBank ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"}`}
+					>
+						{getSourceLabel(source)}
+					</Badge>
+				);
+			},
 		},
 		{
 			id: "debitAccount",
@@ -626,6 +668,26 @@ function CashflowInner() {
 									id="kategori"
 									placeholder="Contoh: Operasional"
 								/>
+							</Field>
+						)}
+					/>
+
+					<Controller
+						control={cashflowForm.control}
+						name="source"
+						render={({ field, fieldState }) => (
+							<Field data-invalid={!!fieldState.error}>
+								<FieldLabel htmlFor="source">Sumber Dana</FieldLabel>
+								<select
+									id="source"
+									className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+									value={field.value}
+									onChange={field.onChange}
+								>
+									<option value="101">101 - Kas</option>
+									<option value="102">102 - Bank</option>
+								</select>
+								<FieldError errors={fieldState.error ? [fieldState.error] : []} />
 							</Field>
 						)}
 					/>

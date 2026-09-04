@@ -74,8 +74,85 @@ function addYears(date: Date, years: number): Date {
 }
 
 /**
+ * Get the anniversary date for a specific depreciation year index.
+ * Year index 0 is the acquisition date itself, which is when the first
+ * full-year depreciation is recognised.
+ */
+export function getDepreciationAnniversaryDate(
+  tanggalPerolehan: Date,
+  yearIndex: number
+): Date {
+  return addYears(new Date(tanggalPerolehan), yearIndex);
+}
+
+/**
+ * Calculate depreciation amount for a specific year index using straight-line.
+ * The last year absorbs any rounding remainder so the total equals the
+ * depreciable base.
+ */
+export function calculateDepreciationForYearIndex(
+  asset: AssetDepreciationData,
+  yearIndex: number
+): number {
+  if (asset.isTanah || asset.umurTeknis <= 0) return 0;
+  if (yearIndex < 0 || yearIndex >= asset.umurTeknis) return 0;
+
+  const depreciableBase = asset.hargaPerolehan - asset.nilaiResidu;
+  const annualDepreciation = depreciableBase / asset.umurTeknis;
+
+  // Last year takes the remainder to avoid rounding drift.
+  if (yearIndex === asset.umurTeknis - 1) {
+    const previousYearsTotal = annualDepreciation * (asset.umurTeknis - 1);
+    return Math.max(0, depreciableBase - previousYearsTotal);
+  }
+
+  return annualDepreciation;
+}
+
+/**
+ * Count how many depreciation anniversaries have occurred on or before capDate.
+ * Anniversaries are at transaction date + 0, +1, +2 ... years.
+ */
+export function countDepreciatedYearsByDate(
+  asset: AssetDepreciationData,
+  capDate: Date
+): number {
+  if (asset.isTanah || asset.umurTeknis <= 0) return 0;
+
+  let count = 0;
+  for (let n = 0; n < asset.umurTeknis; n++) {
+    const anniversary = getDepreciationAnniversaryDate(asset.tanggalPerolehan, n);
+    if (anniversary <= capDate) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return count;
+}
+
+/**
+ * Calculate total accumulated depreciation up to a given year count.
+ */
+export function calculateAccumulatedDepreciationForYears(
+  asset: AssetDepreciationData,
+  years: number
+): number {
+  if (asset.isTanah || asset.umurTeknis <= 0) return 0;
+
+  const cappedYears = Math.max(0, Math.min(years, asset.umurTeknis));
+  let total = 0;
+  for (let n = 0; n < cappedYears; n++) {
+    total += calculateDepreciationForYearIndex(asset, n);
+  }
+  return total;
+}
+
+/**
  * Count the number of calendar months between two dates.
  * The start month is counted as a full month if the end day is >= start day.
+ *
+ * @deprecated Replaced by anniversary-based full-year depreciation.
  */
 export function monthsBetween(startDate: Date, endDate: Date): number {
   const start = new Date(startDate);
@@ -95,12 +172,15 @@ export function monthsBetween(startDate: Date, endDate: Date): number {
 }
 
 /**
- * Calculate depreciation for a specific period using clean straight-line.
+ * Calculate depreciation for a specific period using anniversary-based
+ * full-year recognition. Returns the full annual amount for the next
+ * unrecognised year.
  *
- * Annual depreciation is always (hargaPerolehan - nilaiResidu) / umurTeknis.
- * The period is clipped to the asset's useful life and the amount is capped
- * to the remaining depreciable base. This avoids the drift that happens when
- * partial years are tracked through `alreadyDepreciatedYears`.
+ * - Year 0 is recognised in the academic year that contains the purchase date,
+ *   or in the first available academic year whose end is on/after the purchase
+ *   date when the containing year is not present in the data.
+ * - Year n > 0 is recognised in the academic year containing the n-th
+ *   anniversary of the purchase date.
  */
 export function calculateDepreciationForPeriod(
   asset: AssetDepreciationData,
@@ -109,44 +189,60 @@ export function calculateDepreciationForPeriod(
 ): number {
   if (asset.isTanah || asset.umurTeknis <= 0) return 0;
 
-  const depreciableBase = asset.hargaPerolehan - asset.nilaiResidu;
-  const alreadyDepreciatedAmount = asset.alreadyDepreciatedAmount ?? 0;
-  const remainingAmount = Math.max(0, depreciableBase - alreadyDepreciatedAmount);
+  const nextYearIndex = asset.alreadyDepreciatedYears ?? 0;
+  if (nextYearIndex >= asset.umurTeknis) return 0;
 
-  if (remainingAmount <= 0) return 0;
+  // Year 0: recognise in the academic year containing the purchase date, or
+  // the first academic year that ends on/after the purchase date.
+  if (nextYearIndex === 0) {
+    if (periodEnd >= asset.tanggalPerolehan) {
+      return calculateDepreciationForYearIndex(asset, 0);
+    }
+    return 0;
+  }
 
-  const acquisitionDate = new Date(asset.tanggalPerolehan);
-  const usefulLifeEndDate = addYears(acquisitionDate, asset.umurTeknis);
+  const anniversary = getDepreciationAnniversaryDate(
+    asset.tanggalPerolehan,
+    nextYearIndex
+  );
 
-  const effectiveStart = new Date(Math.max(periodStart.getTime(), acquisitionDate.getTime()));
-  const effectiveEnd = new Date(Math.min(periodEnd.getTime(), usefulLifeEndDate.getTime()));
+  if (anniversary >= periodStart && anniversary <= periodEnd) {
+    return calculateDepreciationForYearIndex(asset, nextYearIndex);
+  }
 
-  if (effectiveStart >= effectiveEnd) return 0;
-
-  const annualDepreciation = depreciableBase / asset.umurTeknis;
-  const months = monthsBetween(effectiveStart, effectiveEnd);
-  const periodDepreciation = annualDepreciation * (months / 12);
-
-  return Math.min(periodDepreciation, remainingAmount);
+  return 0;
 }
 
 /**
- * Calculate depreciation for a single academic year, optionally capped at a
- * cutoff date (defaults to today). Past academic years are processed in full;
- future years return 0.
+ * Calculate depreciation that should be recognised in a single academic year,
+ * optionally capped at a cutoff date (defaults to today).
+ *
+ * This is a reporting helper: it determines which anniversary(ies) fall inside
+ * the academic year and returns the corresponding full-year depreciation. It
+ * does NOT depend on how much has already been posted.
  */
 export function calculateDepreciationForAcademicYear(
   asset: AssetDepreciationData,
   academicYear: { tanggalMulai: Date; tanggalSelesai: Date },
   capDate: Date = new Date()
 ): number {
+  if (asset.isTanah || asset.umurTeknis <= 0) return 0;
   if (capDate < academicYear.tanggalMulai) return 0;
 
   const periodEnd = academicYear.tanggalSelesai < capDate
     ? academicYear.tanggalSelesai
     : capDate;
 
-  return calculateDepreciationForPeriod(asset, academicYear.tanggalMulai, periodEnd);
+  if (periodEnd < asset.tanggalPerolehan) return 0;
+
+  let total = 0;
+  for (let yearIndex = 0; yearIndex < asset.umurTeknis; yearIndex++) {
+    const anniversary = getDepreciationAnniversaryDate(asset.tanggalPerolehan, yearIndex);
+    if (anniversary >= academicYear.tanggalMulai && anniversary <= periodEnd) {
+      total += calculateDepreciationForYearIndex(asset, yearIndex);
+    }
+  }
+  return total;
 }
 
 /**
@@ -162,8 +258,9 @@ export function calculateYearsElapsed(tanggalPerolehan: Date): number {
 
 /**
  * Calculate complete depreciation data for an asset for a given academic year.
- * Uses clean straight-line: annual depreciation is constant and the academic
- * year amount is prorated by the months the asset is held in that year.
+ * Uses anniversary-based full-year recognition: the first full year is
+ * recognised in the academic year containing the acquisition date, the second
+ * full year in the academic year containing the first anniversary, and so on.
  */
 export function calculateDepreciation(
   asset: AssetDepreciationData,
@@ -181,8 +278,6 @@ export function calculateDepreciation(
     asset.umurTeknis
   );
 
-  const alreadyDepreciatedAmount = asset.alreadyDepreciatedAmount ?? 0;
-
   // Depreciation for this academic year, capped at today
   const currentYearDepreciation = calculateDepreciationForAcademicYear(
     asset,
@@ -190,10 +285,11 @@ export function calculateDepreciation(
     capDate
   );
 
-  const depreciableBase = asset.hargaPerolehan - asset.nilaiResidu;
-  const accumulatedDepreciation = Math.min(
-    depreciableBase,
-    alreadyDepreciatedAmount + currentYearDepreciation
+  // Projected up-to-date accumulated depreciation as of capDate.
+  const depreciatedYearsByDate = countDepreciatedYearsByDate(asset, capDate);
+  const accumulatedDepreciation = calculateAccumulatedDepreciationForYears(
+    asset,
+    depreciatedYearsByDate
   );
 
   const remainingValue = Math.max(
@@ -201,10 +297,10 @@ export function calculateDepreciation(
     asset.hargaPerolehan - accumulatedDepreciation
   );
 
-  const effectiveYears =
-    annualDepreciation > 0
-      ? Math.floor(accumulatedDepreciation / annualDepreciation)
-      : 0;
+  const effectiveYears = Math.min(
+    depreciatedYearsByDate,
+    asset.umurTeknis
+  );
   const remainingUsefulLife = Math.max(0, asset.umurTeknis - effectiveYears);
 
   return {

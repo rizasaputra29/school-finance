@@ -332,6 +332,7 @@ model Employee {
   alamat               String?
   tanggalMasuk         DateTime
   gajiPokok            Float                 @default(0)
+  tahunAjaran          String?
   status               String                @default("Active")
   statusBayar          String                @default("Lunas")
   totalTagihan         Float                 @default(0)
@@ -343,6 +344,7 @@ model Employee {
   @@index([status])
   @@index([jabatan])
   @@index([statusBayar])
+  @@index([tahunAjaran])
 }
 
 model AuditTrail {

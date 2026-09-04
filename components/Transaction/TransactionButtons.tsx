@@ -22,6 +22,7 @@ import {
 	formatNumberInput,
 	parseFormattedNumber,
 } from "@/lib/utils/utils-core";
+import { getSourceLabel } from "@/lib/utils/utils-cashflow";
 import { WizardModal } from "@/components/reusable/WizardModal";
 import {
 	Field,
@@ -141,6 +142,7 @@ const baseFormSchema = z.object({
 			message: "Jumlah harus lebih dari 0",
 		}),
 	kategori: z.string().optional(),
+	source: z.enum(["101", "102"]).optional().default("101"),
 	namaAset: z.string().optional(),
 	kategoriAset: z.string().optional(),
 	lokasiAset: z.string().optional(),
@@ -212,6 +214,7 @@ const DEFAULT_VALUES: FormValues = {
 	kodeAkun: "",
 	jumlah: "",
 	kategori: "",
+	source: "101",
 	namaAset: "",
 	kategoriAset: "",
 	lokasiAset: "",
@@ -315,17 +318,14 @@ export function TransactionButtons({
 		accountCode: string,
 		amount: number,
 		notes: string,
+		sourceCode: string,
 	): Array<{
 		kodeAkun: string;
 		debit: number;
 		kredit: number;
 		keterangan: string;
 	}> => {
-		const cashAccount = accounts.find(
-			(a) =>
-				a.tipeAkun === "Asset" && a.kategori?.toLowerCase().includes("kas"),
-		);
-		const cashCode = cashAccount?.kodeAkun || "101";
+		const cashCode = sourceCode;
 
 		switch (type) {
 			case "pemasukan":
@@ -442,6 +442,7 @@ export function TransactionButtons({
 				data.kodeAkun,
 				amount,
 				data.keterangan,
+				data.source,
 			);
 
 			const res = await fetch("/api/cashflow", {
@@ -452,6 +453,7 @@ export function TransactionButtons({
 					keterangan: data.keterangan,
 					entries,
 					transactionType: data.transactionType,
+					source: data.source,
 					...(data.transactionType === "aset" && {
 						namaAset: data.namaAset,
 						kategoriAset: data.kategoriAset,
@@ -675,6 +677,27 @@ export function TransactionButtons({
 				/>
 				<FieldError
 					errors={errors.jumlah ? [{ message: errors.jumlah.message }] : []}
+				/>
+			</Field>
+
+			<Field data-invalid={!!errors.source}>
+				<FieldLabel>Sumber Dana</FieldLabel>
+				<Controller
+					name="source"
+					control={control}
+					render={({ field }) => (
+						<select
+							className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+							value={field.value}
+							onChange={field.onChange}
+						>
+							<option value="101">101 - Kas</option>
+							<option value="102">102 - Bank</option>
+						</select>
+					)}
+				/>
+				<FieldError
+					errors={errors.source ? [{ message: errors.source.message }] : []}
 				/>
 			</Field>
 		</div>
@@ -1037,6 +1060,12 @@ export function TransactionButtons({
 					<div className="flex justify-between">
 						<span className="text-gray-500">Jumlah</span>
 						<span className="font-medium">{formatCurrency(values.jumlah)}</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-gray-500">Sumber Dana</span>
+						<span className="font-medium">
+							{values.source} - {getSourceLabel(values.source)}
+						</span>
 					</div>
 
 					{values.transactionType === "aset" && (

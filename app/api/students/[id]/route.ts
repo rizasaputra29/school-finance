@@ -94,7 +94,7 @@ export async function PATCH(
 			data: {
 				...(nama && { nama }),
 				...(jenisKelamin !== undefined && { jenisKelamin }),
-				...(kelas && { kelas }),
+				...(kelas && ["1", "2", "3", "4", "5", "6"].includes(String(kelas)) && { kelas }),
 				...(tahunMasuk && { tahunMasuk: parseInt(tahunMasuk) }),
 				...(tahunAjaran !== undefined && { tahunAjaran }),
 				...(namaOrtu !== undefined && { namaOrtu }),

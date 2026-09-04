@@ -55,7 +55,7 @@ export interface CashflowEntry {
 	namaAkun: string;
 	debit: number;
 	kredit: number;
-	source?: string | null;
+	source?: "101" | "102" | "kas" | "bank" | null;
 }
 
 export interface CashflowCard {

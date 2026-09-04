@@ -4,10 +4,18 @@ import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { useAcademicYear } from "@/context/AcademicYearContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import {
 	Search,
 	Users,
@@ -34,6 +42,24 @@ import { DataTable } from "@/components/reusable/DataTable";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Employee } from "@/types/employee";
 import type { Pagination } from "@/types/pagination";
+
+/**
+ * Format a raw numeric string as Indonesian Rupiah for display in an input.
+ * Returns the original value if it cannot be parsed.
+ */
+function formatRupiahInput(value: string | undefined): string {
+	if (!value) return "";
+	const numeric = value.replace(/\D/g, "");
+	if (!numeric) return "";
+	return new Intl.NumberFormat("id-ID").format(Number.parseInt(numeric, 10));
+}
+
+/**
+ * Strip non-digit characters from a formatted currency string.
+ */
+function parseRupiahInput(value: string): string {
+	return value.replace(/\D/g, "");
+}
 
 const JABATAN_OPTIONS = [
 	"Guru",
@@ -116,16 +142,26 @@ export default function KaryawanPage() {
 		mode: "onChange",
 	});
 
+	const { selectedYear } = useAcademicYear();
+
 	const { data: queryResult, isLoading } = useQuery({
-		queryKey: ["employees", currentPage, debouncedSearch, statusFilter, jabatanFilter],
+		queryKey: [
+			"employees",
+			currentPage,
+			debouncedSearch,
+			statusFilter,
+			jabatanFilter,
+			selectedYear?.id,
+		],
 		queryFn: async () => {
-			const params = new URLSearchParams({
-				page: String(currentPage),
-				limit: "10",
-				...(debouncedSearch && { search: debouncedSearch }),
-				...(statusFilter && { status: statusFilter }),
-				...(jabatanFilter && { jabatan: jabatanFilter }),
-			});
+			const params = new URLSearchParams();
+			params.set("page", currentPage.toString());
+			params.set("limit", "10");
+			if (debouncedSearch) params.set("search", debouncedSearch);
+			if (statusFilter) params.set("status", statusFilter);
+			if (jabatanFilter) params.set("jabatan", jabatanFilter);
+			if (selectedYear?.id) params.set("academicYearId", selectedYear.id);
+
 			const res = await fetch(`/api/karyawan?${params}`);
 			const result = await res.json();
 			if (!result.success)
@@ -226,7 +262,7 @@ export default function KaryawanPage() {
 			noTelp: emp.noTelp || "",
 			alamat: emp.alamat || "",
 			tanggalMasuk: new Date(emp.tanggalMasuk).toISOString().split("T")[0],
-			gajiPokok: String(emp.gajiPokok),
+			gajiPokok: emp.gajiPokok ? String(emp.gajiPokok) : "",
 			status: emp.status,
 		});
 		setIsEditOpen(true);
@@ -319,6 +355,7 @@ export default function KaryawanPage() {
 							<Input
 								{...field}
 								id="nip"
+								placeholder="Contoh: 198001012023011001"
 								aria-invalid={!!fieldState.error}
 							/>
 							<FieldError errors={fieldState.error ? [fieldState.error] : []} />
@@ -334,6 +371,7 @@ export default function KaryawanPage() {
 							<Input
 								{...field}
 								id="nama"
+								placeholder="Masukkan nama lengkap karyawan"
 								aria-invalid={!!fieldState.error}
 							/>
 							<FieldError errors={fieldState.error ? [fieldState.error] : []} />
@@ -348,19 +386,21 @@ export default function KaryawanPage() {
 					render={({ field, fieldState }) => (
 						<Field data-invalid={!!fieldState.error}>
 							<FieldLabel htmlFor="jabatan">Jabatan *</FieldLabel>
-							<select
-								{...field}
-								id="jabatan"
-								className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm"
-								aria-invalid={!!fieldState.error}
+							<Select
+								onValueChange={field.onChange}
+								value={field.value}
 							>
-								<option value="">Pilih Jabatan</option>
-								{JABATAN_OPTIONS.map((j) => (
-									<option key={j} value={j}>
-										{j}
-									</option>
-								))}
-							</select>
+								<SelectTrigger id="jabatan" aria-invalid={!!fieldState.error}>
+									<SelectValue placeholder="Pilih jabatan" />
+								</SelectTrigger>
+								<SelectContent position="popper" className="bg-white">
+									{JABATAN_OPTIONS.map((j) => (
+										<SelectItem key={j} value={j}>
+											{j}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 							<FieldError errors={fieldState.error ? [fieldState.error] : []} />
 						</Field>
 					)}
@@ -371,17 +411,21 @@ export default function KaryawanPage() {
 					render={({ field }) => (
 						<Field>
 							<FieldLabel htmlFor="jenisKelamin">Jenis Kelamin</FieldLabel>
-							<select
-								{...field}
-								id="jenisKelamin"
-								className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm"
+							<Select
+								onValueChange={field.onChange}
+								value={field.value}
 							>
-								{JENIS_KELAMIN_OPTIONS.map((opt) => (
-									<option key={opt.value} value={opt.value}>
-										{opt.label}
-									</option>
-								))}
-							</select>
+								<SelectTrigger id="jenisKelamin">
+									<SelectValue placeholder="Pilih jenis kelamin" />
+								</SelectTrigger>
+								<SelectContent position="popper" className="bg-white">
+									{JENIS_KELAMIN_OPTIONS.map((opt) => (
+										<SelectItem key={opt.value} value={opt.value}>
+											{opt.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 						</Field>
 					)}
 				/>
@@ -410,10 +454,16 @@ export default function KaryawanPage() {
 						<Field>
 							<FieldLabel htmlFor="gajiPokok">Gaji Pokok</FieldLabel>
 							<Input
-								{...field}
 								id="gajiPokok"
-								type="number"
-								placeholder="0"
+								placeholder="Masukkan gaji pokok"
+								value={formatRupiahInput(field.value)}
+								onChange={(e) => {
+									const raw = parseRupiahInput(e.target.value);
+									field.onChange(raw);
+								}}
+								onBlur={field.onBlur}
+								name={field.name}
+								inputMode="numeric"
 							/>
 						</Field>
 					)}
@@ -426,7 +476,11 @@ export default function KaryawanPage() {
 					render={({ field }) => (
 						<Field>
 							<FieldLabel htmlFor="noTelp">No. Telp</FieldLabel>
-							<Input {...field} id="noTelp" />
+							<Input
+								{...field}
+								id="noTelp"
+								placeholder="Contoh: 08123456789"
+							/>
 						</Field>
 					)}
 				/>
@@ -436,17 +490,21 @@ export default function KaryawanPage() {
 					render={({ field }) => (
 						<Field>
 							<FieldLabel htmlFor="status">Status</FieldLabel>
-							<select
-								{...field}
-								id="status"
-								className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm"
+							<Select
+								onValueChange={field.onChange}
+								value={field.value}
 							>
-								{STATUS_OPTIONS.map((opt) => (
-									<option key={opt.value} value={opt.value}>
-										{opt.label}
-									</option>
-								))}
-							</select>
+								<SelectTrigger id="status">
+									<SelectValue placeholder="Pilih status" />
+								</SelectTrigger>
+								<SelectContent position="popper" className="bg-white">
+									{STATUS_OPTIONS.map((opt) => (
+										<SelectItem key={opt.value} value={opt.value}>
+											{opt.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 						</Field>
 					)}
 				/>
@@ -457,7 +515,11 @@ export default function KaryawanPage() {
 				render={({ field }) => (
 					<Field>
 						<FieldLabel htmlFor="alamat">Alamat</FieldLabel>
-						<Input {...field} id="alamat" />
+						<Input
+							{...field}
+							id="alamat"
+							placeholder="Masukkan alamat lengkap"
+						/>
 					</Field>
 				)}
 			/>

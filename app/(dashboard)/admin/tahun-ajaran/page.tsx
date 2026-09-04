@@ -18,6 +18,7 @@ const INITIAL_FORM = {
   tahunAjaran: '',
   tanggalMulai: '',
   tanggalSelesai: '',
+  copyFromPreviousYear: false,
 };
 
 export default function AcademicYearPage() {
@@ -168,6 +169,7 @@ export default function AcademicYearPage() {
       tahunAjaran: year.tahunAjaran,
       tanggalMulai: year.tanggalMulai.split('T')[0],
       tanggalSelesai: year.tanggalSelesai.split('T')[0],
+      copyFromPreviousYear: false,
     });
     setIsEditOpen(true);
   };
@@ -227,6 +229,23 @@ export default function AcademicYearPage() {
           required
         />
       </div>
+
+      {!isEdit && (
+        <div className="flex items-center gap-2 rounded-lg border p-3">
+          <input
+            id="copyFromPreviousYear"
+            type="checkbox"
+            checked={formData.copyFromPreviousYear}
+            onChange={(e) =>
+              setFormData({ ...formData, copyFromPreviousYear: e.target.checked })
+            }
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <Label htmlFor="copyFromPreviousYear" className="text-sm font-normal">
+            Salin siswa dan karyawan aktif dari tahun ajaran sebelumnya
+          </Label>
+        </div>
+      )}
 
       <div className="flex justify-end gap-3 pt-4">
         <Dialog.Close asChild>

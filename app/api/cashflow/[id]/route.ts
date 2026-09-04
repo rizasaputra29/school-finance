@@ -61,6 +61,7 @@ export async function PATCH(
 			kredit,
 			status,
 			entries,
+			source,
 		} = body;
 
 		// Handle status update (approve/reject)
@@ -222,12 +223,8 @@ export async function PATCH(
 					const groupReferenceId =
 						oldCashflow.referenceId || oldCashflow.id;
 					const newCashflows = [];
+					const updatedSource = source || oldCashflow.source || "101";
 					for (const entry of entries) {
-						const isBankAccount =
-							entry.kodeAkun.startsWith("111") ||
-							entry.kodeAkun === "102";
-						const source = isBankAccount ? "bank" : "kas";
-
 						const cashflow = await tx.cashflow.create({
 							data: {
 								tanggal: tanggal ? new Date(tanggal) : oldCashflow.tanggal,
@@ -236,7 +233,7 @@ export async function PATCH(
 								kategori: kategori || oldCashflow.kategori,
 								debit: entry.debit,
 								kredit: entry.kredit,
-								source,
+								source: updatedSource,
 								status: oldCashflow.status,
 								referenceId: groupReferenceId,
 							} as never,
@@ -394,6 +391,7 @@ export async function PATCH(
 						kategori: kategori || null,
 						debit: newDebit,
 						kredit: newKredit,
+						source: source || oldCashflow.source || "101",
 					},
 				});
 

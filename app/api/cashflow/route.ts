@@ -51,7 +51,7 @@ const createCashflowSchema = z.object({
 	kategori: z.string().optional(),
 	debit: z.union([z.number(), z.string()]).optional().default(0),
 	kredit: z.union([z.number(), z.string()]).optional().default(0),
-	source: z.enum(["kas", "bank"]).optional(),
+	source: z.enum(["101", "102"]).optional().default("101"),
 	// New transaction type fields
 	transactionType: z
 		.enum(["pemasukan", "pengeluaran", "aset", "hutang", "piutang", "ekuitas"])
@@ -109,6 +109,7 @@ async function processDoubleEntry(
 	tanggal: Date,
 	userRole: "owner" | "admin" | "user",
 	userEmail?: string,
+	source?: string,
 ): Promise<{
 	cashflows: Array<{
 		id: string;
@@ -149,11 +150,6 @@ async function processDoubleEntry(
 	let totalKredit = 0;
 
 	for (const entry of entries) {
-		// Determine source based on account code
-		const isBankAccount =
-			entry.kodeAkun.startsWith("111") || entry.kodeAkun === "102";
-		const source = isBankAccount ? "bank" : "kas";
-
 		// ISAK 35 cashflow classification
 		const cashflowCategory = classifyCashflow(entry.kodeAkun);
 
@@ -491,6 +487,7 @@ export async function POST(request: NextRequest) {
 							transactionDate,
 							user.role,
 							user.email,
+							source,
 						);
 
 						// Create Asset record if this is an asset transaction with penyusutan options
@@ -652,7 +649,7 @@ export async function POST(request: NextRequest) {
 						cashflowCategory,
 						debit: debitAmount,
 						kredit: kreditAmount,
-						source: source as "kas" | "bank" | undefined,
+						source,
 						status: journalResult.status === "posted" ? "posted" : "draft",
 						referenceId: journalResult.journalEntryId,
 					},

@@ -26,7 +26,9 @@ const createStudentSchema = z.object({
 		.string()
 		.min(1, "Nama wajib diisi")
 		.max(100, "Nama maksimal 100 karakter"),
-	kelas: z.string().optional(),
+	kelas: z.enum(["1", "2", "3", "4", "5", "6"], {
+		message: "Kelas harus antara 1 sampai 6",
+	}),
 	tahunMasuk: z.union([z.number(), z.string()]).optional(),
 	tahunAjaran: z.string().optional(),
 	namaOrtu: z.string().optional(),
@@ -55,10 +57,36 @@ export async function GET(request: NextRequest) {
 		const statusBayar = searchParams.get("statusBayar");
 		const status = searchParams.get("status");
 		const search = searchParams.get("search");
+		const academicYearId = searchParams.get("academicYearId");
 
 		const skip = (parseInt(page) - 1) * parseInt(limit);
 
+		// Resolve academic year context
+		let activeYear: { tahunAjaran: string } | null = null;
+		if (academicYearId) {
+			activeYear = await prisma.academicYear.findUnique({
+				where: { id: academicYearId },
+				select: { tahunAjaran: true },
+			});
+		}
+		if (!activeYear) {
+			activeYear = await prisma.academicYear.findFirst({
+				where: { isActive: true },
+				select: { tahunAjaran: true },
+				orderBy: { tanggalMulai: "desc" },
+			});
+		}
+
 		const where: Record<string, unknown> = {};
+
+		// Filter by academic year: show records tagged with the active year,
+		// plus legacy records that have no tahunAjaran yet.
+		if (activeYear) {
+			where.OR = [
+				{ tahunAjaran: activeYear.tahunAjaran },
+				{ tahunAjaran: null },
+			];
+		}
 
 		// Filter by class
 		if (kelas) where.kelas = kelas;
@@ -228,7 +256,7 @@ export async function POST(request: NextRequest) {
 			data: {
 				nis,
 				nama,
-				kelas: kelas || "",
+				kelas,
 				tahunMasuk:
 					typeof tahunMasuk === "string"
 						? parseInt(tahunMasuk)

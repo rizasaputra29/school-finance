@@ -19,11 +19,12 @@ import {
 	DollarSign,
 	MapPin,
 	ChevronRight,
+	Info,
 } from "lucide-react";
-import { formatDateShort as formatShortDate } from "@/lib/utils/utils-date";
+import { formatDateShort as formatShortDate, formatDate, addYearsToDate, subtractDaysFromDate } from "@/lib/utils/utils-date";
 import { formatNumberInput, parseFormattedNumber } from "@/lib/utils/utils-core";
 import { formatRupiah } from "@/lib/utils/utils-currency";
-import { calculateDepreciationForPeriod } from "@/lib/accounting/accounting-depreciation";
+import { calculateDepreciationForYearIndex } from "@/lib/accounting/accounting-depreciation";
 import { useDebounce } from "use-debounce";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -166,21 +167,6 @@ export default function AssetsPage() {
 		enabled: !!selectedYear?.id,
 	});
 
-	const { data: academicYearsData } = useQuery({
-		queryKey: ["academicYears"],
-		queryFn: async () => {
-			const res = await fetch("/api/academic-year?includeArchived=true");
-			const result = await res.json();
-			if (!result.success) throw new Error("Gagal memuat tahun ajaran");
-			return result.data as Array<{
-				id: string;
-				tahunAjaran: string;
-				tanggalMulai: string;
-				tanggalSelesai: string;
-			}>;
-		},
-	});
-
 	// Silent catch-up: ensure full-year depreciation is posted for the selected
 	// academic year whenever this page loads. Idempotent via force: false.
 	useEffect(() => {
@@ -232,18 +218,30 @@ export default function AssetsPage() {
 				a.tipeAkun === "Asset" && PAYMENT_ACCOUNTS.includes(a.kodeAkun),
 		);
 
-	const akumulasiPenyusutanSaldo =
-		(coaAccountsData ?? []).find((a: { kodeAkun: string }) => a.kodeAkun === "111")
-			?.yearSaldo ?? 0;
 	const bebanPenyusutanSaldo =
 		(coaAccountsData ?? []).find((a: { kodeAkun: string }) => a.kodeAkun === "600")
 			?.yearSaldo ?? 0;
 
-	// Use COA-integrated totals so the assets page matches the accounts/COA page.
+	// Total gross fixed assets from the COA (107-110). With standard accumulated
+	// depreciation accounting, these accounts stay at gross cost and account 111
+	// absorbs the accumulated depreciation.
+	const totalFixedAssetsFromCOA = (coaAccountsData ?? [])
+		.filter((a: { kodeAkun: string }) => FIXED_ASSET_ACCOUNTS.includes(a.kodeAkun))
+		.reduce((sum: number, a: { yearSaldo?: number }) => sum + (a.yearSaldo ?? 0), 0);
+
+	// Accumulated depreciation from the COA contra account (111).
+	const akumulasiPenyusutanSaldo = Math.abs(
+		(coaAccountsData ?? []).find((a: { kodeAkun: string }) => a.kodeAkun === "111")
+			?.yearSaldo ?? 0,
+	);
+
 	const integratedSummary = {
-		totalAset: summary.totalAset,
+		// Gross acquisition cost from COA fixed-asset accounts.
+		totalAset: totalFixedAssetsFromCOA,
+		// Accumulated depreciation from the dedicated contra account (111).
 		totalPenyusutan: akumulasiPenyusutanSaldo,
-		nilaiBuku: summary.totalAset - akumulasiPenyusutanSaldo,
+		// Book value = gross cost - accumulated depreciation.
+		nilaiBuku: totalFixedAssetsFromCOA - akumulasiPenyusutanSaldo,
 		bebanPenyusutanTahunIni: bebanPenyusutanSaldo,
 	};
 
@@ -334,9 +332,10 @@ export default function AssetsPage() {
 		depreciationMutation.mutate();
 	};
 
-	const depYear = selectedYear
+	const depYearNumeric = selectedYear
 		? new Date(selectedYear.tanggalSelesai).getFullYear()
 		: new Date().getFullYear();
+	const depYearLabel = selectedYear?.tahunAjaran ?? String(depYearNumeric);
 
 	const columns: ColumnDef<Asset>[] = [
 		{
@@ -715,7 +714,7 @@ export default function AssetsPage() {
 						</div>
 						<div className="min-w-0">
 							<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
-								Total Penyusutan
+								Akumulasi Penyusutan
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
 								{formatRupiah(integratedSummary.totalPenyusutan)}
@@ -747,7 +746,7 @@ export default function AssetsPage() {
 						</div>
 						<div className="min-w-0">
 							<p className="text-[10px] md:text-xs font-medium text-gray-500 truncate">
-								Beban Penyusutan {depYear}
+								Beban Penyusutan {depYearLabel}
 							</p>
 							<p className="text-sm md:text-xl font-bold text-gray-900 truncate">
 								{formatRupiah(integratedSummary.bebanPenyusutanTahunIni)}
@@ -755,6 +754,41 @@ export default function AssetsPage() {
 						</div>
 					</CardContent>
 				</Card>
+			</div>
+
+			{/* Compact COA reconciliation */}
+			<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+				<div className="flex items-center gap-1">
+					<Info className="h-3.5 w-3.5 text-slate-400" />
+					<span>COA:</span>
+				</div>
+				<span>
+					Aset Tetap (107–110):{" "}
+					<strong className="text-slate-700">
+						{formatRupiah(totalFixedAssetsFromCOA)}
+					</strong>
+				</span>
+				<span className="hidden sm:inline">|</span>
+				<span>
+					Akumulasi Penyusutan (111):{" "}
+					<strong className="text-slate-700">
+						{formatRupiah(akumulasiPenyusutanSaldo)}
+					</strong>
+				</span>
+				<span className="hidden sm:inline">|</span>
+				<span>
+					Nilai Buku Aset:{" "}
+					<strong className="text-slate-700">
+						{formatRupiah(integratedSummary.nilaiBuku)}
+					</strong>
+				</span>
+				<span className="hidden sm:inline">|</span>
+				<span>
+					Beban Penyusutan (600):{" "}
+					<strong className="text-slate-700">
+						{formatRupiah(bebanPenyusutanSaldo)}
+					</strong>
+				</span>
 			</div>
 
 			{/* Search & Filters */}
@@ -813,17 +847,17 @@ export default function AssetsPage() {
 						<TrendingDown className="h-4 w-4 md:mr-2" />
 						<span className="hidden md:inline">Proses Penyusutan</span>
 						<span className="md:hidden">Penyusutan</span>
-						<span className="ml-1 text-xs opacity-80">{depYear}</span>
+						<span className="ml-1 text-xs opacity-80">{depYearLabel}</span>
 					</Button>
 					<Button
 						size="sm"
 						variant="outline"
 						onClick={() =>
-							window.open(`/api/assets/depreciation?year=${depYear}`, "_blank")
+							window.open(`/api/assets/depreciation?year=${depYearNumeric}`, "_blank")
 						}
 						className="text-xs md:text-sm"
 					>
-						Lihat Detail Penyusutan {depYear}
+						Lihat Detail Penyusutan {depYearLabel}
 					</Button>
 				</div>
 			)}
@@ -851,36 +885,26 @@ export default function AssetsPage() {
 							const a = row.original;
 							if (a.isTanah || a.umurTeknis === 0) return null;
 
-							const annualDepreciation =
-								(a.hargaPerolehan - a.nilaiResidu) / a.umurTeknis;
-							const acquisitionDate = new Date(a.tanggalPerolehan);
-							const usefulLifeEnd = new Date(acquisitionDate);
-							usefulLifeEnd.setFullYear(
-								usefulLifeEnd.getFullYear() + a.umurTeknis,
+						const annualDepreciation =
+							(a.hargaPerolehan - a.nilaiResidu) / a.umurTeknis;
+						const acquisitionDate = new Date(a.tanggalPerolehan);
+
+						const schedule: {
+							id: string;
+							label: string;
+							depreciation: number;
+							accumulated: number;
+							bookValue: number;
+						}[] = [];
+
+						let accumulated = 0;
+						for (let i = 0; i < a.umurTeknis; i++) {
+							const startDate = addYearsToDate(acquisitionDate, i);
+							const endDate = subtractDaysFromDate(
+								addYearsToDate(acquisitionDate, i + 1),
+								1,
 							);
-
-							const sortedYears = (academicYearsData ?? [])
-								.slice()
-								.sort(
-									(x, y) =>
-										new Date(x.tanggalMulai).getTime() -
-										new Date(y.tanggalMulai).getTime(),
-								)
-								.filter(
-									(year) =>
-										new Date(year.tanggalSelesai) >= acquisitionDate &&
-										new Date(year.tanggalMulai) < usefulLifeEnd,
-								);
-
-							const schedule: {
-								id: string;
-								tahunAjaran: string;
-								depreciation: number;
-								accumulated: number;
-								bookValue: number;
-							}[] = [];
-
-							let runningAsset: import("@/lib/accounting/accounting-depreciation").AssetDepreciationData =
+							const depAmount = calculateDepreciationForYearIndex(
 								{
 									id: a.id,
 									kodeAkun: a.kodeAkun,
@@ -892,40 +916,23 @@ export default function AssetsPage() {
 									nilaiResidu: a.nilaiResidu,
 									isTanah: a.isTanah,
 									status: a.status,
-									alreadyDepreciatedAmount: 0,
-									alreadyDepreciatedYears: 0,
-									sisaUmurTeknis: a.umurTeknis,
-								};
-
-							for (const year of sortedYears) {
-								const depAmount = calculateDepreciationForPeriod(
-									runningAsset,
-									new Date(year.tanggalMulai),
-									new Date(year.tanggalSelesai),
-								);
-								const accumulated =
-									(runningAsset.alreadyDepreciatedAmount ?? 0) + depAmount;
-								runningAsset = {
-									...runningAsset,
-									alreadyDepreciatedAmount: accumulated,
-									alreadyDepreciatedYears:
-										annualDepreciation > 0
-											? Math.floor(accumulated / annualDepreciation)
-											: 0,
-								};
-								schedule.push({
-									id: year.id,
-									tahunAjaran: year.tahunAjaran,
-									depreciation: Math.round(depAmount),
-									accumulated: Math.round(accumulated),
-									bookValue: Math.round(
-										Math.max(
-											a.nilaiResidu,
-											a.hargaPerolehan - accumulated,
-										),
-									),
-								});
-							}
+								},
+								i,
+							);
+							accumulated += depAmount;
+							const bookValue = Math.max(
+								a.nilaiResidu,
+								a.hargaPerolehan - accumulated,
+							);
+							schedule.push({
+								id: `${a.id}-year-${i}`,
+								label: `${formatDate(startDate, "dd MMM yyyy")} – ${formatDate(endDate, "dd MMM yyyy")}`,
+								depreciation: Math.round(depAmount),
+								accumulated: Math.round(accumulated),
+								bookValue: Math.round(bookValue),
+							});
+							if (bookValue <= a.nilaiResidu) break;
+						}
 
 							return (
 								<div className="p-4 bg-gray-50">
@@ -979,9 +986,9 @@ export default function AssetsPage() {
 													key={row.id}
 													className="border-t border-gray-200 hover:bg-gray-100/50"
 												>
-													<td className="py-1.5 px-2 text-gray-700">
-														{row.tahunAjaran}
-													</td>
+												<td className="py-1.5 px-2 text-gray-700">
+													{row.label}
+												</td>
 															<td className="py-1.5 px-2 text-right text-gray-700">
 																{formatRupiah(row.depreciation)}
 															</td>
